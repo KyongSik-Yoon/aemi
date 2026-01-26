@@ -3,13 +3,13 @@
 [![npm version](https://badge.fury.io/js/cokacdir.svg)](https://www.npmjs.com/package/cokacdir)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Norton Commander style dual-panel file manager for terminal with AI-powered natural language commands.
+Dual-panel file manager for terminal with AI-powered natural language commands.
 
 ![cokacdir screenshot](https://cokacdir.cokac.com/screenshot.png)
 
 ## Features
 
-- **Dual-Panel Interface** - Classic Norton Commander / Midnight Commander style
+- **Dual-Panel Interface** - Classic / Midnight Commander style
 - **AI-Powered Commands** - Natural language file operations via Claude AI
 - **File Operations** - Copy, Move, Delete, Rename, Create directories
 - **Built-in Viewer/Editor** - View and edit files without leaving the app
