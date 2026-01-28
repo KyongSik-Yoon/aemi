@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { defaultTheme } from '../themes/classic-blue.js';
 import { features } from '../utils/platform.js';
@@ -33,7 +33,7 @@ interface FunctionBarProps {
   width?: number;
 }
 
-export default function FunctionBar({ message, width = 80 }: FunctionBarProps) {
+export default memo(function FunctionBar({ message, width = 80 }: FunctionBarProps) {
   const theme = defaultTheme;
   const itemWidth = Math.floor(width / functionKeys.length);
 
@@ -62,4 +62,4 @@ export default function FunctionBar({ message, width = 80 }: FunctionBarProps) {
       ))}
     </Box>
   );
-}
+});

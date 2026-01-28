@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { defaultTheme } from '../themes/classic-blue.js';
 import { formatSize } from '../utils/format.js';
@@ -10,7 +10,7 @@ interface StatusBarProps {
   totalSize: number;
 }
 
-export default function StatusBar({
+export default memo(function StatusBar({
   selectedFile,
   selectedSize,
   selectedCount,
@@ -33,4 +33,4 @@ export default function StatusBar({
       </Box>
     </Box>
   );
-}
+});

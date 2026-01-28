@@ -1,5 +1,5 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import os from 'os';
 import path from 'path';
@@ -7,6 +7,7 @@ import Panel from '../components/Panel.js';
 import FunctionBar from '../components/FunctionBar.js';
 import StatusBar from '../components/StatusBar.js';
 import ConfirmDialog from '../components/ConfirmDialog.js';
+import AlertDialog from '../components/AlertDialog.js';
 import InputDialog from '../components/InputDialog.js';
 import SearchDialog from '../components/SearchDialog.js';
 import FileViewer from '../components/FileViewer.js';
@@ -16,7 +17,7 @@ import ProcessManager from './ProcessManager.js';
 import { defaultTheme } from '../themes/classic-blue.js';
 import * as fileOps from '../services/fileOps.js';
 import { isValidFilename } from '../services/fileOps.js';
-import { features } from '../utils/platform.js';
+import { features, checkClaudeCLI, resetClaudeCLICache } from '../utils/platform.js';
 import { APP_TITLE } from '../utils/version.js';
 import fs from 'fs';
 export default function DualPanel({ onEnterAI, initialLeftPath, initialRightPath, initialActivePanel, initialLeftIndex, initialRightIndex, onSavePanelState, }) {
@@ -83,14 +84,14 @@ export default function DualPanel({ onEnterAI, initialLeftPath, initialRightPath
         }
         return [];
     };
-    // Calculate totals
-    const calculateTotal = (files) => files.reduce((sum, f) => sum + (f.isDirectory ? 0 : f.size), 0);
     // Refresh panels
     const refresh = useCallback(() => {
         setRefreshKey(k => k + 1);
         setLeftSelected(new Set());
         setRightSelected(new Set());
     }, []);
+    // Close modal callback (reusable)
+    const closeModal = useCallback(() => setModal('none'), []);
     // 파일 목록 로드 핸들러 (상위 이동 시 이전 폴더에 포커스)
     const handleLeftFilesLoad = useCallback((files) => {
         setLeftFiles(files);
@@ -454,21 +455,28 @@ export default function DualPanel({ onEnterAI, initialLeftPath, initialRightPath
         }
         // . - AI Command (Unix-like systems only)
         if (input === '.') {
-            if (features.ai && onEnterAI) {
-                // AI 진입 전 현재 패널 상태 저장
-                if (onSavePanelState) {
-                    onSavePanelState({
-                        leftPath,
-                        rightPath,
-                        activePanel,
-                        leftIndex,
-                        rightIndex,
-                    });
-                }
-                onEnterAI(currentPath);
-            }
-            else if (!features.ai) {
+            if (!features.ai) {
                 showMessage('AI command not available on this platform');
+            }
+            else if (onEnterAI) {
+                // 캐시 리셋하고 Claude CLI 존재 여부 체크
+                resetClaudeCLICache();
+                if (!checkClaudeCLI()) {
+                    setModal('claudeNotFound');
+                }
+                else {
+                    // AI 진입 전 현재 패널 상태 저장
+                    if (onSavePanelState) {
+                        onSavePanelState({
+                            leftPath,
+                            rightPath,
+                            activePanel,
+                            leftIndex,
+                            rightIndex,
+                        });
+                    }
+                    onEnterAI(currentPath);
+                }
             }
         }
         // / - Go to path
@@ -533,16 +541,19 @@ export default function DualPanel({ onEnterAI, initialLeftPath, initialRightPath
         if (input === '0' || input === 'q' || input === 'Q')
             exit();
     });
-    const operationFiles = getOperationFiles();
-    const fileListStr = operationFiles.length <= 3
+    // Memoized operation files and display string
+    const operationFiles = useMemo(() => getOperationFiles(), [currentSelected, currentFile]);
+    const fileListStr = useMemo(() => operationFiles.length <= 3
         ? operationFiles.join(', ')
-        : `${operationFiles.slice(0, 2).join(', ')} and ${operationFiles.length - 2} more`;
+        : `${operationFiles.slice(0, 2).join(', ')} and ${operationFiles.length - 2} more`, [operationFiles]);
+    // Memoized total size calculation
+    const currentTotalSize = useMemo(() => currentFiles.reduce((sum, f) => sum + (f.isDirectory ? 0 : f.size), 0), [currentFiles]);
     // 전체 화면 모달 여부 (view, edit, info, process)
     const isFullScreenModal = modal === 'view' || modal === 'edit' || modal === 'info' || modal === 'process';
     // 오버레이 다이얼로그 여부
     const isOverlayDialog = modal === 'help' || modal === 'copy' || modal === 'move' || modal === 'delete' ||
         modal === 'mkdir' || modal === 'rename' || modal === 'search' || modal === 'advSearch' ||
-        modal === 'goto';
-    return (_jsxs(Box, { flexDirection: "column", height: termHeight, children: [_jsxs(Box, { justifyContent: "center", marginBottom: 0, children: [_jsx(Text, { bold: true, color: theme.colors.borderActive, children: APP_TITLE }), _jsxs(Text, { color: theme.colors.textDim, children: ["  ", features.ai ? '[.] AI  ' : '', "[Tab] Switch  [f] Find  [1-9,0] Fn"] })] }), modal === 'view' && currentFile && (_jsx(FileViewer, { filePath: path.join(currentPath, currentFile.name), onClose: () => setModal('none') })), modal === 'edit' && currentFile && (_jsx(FileEditor, { filePath: path.join(currentPath, currentFile.name), onClose: () => setModal('none'), onSave: refresh })), modal === 'info' && currentFile && (_jsx(FileInfo, { filePath: path.join(currentPath, currentFile.name), onClose: () => setModal('none') })), modal === 'process' && (_jsx(ProcessManager, { onClose: () => setModal('none') })), !isFullScreenModal && (_jsxs(Box, { flexDirection: "column", flexGrow: 1, children: [_jsxs(Box, { flexGrow: 1, position: "relative", children: [_jsx(Panel, { currentPath: leftPath, isActive: activePanel === 'left' && !isOverlayDialog, selectedIndex: leftIndex, selectedFiles: leftSelected, width: panelWidth, height: panelHeight, sortBy: leftSortBy, sortOrder: leftSortOrder, onFilesLoad: handleLeftFilesLoad }), _jsx(Panel, { currentPath: rightPath, isActive: activePanel === 'right' && !isOverlayDialog, selectedIndex: rightIndex, selectedFiles: rightSelected, width: panelWidth, height: panelHeight, sortBy: rightSortBy, sortOrder: rightSortOrder, onFilesLoad: handleRightFilesLoad }), isOverlayDialog && (_jsxs(Box, { position: "absolute", flexDirection: "column", alignItems: "center", justifyContent: "center", width: termWidth, height: panelHeight, children: [modal === 'help' && (_jsxs(Box, { flexDirection: "column", borderStyle: "double", borderColor: theme.colors.borderActive, backgroundColor: "#000000", paddingX: 2, paddingY: 1, children: [_jsx(Box, { justifyContent: "center", children: _jsx(Text, { bold: true, color: theme.colors.borderActive, children: "Help - Keyboard Shortcuts" }) }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Navigation:" }), _jsx(Text, { children: "  \u2191\u2193        Move cursor" }), _jsx(Text, { children: "  PgUp/PgDn Move 10 lines" }), _jsx(Text, { children: "  Home/End  Go to start/end" }), _jsx(Text, { children: "  Enter     Open directory" }), _jsx(Text, { children: "  ESC       Go to parent dir" }), _jsx(Text, { children: "  Tab       Switch panel" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Selection:" }), _jsx(Text, { children: "  Space     Select/deselect file" }), _jsx(Text, { children: "  *         Select/deselect all" }), _jsx(Text, { children: "  f         Quick find by name" }), _jsx(Text, { children: "  F         Advanced search" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Sorting (toggle asc/desc):" }), _jsx(Text, { children: "  n         Sort by name" }), _jsx(Text, { children: "  s         Sort by size" }), _jsx(Text, { children: "  d         Sort by date" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Functions (number keys):" }), _jsx(Text, { children: "  1=Help  2=Info  3=View  4=Edit  5=Copy" }), _jsxs(Text, { children: ["  6=Move  7=MkDir 8=Del   ", features.processManager ? '9=Proc  ' : '        ', "0=Quit"] }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Special:" }), features.ai && _jsx(Text, { children: "  .         AI Command" }), _jsx(Text, { children: "  /         Go to path" }), _jsx(Text, { children: "  r/R       Rename file" }), _jsx(Text, { children: " " }), _jsx(Text, { color: theme.colors.textDim, children: "Press any key to close" })] })), modal === 'copy' && (_jsx(ConfirmDialog, { title: "Copy Files", message: `Copy ${fileListStr} to ${targetPath}?`, onConfirm: handleCopy, onCancel: () => setModal('none') })), modal === 'move' && (_jsx(ConfirmDialog, { title: "Move Files", message: `Move ${fileListStr} to ${targetPath}?`, onConfirm: handleMove, onCancel: () => setModal('none') })), modal === 'delete' && (_jsx(ConfirmDialog, { title: "Delete Files", message: `Delete ${fileListStr}? This cannot be undone!`, onConfirm: handleDelete, onCancel: () => setModal('none') })), modal === 'mkdir' && (_jsx(InputDialog, { title: "Create Directory", prompt: "Enter directory name:", onSubmit: handleMkdir, onCancel: () => setModal('none') })), modal === 'rename' && currentFile && (_jsx(InputDialog, { title: "Rename File", prompt: `Rename "${currentFile.name}" to:`, defaultValue: currentFile.name, onSubmit: handleRename, onCancel: () => setModal('none') })), modal === 'search' && (_jsx(InputDialog, { title: "Find File", prompt: "Search for:", onSubmit: handleSearch, onCancel: () => setModal('none') })), modal === 'advSearch' && (_jsx(SearchDialog, { onSubmit: handleAdvancedSearch, onCancel: () => setModal('none') })), modal === 'goto' && (_jsx(InputDialog, { title: "Go to Path", prompt: "Enter path:", defaultValue: currentPath, onSubmit: handleGoto, onCancel: () => setModal('none') }))] }))] }), _jsx(StatusBar, { selectedFile: currentFile?.name, selectedSize: currentFile?.size, selectedCount: currentSelected.size, totalSize: calculateTotal(currentFiles) }), _jsx(FunctionBar, { message: message, width: termWidth })] }))] }, refreshKey));
+        modal === 'goto' || modal === 'claudeNotFound';
+    return (_jsxs(Box, { flexDirection: "column", height: termHeight, children: [_jsxs(Box, { justifyContent: "center", marginBottom: 0, children: [_jsx(Text, { bold: true, color: theme.colors.borderActive, children: APP_TITLE }), _jsxs(Text, { color: theme.colors.textDim, children: ["  ", features.ai ? '[.] AI  ' : '', "[Tab] Switch  [f] Find  [1-9,0] Fn"] })] }), modal === 'view' && currentFile && (_jsx(FileViewer, { filePath: path.join(currentPath, currentFile.name), onClose: closeModal })), modal === 'edit' && currentFile && (_jsx(FileEditor, { filePath: path.join(currentPath, currentFile.name), onClose: closeModal, onSave: refresh })), modal === 'info' && currentFile && (_jsx(FileInfo, { filePath: path.join(currentPath, currentFile.name), onClose: closeModal })), modal === 'process' && (_jsx(ProcessManager, { onClose: closeModal })), !isFullScreenModal && (_jsxs(Box, { flexDirection: "column", flexGrow: 1, children: [_jsxs(Box, { flexGrow: 1, position: "relative", children: [_jsx(Panel, { currentPath: leftPath, isActive: activePanel === 'left' && !isOverlayDialog, selectedIndex: leftIndex, selectedFiles: leftSelected, width: panelWidth, height: panelHeight, sortBy: leftSortBy, sortOrder: leftSortOrder, onFilesLoad: handleLeftFilesLoad }), _jsx(Panel, { currentPath: rightPath, isActive: activePanel === 'right' && !isOverlayDialog, selectedIndex: rightIndex, selectedFiles: rightSelected, width: panelWidth, height: panelHeight, sortBy: rightSortBy, sortOrder: rightSortOrder, onFilesLoad: handleRightFilesLoad }), isOverlayDialog && (_jsxs(Box, { position: "absolute", flexDirection: "column", alignItems: "center", justifyContent: "center", width: termWidth, height: panelHeight, children: [modal === 'help' && (_jsxs(Box, { flexDirection: "column", borderStyle: "double", borderColor: theme.colors.borderActive, backgroundColor: "#000000", paddingX: 2, paddingY: 1, children: [_jsx(Box, { justifyContent: "center", children: _jsx(Text, { bold: true, color: theme.colors.borderActive, children: "Help - Keyboard Shortcuts" }) }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Navigation:" }), _jsx(Text, { children: "  \u2191\u2193        Move cursor" }), _jsx(Text, { children: "  PgUp/PgDn Move 10 lines" }), _jsx(Text, { children: "  Home/End  Go to start/end" }), _jsx(Text, { children: "  Enter     Open directory" }), _jsx(Text, { children: "  ESC       Go to parent dir" }), _jsx(Text, { children: "  Tab       Switch panel" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Selection:" }), _jsx(Text, { children: "  Space     Select/deselect file" }), _jsx(Text, { children: "  *         Select/deselect all" }), _jsx(Text, { children: "  f         Quick find by name" }), _jsx(Text, { children: "  F         Advanced search" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Sorting (toggle asc/desc):" }), _jsx(Text, { children: "  n         Sort by name" }), _jsx(Text, { children: "  s         Sort by size" }), _jsx(Text, { children: "  d         Sort by date" }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Functions (number keys):" }), _jsx(Text, { children: "  1=Help  2=Info  3=View  4=Edit  5=Copy" }), _jsxs(Text, { children: ["  6=Move  7=MkDir 8=Del   ", features.processManager ? '9=Proc  ' : '        ', "0=Quit"] }), _jsx(Text, { children: " " }), _jsx(Text, { bold: true, children: "Special:" }), features.ai && _jsx(Text, { children: "  .         AI Command" }), _jsx(Text, { children: "  /         Go to path" }), _jsx(Text, { children: "  r/R       Rename file" }), _jsx(Text, { children: " " }), _jsx(Text, { color: theme.colors.textDim, children: "Press any key to close" })] })), modal === 'copy' && (_jsx(ConfirmDialog, { title: "Copy Files", message: `Copy ${fileListStr} to ${targetPath}?`, onConfirm: handleCopy, onCancel: closeModal })), modal === 'move' && (_jsx(ConfirmDialog, { title: "Move Files", message: `Move ${fileListStr} to ${targetPath}?`, onConfirm: handleMove, onCancel: closeModal })), modal === 'delete' && (_jsx(ConfirmDialog, { title: "Delete Files", message: `Delete ${fileListStr}? This cannot be undone!`, onConfirm: handleDelete, onCancel: closeModal })), modal === 'mkdir' && (_jsx(InputDialog, { title: "Create Directory", prompt: "Enter directory name:", onSubmit: handleMkdir, onCancel: closeModal })), modal === 'rename' && currentFile && (_jsx(InputDialog, { title: "Rename File", prompt: `Rename "${currentFile.name}" to:`, defaultValue: currentFile.name, onSubmit: handleRename, onCancel: closeModal })), modal === 'search' && (_jsx(InputDialog, { title: "Find File", prompt: "Search for:", onSubmit: handleSearch, onCancel: closeModal })), modal === 'advSearch' && (_jsx(SearchDialog, { onSubmit: handleAdvancedSearch, onCancel: closeModal })), modal === 'goto' && (_jsx(InputDialog, { title: "Go to Path", prompt: "Enter path:", defaultValue: currentPath, onSubmit: handleGoto, onCancel: closeModal })), modal === 'claudeNotFound' && (_jsx(AlertDialog, { title: "Claude CLI Not Found", message: 'Claude CLI is not installed.\nPlease install Claude Code first.', onClose: closeModal }))] }))] }), _jsx(StatusBar, { selectedFile: currentFile?.name, selectedSize: currentFile?.size, selectedCount: currentSelected.size, totalSize: currentTotalSize }), _jsx(FunctionBar, { message: message, width: termWidth })] }))] }, refreshKey));
 }
 //# sourceMappingURL=DualPanel.js.map

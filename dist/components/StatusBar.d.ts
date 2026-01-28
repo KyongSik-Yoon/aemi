@@ -1,9 +1,10 @@
+import React from 'react';
 interface StatusBarProps {
     selectedFile?: string;
     selectedSize?: number;
     selectedCount: number;
     totalSize: number;
 }
-export default function StatusBar({ selectedFile, selectedSize, selectedCount, totalSize, }: StatusBarProps): import("react/jsx-runtime").JSX.Element;
-export {};
+declare const _default: React.NamedExoticComponent<StatusBarProps>;
+export default _default;
 //# sourceMappingURL=StatusBar.d.ts.map

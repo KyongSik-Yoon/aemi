@@ -1,11 +1,20 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useEffect, useState } from 'react';
+import { jsxs as _jsxs, jsx as _jsx } from "react/jsx-runtime";
+import React, { useEffect, useState, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import fs from 'fs';
 import path from 'path';
 import { defaultTheme } from '../themes/classic-blue.js';
 import { formatSize, formatPermissionsShort } from '../utils/format.js';
-export default function Panel({ currentPath, isActive, selectedIndex, selectedFiles, width, height, sortBy = 'name', sortOrder = 'asc', onFilesLoad, }) {
+const FileRow = React.memo(function FileRow({ file, isCursor, isMarked, isActive, innerWidth, nameColWidth, }) {
+    const theme = defaultTheme;
+    const nameTextWidth = nameColWidth - 2;
+    const dateStr = file.name === '..' ? '' :
+        `${(file.modified.getMonth() + 1).toString().padStart(2, '0')}-${file.modified.getDate().toString().padStart(2, '0')} ${file.modified.getHours().toString().padStart(2, '0')}:${file.modified.getMinutes().toString().padStart(2, '0')}`;
+    return (_jsxs(Box, { width: innerWidth, children: [_jsxs(Text, { color: isCursor && isActive ? theme.colors.textSelected :
+                    isMarked ? theme.colors.warning :
+                        file.isDirectory ? theme.colors.textDirectory : theme.colors.text, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, bold: file.isDirectory, children: [isMarked ? '*' : ' ', file.isDirectory ? theme.chars.folder : theme.chars.file, (file.name + ' '.repeat(nameTextWidth)).slice(0, nameTextWidth)] }), _jsx(Text, { color: isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, children: (file.isDirectory ? '<DIR>' : formatSize(file.size)).padStart(8) + '  ' }), _jsx(Text, { color: isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, children: dateStr.padStart(12) + '  ' })] }));
+});
+export default React.memo(function Panel({ currentPath, isActive, selectedIndex, selectedFiles, width, height, sortBy = 'name', sortOrder = 'asc', onFilesLoad, }) {
     const [files, setFiles] = useState([]);
     const [error, setError] = useState(null);
     const theme = defaultTheme;
@@ -94,17 +103,13 @@ export default function Panel({ currentPath, isActive, selectedIndex, selectedFi
     const sizeColWidth = 8 + 2; // 8 for content + 2 padding
     const dateColWidth = 12 + 2; // 12 for content + 2 padding
     const nameColWidth = innerWidth - sizeColWidth - dateColWidth;
+    // Memoized file count (excluding '..')
+    const fileCount = useMemo(() => files.filter(f => f.name !== '..').length, [files]);
+    // Memoized empty rows count
+    const emptyRowsCount = useMemo(() => Math.max(0, visibleCount - visibleFiles.length), [visibleCount, visibleFiles.length]);
     return (_jsxs(Box, { flexDirection: "column", width: width, height: height, borderStyle: "single", borderColor: isActive ? theme.colors.borderActive : theme.colors.border, children: [_jsx(Box, { justifyContent: "center", children: _jsx(Text, { color: isActive ? theme.colors.borderActive : theme.colors.text, bold: true, children: displayPath }) }), _jsxs(Box, { width: innerWidth, children: [_jsx(Text, { color: theme.colors.textHeader, children: (sortBy === 'name' ? (sortOrder === 'asc' ? ' Name▲' : ' Name▼') : ' Name').padEnd(nameColWidth) }), _jsx(Text, { color: theme.colors.textHeader, children: ((sortBy === 'size' ? (sortOrder === 'asc' ? 'Size▲' : 'Size▼') : 'Size').padStart(8) + '  ') }), _jsx(Text, { color: theme.colors.textHeader, children: ((sortBy === 'modified' ? (sortOrder === 'asc' ? 'Modified▲' : 'Modified▼') : 'Modified').padStart(12) + '  ') })] }), error ? (_jsx(Text, { color: theme.colors.error, children: error })) : (visibleFiles.map((file, index) => {
                 const actualIndex = startIndex + index;
-                const isCursor = actualIndex === selectedIndex;
-                const isMarked = selectedFiles.has(file.name);
-                const dateStr = file.name === '..' ? '' :
-                    `${(file.modified.getMonth() + 1).toString().padStart(2, '0')}-${file.modified.getDate().toString().padStart(2, '0')} ${file.modified.getHours().toString().padStart(2, '0')}:${file.modified.getMinutes().toString().padStart(2, '0')}`;
-                // Name column: 2 chars for mark + icon, rest for filename
-                const nameTextWidth = nameColWidth - 2;
-                return (_jsxs(Box, { width: innerWidth, children: [_jsxs(Text, { color: isCursor && isActive ? theme.colors.textSelected :
-                                isMarked ? theme.colors.warning :
-                                    file.isDirectory ? theme.colors.textDirectory : theme.colors.text, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, bold: file.isDirectory, children: [isMarked ? '*' : ' ', file.isDirectory ? theme.chars.folder : theme.chars.file, (file.name + ' '.repeat(nameTextWidth)).slice(0, nameTextWidth)] }), _jsx(Text, { color: isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, children: (file.isDirectory ? '<DIR>' : formatSize(file.size)).padStart(8) + '  ' }), _jsx(Text, { color: isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim, backgroundColor: isCursor && isActive ? theme.colors.bgSelected : undefined, children: dateStr.padStart(12) + '  ' })] }, `${currentPath}-${actualIndex}-${file.name}`));
-            })), Array.from({ length: Math.max(0, visibleCount - visibleFiles.length) }).map((_, i) => (_jsx(Box, { children: _jsx(Text, { children: " " }) }, `empty-${i}`))), _jsx(Box, { justifyContent: "center", children: _jsxs(Text, { color: theme.colors.textDim, children: [files.filter(f => f.name !== '..').length, " files"] }) })] }));
-}
+                return (_jsx(FileRow, { file: file, isCursor: actualIndex === selectedIndex, isMarked: selectedFiles.has(file.name), isActive: isActive, innerWidth: innerWidth, nameColWidth: nameColWidth }, file.name));
+            })), Array.from({ length: emptyRowsCount }, (_, i) => (_jsx(Box, { children: _jsx(Text, { children: " " }) }, `empty-${i}`))), _jsx(Box, { justifyContent: "center", children: _jsxs(Text, { color: theme.colors.textDim, children: [fileCount, " files"] }) })] }));
+});
 //# sourceMappingURL=Panel.js.map

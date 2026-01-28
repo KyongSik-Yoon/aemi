@@ -1,7 +1,8 @@
+import React from 'react';
 interface FunctionBarProps {
     message?: string;
     width?: number;
 }
-export default function FunctionBar({ message, width }: FunctionBarProps): import("react/jsx-runtime").JSX.Element;
-export {};
+declare const _default: React.NamedExoticComponent<FunctionBarProps>;
+export default _default;
 //# sourceMappingURL=FunctionBar.d.ts.map

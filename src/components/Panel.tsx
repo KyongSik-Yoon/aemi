@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import fs from 'fs';
 import path from 'path';
@@ -18,7 +18,58 @@ interface PanelProps {
   onFilesLoad?: (files: FileItem[]) => void;
 }
 
-export default function Panel({
+interface FileRowProps {
+  file: FileItem;
+  isCursor: boolean;
+  isMarked: boolean;
+  isActive: boolean;
+  innerWidth: number;
+  nameColWidth: number;
+}
+
+const FileRow = React.memo(function FileRow({
+  file,
+  isCursor,
+  isMarked,
+  isActive,
+  innerWidth,
+  nameColWidth,
+}: FileRowProps) {
+  const theme = defaultTheme;
+  const nameTextWidth = nameColWidth - 2;
+  const dateStr = file.name === '..' ? '' :
+    `${(file.modified.getMonth() + 1).toString().padStart(2, '0')}-${file.modified.getDate().toString().padStart(2, '0')} ${file.modified.getHours().toString().padStart(2, '0')}:${file.modified.getMinutes().toString().padStart(2, '0')}`;
+
+  return (
+    <Box width={innerWidth}>
+      <Text
+        color={isCursor && isActive ? theme.colors.textSelected :
+               isMarked ? theme.colors.warning :
+               file.isDirectory ? theme.colors.textDirectory : theme.colors.text}
+        backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
+        bold={file.isDirectory}
+      >
+        {isMarked ? '*' : ' '}
+        {file.isDirectory ? theme.chars.folder : theme.chars.file}
+        {(file.name + ' '.repeat(nameTextWidth)).slice(0, nameTextWidth)}
+      </Text>
+      <Text
+        color={isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim}
+        backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
+      >
+        {(file.isDirectory ? '<DIR>' : formatSize(file.size)).padStart(8) + '  '}
+      </Text>
+      <Text
+        color={isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim}
+        backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
+      >
+        {dateStr.padStart(12) + '  '}
+      </Text>
+    </Box>
+  );
+});
+
+export default React.memo(function Panel({
   currentPath,
   isActive,
   selectedIndex,
@@ -124,6 +175,18 @@ export default function Panel({
   const dateColWidth = 12 + 2;  // 12 for content + 2 padding
   const nameColWidth = innerWidth - sizeColWidth - dateColWidth;
 
+  // Memoized file count (excluding '..')
+  const fileCount = useMemo(() =>
+    files.filter(f => f.name !== '..').length,
+    [files]
+  );
+
+  // Memoized empty rows count
+  const emptyRowsCount = useMemo(() =>
+    Math.max(0, visibleCount - visibleFiles.length),
+    [visibleCount, visibleFiles.length]
+  );
+
   return (
     <Box
       flexDirection="column"
@@ -155,47 +218,21 @@ export default function Panel({
       ) : (
         visibleFiles.map((file, index) => {
           const actualIndex = startIndex + index;
-          const isCursor = actualIndex === selectedIndex;
-          const isMarked = selectedFiles.has(file.name);
-          const dateStr = file.name === '..' ? '' :
-            `${(file.modified.getMonth() + 1).toString().padStart(2, '0')}-${file.modified.getDate().toString().padStart(2, '0')} ${file.modified.getHours().toString().padStart(2, '0')}:${file.modified.getMinutes().toString().padStart(2, '0')}`;
-          // Name column: 2 chars for mark + icon, rest for filename
-          const nameTextWidth = nameColWidth - 2;
-
           return (
-            <Box
-              key={`${currentPath}-${actualIndex}-${file.name}`}
-              width={innerWidth}
-            >
-              <Text
-                color={isCursor && isActive ? theme.colors.textSelected :
-                       isMarked ? theme.colors.warning :
-                       file.isDirectory ? theme.colors.textDirectory : theme.colors.text}
-                backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
-                bold={file.isDirectory}
-              >
-                {isMarked ? '*' : ' '}
-                {file.isDirectory ? theme.chars.folder : theme.chars.file}
-                {(file.name + ' '.repeat(nameTextWidth)).slice(0, nameTextWidth)}
-              </Text>
-              <Text
-                color={isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim}
-                backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
-              >
-                {(file.isDirectory ? '<DIR>' : formatSize(file.size)).padStart(8) + '  '}
-              </Text>
-              <Text
-                color={isCursor && isActive ? theme.colors.textSelected : theme.colors.textDim}
-                backgroundColor={isCursor && isActive ? theme.colors.bgSelected : undefined}
-              >
-                {dateStr.padStart(12) + '  '}
-              </Text>
-            </Box>
+            <FileRow
+              key={file.name}
+              file={file}
+              isCursor={actualIndex === selectedIndex}
+              isMarked={selectedFiles.has(file.name)}
+              isActive={isActive}
+              innerWidth={innerWidth}
+              nameColWidth={nameColWidth}
+            />
           );
         })
       )}
 
-      {Array.from({ length: Math.max(0, visibleCount - visibleFiles.length) }).map((_, i) => (
+      {Array.from({ length: emptyRowsCount }, (_, i) => (
         <Box key={`empty-${i}`}>
           <Text> </Text>
         </Box>
@@ -203,9 +240,9 @@ export default function Panel({
 
       <Box justifyContent="center">
         <Text color={theme.colors.textDim}>
-          {files.filter(f => f.name !== '..').length} files
+          {fileCount} files
         </Text>
       </Box>
     </Box>
   );
-}
+});

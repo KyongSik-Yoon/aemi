@@ -1,4 +1,5 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { memo } from 'react';
 import { Box, Text } from 'ink';
 import { defaultTheme } from '../themes/classic-blue.js';
 import { features } from '../utils/platform.js';
@@ -17,7 +18,7 @@ const allFunctionKeys = [
 ];
 // Filter function keys based on platform features
 const functionKeys = allFunctionKeys.filter(fk => !fk.requiresFeature || features[fk.requiresFeature]);
-export default function FunctionBar({ message, width = 80 }) {
+export default memo(function FunctionBar({ message, width = 80 }) {
     const theme = defaultTheme;
     const itemWidth = Math.floor(width / functionKeys.length);
     // Show message if present
@@ -25,5 +26,5 @@ export default function FunctionBar({ message, width = 80 }) {
         return (_jsx(Box, { width: width, justifyContent: "center", children: _jsx(Text, { color: theme.colors.warning, bold: true, children: message }) }));
     }
     return (_jsx(Box, { width: width, children: functionKeys.map((fk) => (_jsxs(Box, { width: itemWidth, justifyContent: "center", children: [_jsx(Text, { color: theme.colors.textDim, children: fk.key }), _jsxs(Text, { color: theme.colors.text, children: [' ', fk.label] })] }, fk.key))) }));
-}
+});
 //# sourceMappingURL=FunctionBar.js.map

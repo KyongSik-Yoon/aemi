@@ -23,6 +23,7 @@ export async function executeCommand(prompt, sessionId = null, workingDir = proc
         };
         const args = [
             '-p',
+            '--dangerously-skip-permissions',
             '--output-format', 'json',
             '--append-system-prompt',
             `You are a terminal file manager assistant. Be concise. Focus on file operations. Suggest safe commands only. Respond in the same language as the user.
@@ -35,8 +36,6 @@ IMPORTANT: Format your responses using Markdown for better readability:
 - Use code blocks (\`\`\`language) for multi-line code or command examples
 - Use headers (## Title) to organize longer responses
 - Keep formatting minimal and terminal-friendly`,
-            // NOTE: Removed --dangerously-skip-permissions for security
-            // Claude will now ask for permission before executing commands
         ];
         // Resume session if available
         if (sessionId) {

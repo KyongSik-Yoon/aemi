@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import os from 'os';
 import path from 'path';
@@ -6,6 +6,7 @@ import Panel from '../components/Panel.js';
 import FunctionBar from '../components/FunctionBar.js';
 import StatusBar from '../components/StatusBar.js';
 import ConfirmDialog from '../components/ConfirmDialog.js';
+import AlertDialog from '../components/AlertDialog.js';
 import InputDialog from '../components/InputDialog.js';
 import SearchDialog, { SearchCriteria } from '../components/SearchDialog.js';
 import FileViewer from '../components/FileViewer.js';
@@ -16,10 +17,10 @@ import { defaultTheme } from '../themes/classic-blue.js';
 import * as fileOps from '../services/fileOps.js';
 import { isValidFilename } from '../services/fileOps.js';
 import type { FileItem, PanelSide, SortBy, SortOrder } from '../types/index.js';
-import { features } from '../utils/platform.js';
+import { features, checkClaudeCLI, resetClaudeCLICache } from '../utils/platform.js';
 import { APP_TITLE } from '../utils/version.js';
 import fs from 'fs';
-type ModalType = 'none' | 'help' | 'mkdir' | 'delete' | 'copy' | 'move' | 'view' | 'edit' | 'rename' | 'search' | 'advSearch' | 'info' | 'process' | 'goto';
+type ModalType = 'none' | 'help' | 'mkdir' | 'delete' | 'copy' | 'move' | 'view' | 'edit' | 'rename' | 'search' | 'advSearch' | 'info' | 'process' | 'goto' | 'claudeNotFound';
 
 interface PanelState {
   leftPath: string;
@@ -125,9 +126,6 @@ export default function DualPanel({
     return [];
   };
 
-  // Calculate totals
-  const calculateTotal = (files: FileItem[]) =>
-    files.reduce((sum, f) => sum + (f.isDirectory ? 0 : f.size), 0);
 
   // Refresh panels
   const refresh = useCallback(() => {
@@ -135,6 +133,9 @@ export default function DualPanel({
     setLeftSelected(new Set());
     setRightSelected(new Set());
   }, []);
+
+  // Close modal callback (reusable)
+  const closeModal = useCallback(() => setModal('none'), []);
 
   // 파일 목록 로드 핸들러 (상위 이동 시 이전 폴더에 포커스)
   const handleLeftFilesLoad = useCallback((files: FileItem[]) => {
@@ -530,20 +531,26 @@ export default function DualPanel({
 
     // . - AI Command (Unix-like systems only)
     if (input === '.') {
-      if (features.ai && onEnterAI) {
-        // AI 진입 전 현재 패널 상태 저장
-        if (onSavePanelState) {
-          onSavePanelState({
-            leftPath,
-            rightPath,
-            activePanel,
-            leftIndex,
-            rightIndex,
-          });
-        }
-        onEnterAI(currentPath);
-      } else if (!features.ai) {
+      if (!features.ai) {
         showMessage('AI command not available on this platform');
+      } else if (onEnterAI) {
+        // 캐시 리셋하고 Claude CLI 존재 여부 체크
+        resetClaudeCLICache();
+        if (!checkClaudeCLI()) {
+          setModal('claudeNotFound');
+        } else {
+          // AI 진입 전 현재 패널 상태 저장
+          if (onSavePanelState) {
+            onSavePanelState({
+              leftPath,
+              rightPath,
+              activePanel,
+              leftIndex,
+              rightIndex,
+            });
+          }
+          onEnterAI(currentPath);
+        }
       }
     }
 
@@ -598,10 +605,20 @@ export default function DualPanel({
     if (input === '0' || input === 'q' || input === 'Q') exit();
   });
 
-  const operationFiles = getOperationFiles();
-  const fileListStr = operationFiles.length <= 3
-    ? operationFiles.join(', ')
-    : `${operationFiles.slice(0, 2).join(', ')} and ${operationFiles.length - 2} more`;
+  // Memoized operation files and display string
+  const operationFiles = useMemo(() => getOperationFiles(), [currentSelected, currentFile]);
+  const fileListStr = useMemo(() =>
+    operationFiles.length <= 3
+      ? operationFiles.join(', ')
+      : `${operationFiles.slice(0, 2).join(', ')} and ${operationFiles.length - 2} more`,
+    [operationFiles]
+  );
+
+  // Memoized total size calculation
+  const currentTotalSize = useMemo(() =>
+    currentFiles.reduce((sum, f) => sum + (f.isDirectory ? 0 : f.size), 0),
+    [currentFiles]
+  );
 
   // 전체 화면 모달 여부 (view, edit, info, process)
   const isFullScreenModal = modal === 'view' || modal === 'edit' || modal === 'info' || modal === 'process';
@@ -609,7 +626,7 @@ export default function DualPanel({
   // 오버레이 다이얼로그 여부
   const isOverlayDialog = modal === 'help' || modal === 'copy' || modal === 'move' || modal === 'delete' ||
                           modal === 'mkdir' || modal === 'rename' || modal === 'search' || modal === 'advSearch' ||
-                          modal === 'goto';
+                          modal === 'goto' || modal === 'claudeNotFound';
 
   return (
     <Box flexDirection="column" height={termHeight} key={refreshKey}>
@@ -625,14 +642,14 @@ export default function DualPanel({
       {modal === 'view' && currentFile && (
         <FileViewer
           filePath={path.join(currentPath, currentFile.name)}
-          onClose={() => setModal('none')}
+          onClose={closeModal}
         />
       )}
 
       {modal === 'edit' && currentFile && (
         <FileEditor
           filePath={path.join(currentPath, currentFile.name)}
-          onClose={() => setModal('none')}
+          onClose={closeModal}
           onSave={refresh}
         />
       )}
@@ -640,12 +657,12 @@ export default function DualPanel({
       {modal === 'info' && currentFile && (
         <FileInfo
           filePath={path.join(currentPath, currentFile.name)}
-          onClose={() => setModal('none')}
+          onClose={closeModal}
         />
       )}
 
       {modal === 'process' && (
-        <ProcessManager onClose={() => setModal('none')} />
+        <ProcessManager onClose={closeModal} />
       )}
 
       {/* Dual Panels (always visible unless full screen modal) */}
@@ -738,7 +755,7 @@ export default function DualPanel({
                     title="Copy Files"
                     message={`Copy ${fileListStr} to ${targetPath}?`}
                     onConfirm={handleCopy}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -748,7 +765,7 @@ export default function DualPanel({
                     title="Move Files"
                     message={`Move ${fileListStr} to ${targetPath}?`}
                     onConfirm={handleMove}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -758,7 +775,7 @@ export default function DualPanel({
                     title="Delete Files"
                     message={`Delete ${fileListStr}? This cannot be undone!`}
                     onConfirm={handleDelete}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -768,7 +785,7 @@ export default function DualPanel({
                     title="Create Directory"
                     prompt="Enter directory name:"
                     onSubmit={handleMkdir}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -779,7 +796,7 @@ export default function DualPanel({
                     prompt={`Rename "${currentFile.name}" to:`}
                     defaultValue={currentFile.name}
                     onSubmit={handleRename}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -789,7 +806,7 @@ export default function DualPanel({
                     title="Find File"
                     prompt="Search for:"
                     onSubmit={handleSearch}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -797,7 +814,7 @@ export default function DualPanel({
                 {modal === 'advSearch' && (
                   <SearchDialog
                     onSubmit={handleAdvancedSearch}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
                   />
                 )}
 
@@ -808,7 +825,16 @@ export default function DualPanel({
                     prompt="Enter path:"
                     defaultValue={currentPath}
                     onSubmit={handleGoto}
-                    onCancel={() => setModal('none')}
+                    onCancel={closeModal}
+                  />
+                )}
+
+                {/* Claude CLI Not Found */}
+                {modal === 'claudeNotFound' && (
+                  <AlertDialog
+                    title="Claude CLI Not Found"
+                    message={'Claude CLI is not installed.\nPlease install Claude Code first.'}
+                    onClose={closeModal}
                   />
                 )}
               </Box>
@@ -820,7 +846,7 @@ export default function DualPanel({
             selectedFile={currentFile?.name}
             selectedSize={currentFile?.size}
             selectedCount={currentSelected.size}
-            totalSize={calculateTotal(currentFiles)}
+            totalSize={currentTotalSize}
           />
 
           {/* Function Bar */}

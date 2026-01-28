@@ -4,13 +4,13 @@
   "description": "Norton Commander style dual-panel file manager for terminal with AI-powered natural language commands",
   "main": "dist/index.js",
   "bin": {
-    "cokacdir": "./dist/cli.js"
+    "cokacdir": "./dist/index.js"
   },
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/cli.tsx",
     "build": "tsc",
-    "start": "node dist/cli.js",
+    "start": "node dist/index.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
