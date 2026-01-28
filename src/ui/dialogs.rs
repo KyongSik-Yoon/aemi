@@ -946,20 +946,7 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
                 update_path_suggestions(dialog);
             }
             KeyCode::Char(c) => {
-                if c == '/' && completion_visible {
-                    // '/' 입력 시 선택된 항목으로 완성 (Tab과 동일)
-                    let (base_dir, _) = parse_path_for_completion(&dialog.input);
-                    let suggestion = dialog
-                        .completion
-                        .as_ref()
-                        .and_then(|comp| comp.suggestions.get(comp.selected_index).cloned());
-
-                    if let Some(suggestion) = suggestion {
-                        apply_completion(dialog, &base_dir, &suggestion);
-                    }
-                    // 완성 후 새로운 suggestions 업데이트
-                    update_path_suggestions(dialog);
-                } else if c == '~' {
+                if c == '~' {
                     // '~' 입력 시 홈 폴더 경로로 설정
                     if let Some(home) = dirs::home_dir() {
                         dialog.input = format!("{}/", home.display());
