@@ -294,8 +294,16 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
+    // Add horizontal padding (1 char on each side)
+    let padded_inner = Rect::new(
+        inner.x + 1,
+        inner.y,
+        inner.width.saturating_sub(2),
+        inner.height,
+    );
+
     let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(paragraph, padded_inner);
 }
 
 fn info_line<'a>(label: &str, value: &str, theme: &Theme) -> Line<'a> {

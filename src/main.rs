@@ -21,7 +21,7 @@ use crate::ui::app::{App, Screen};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
-    println!("cokacdir {} - Norton Commander style dual-panel file manager", VERSION);
+    println!("cokacdir {} - Dual-panel terminal file manager", VERSION);
     println!();
     println!("USAGE:");
     println!("    cokacdir [OPTIONS]");

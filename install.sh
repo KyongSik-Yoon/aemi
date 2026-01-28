@@ -87,24 +87,16 @@ download() {
 }
 
 main() {
-    echo ""
-    echo "=================================="
-    echo "  COKACDIR Installer"
-    echo "=================================="
-    echo ""
-
     # Detect platform
     local os arch
     os="$(detect_os)"
     arch="$(detect_arch)"
 
-    info "Detected: $os-$arch"
+    info "Downloading cokacdir ($os-$arch)..."
 
     # Build download URL
     local filename="${BINARY_NAME}-${os}-${arch}"
     local url="${BASE_URL}/${filename}"
-
-    info "Downloading from: $url"
 
     # Create temp file
     local tmpfile
@@ -113,7 +105,7 @@ main() {
 
     # Download
     if ! download "$url" "$tmpfile"; then
-        error "Failed to download $url"
+        error "Download failed"
     fi
 
     # Make executable
@@ -124,37 +116,21 @@ main() {
     install_dir="$(get_install_dir)"
     local install_path="${install_dir}/${BINARY_NAME}"
 
-    info "Installing to: $install_path"
-
     # Install
     if [ -w "$install_dir" ]; then
         mv "$tmpfile" "$install_path"
     else
-        info "Requesting sudo access..."
         sudo mv "$tmpfile" "$install_path"
     fi
 
     # Verify installation
     if [ -x "$install_path" ]; then
-        success "Installed successfully!"
-        echo ""
-
         # Check if in PATH
         if ! echo "$PATH" | grep -q "$install_dir"; then
-            warn "$install_dir is not in your PATH"
-            echo ""
-            echo "Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
-            echo "  export PATH=\"$install_dir:\$PATH\""
-            echo ""
+            warn "Add to PATH: export PATH=\"$install_dir:\$PATH\""
         fi
 
-        # Show version
-        if has_cmd "$BINARY_NAME"; then
-            info "Version: $("$BINARY_NAME" --version 2>/dev/null || echo "unknown")"
-        fi
-
-        echo ""
-        success "Run '$BINARY_NAME --help' to get started"
+        success "Installed! Run 'cokacdir' to start."
     else
         error "Installation failed"
     fi

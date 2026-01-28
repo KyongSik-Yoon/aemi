@@ -54,7 +54,7 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Classic Norton Commander blue theme
+    /// Classic blue theme
     #[allow(dead_code)]
     pub fn classic_blue() -> Self {
         Self {

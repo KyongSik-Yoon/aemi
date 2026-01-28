@@ -522,7 +522,7 @@ Emoji: 🎉 🚀 ✨ (if supported)
 
         // Prepare context for async execution
         let context_prompt = format!(
-            "You are an AI assistant helping with file management in a Norton Commander-style file manager.
+            "You are an AI assistant helping with file management in a dual-panel terminal file manager.
 Current working directory: {}
 
 User request: {}

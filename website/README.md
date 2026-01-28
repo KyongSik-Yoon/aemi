@@ -1,6 +1,6 @@
 # COKACDIR Website
 
-Marketing and documentation website for [COKACDIR](https://github.com/kstost/cokacdir) - a Norton Commander-style dual-panel terminal file manager written in Rust.
+Marketing and documentation website for [COKACDIR](https://github.com/kstost/cokacdir) - a dual-panel terminal file manager written in Rust.
 
 **Live Site:** [https://cokacdir.cokac.com](https://cokacdir.cokac.com)
 
@@ -98,7 +98,7 @@ Animated hero section featuring:
 Six feature cards showcasing:
 - **Blazing Fast** - Rust performance (10ms startup, 5MB memory)
 - **AI-Powered Commands** - Natural language file operations via Claude
-- **Dual Panel** - Classic Norton Commander-style layout
+- **Dual Panel** - Classic dual-panel layout
 - **Keyboard Driven** - Full keyboard navigation
 - **Viewer & Editor** - Built-in file viewing and editing
 - **Process Manager** - System process management

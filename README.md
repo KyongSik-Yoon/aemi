@@ -1,6 +1,6 @@
 # COKACDIR
 
-Norton Commander style dual-panel file manager for terminal with AI-powered natural language commands.
+Dual-panel terminal file manager with AI-powered natural language commands.
 
 **Terminal File Manager for Vibe Coders** - An easy terminal explorer for vibe coders who are scared of the terminal.
 
@@ -8,7 +8,7 @@ Norton Commander style dual-panel file manager for terminal with AI-powered natu
 
 - **Blazing Fast**: Written in Rust for maximum performance. ~10ms startup, ~5MB memory usage, ~4MB static binary with zero runtime dependencies.
 - **AI-Powered Commands**: Natural language file operations powered by Claude AI. Press `.` and describe what you want.
-- **Dual-Panel Navigation**: Classic Norton Commander style interface
+- **Dual-Panel Navigation**: Classic dual-panel interface for efficient file management
 - **Keyboard Driven**: Full keyboard navigation designed for power users
 - **Built-in Viewer & Editor**: View and edit files directly without leaving the application
 - **Process Manager**: Monitor and manage system processes. Sort by CPU, memory, or PID.
