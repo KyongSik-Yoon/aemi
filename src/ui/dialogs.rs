@@ -13,7 +13,7 @@ use ratatui::{
 use crate::services::file_ops::FileOperationType;
 
 use super::{
-    app::{App, Dialog, DialogType, PathCompletion},
+    app::{App, ConflictResolution, ConflictState, Dialog, DialogType, PathCompletion},
     theme::Theme,
 };
 
@@ -229,6 +229,7 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         }
         DialogType::Search | DialogType::Mkdir | DialogType::Rename => (50u16, 5u16),  // 간결한 입력창
         DialogType::Progress => (50u16, 10u16),  // Progress dialog
+        DialogType::DuplicateConflict => (50u16, 10u16),  // Duplicate conflict dialog
     };
 
     let x = area.x + (area.width.saturating_sub(width)) / 2;
@@ -259,6 +260,11 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         }
         DialogType::Progress => {
             draw_progress_dialog(frame, app, dialog_area, theme);
+        }
+        DialogType::DuplicateConflict => {
+            if let Some(ref state) = app.conflict_state {
+                draw_duplicate_conflict_dialog(frame, dialog, state, dialog_area, theme);
+            }
         }
     }
 }
@@ -782,6 +788,119 @@ fn draw_progress_dialog(frame: &mut Frame, app: &App, area: Rect, theme: &Theme)
     );
 }
 
+/// Duplicate conflict dialog for file paste operations
+fn draw_duplicate_conflict_dialog(
+    frame: &mut Frame,
+    dialog: &Dialog,
+    state: &ConflictState,
+    area: Rect,
+    theme: &Theme,
+) {
+    let block = Block::default()
+        .title(" File Exists ")
+        .title_style(theme.header_style())
+        .borders(Borders::ALL)
+        .border_style(theme.border_style(true));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Get current conflict info
+    let (_, _, display_name) = state.conflicts.get(state.current_index)
+        .cloned()
+        .unwrap_or_else(|| (PathBuf::new(), PathBuf::new(), String::new()));
+
+    // Line 1: "File already exists:"
+    let label_area = Rect::new(inner.x + 2, inner.y + 1, inner.width - 4, 1);
+    frame.render_widget(
+        Paragraph::new("File already exists:").style(theme.normal_style()),
+        label_area,
+    );
+
+    // Line 2: filename (quoted, truncated if needed)
+    let max_name_len = (inner.width - 6) as usize;
+    let truncated_name = if display_name.len() > max_name_len {
+        format!("\"{}...\"", &display_name[..max_name_len.saturating_sub(4)])
+    } else {
+        format!("\"{}\"", display_name)
+    };
+    let filename_area = Rect::new(inner.x + 2, inner.y + 2, inner.width - 4, 1);
+    frame.render_widget(
+        Paragraph::new(truncated_name).style(theme.info_style()),
+        filename_area,
+    );
+
+    // Line 3: progress indicator "(1 of 3 conflicts)" or "(1 of 1 conflict)"
+    let total = state.conflicts.len();
+    let current = state.current_index + 1;
+    let conflict_word = if total == 1 { "conflict" } else { "conflicts" };
+    let progress_text = format!("({} of {} {})", current, total, conflict_word);
+    let progress_area = Rect::new(inner.x + 2, inner.y + 3, inner.width - 4, 1);
+    frame.render_widget(
+        Paragraph::new(progress_text).style(theme.dim_style()),
+        progress_area,
+    );
+
+    // Buttons - 2 rows of 2 buttons each
+    // Row 1: Overwrite (0), Skip (1)
+    // Row 2: Overwrite All (2), Skip All (3)
+    let selected = dialog.selected_button;
+
+    let normal_style = theme.dim_style();
+    let selected_style = theme.selected_style();
+
+    // Calculate button positions
+    let button_y1 = inner.y + 5;
+    let button_y2 = inner.y + 6;
+    let col1_x = inner.x + 4;
+    let col2_x = inner.x + inner.width / 2 + 2;
+
+    // Button labels with shortcuts
+    let btn_overwrite = " [O]verwrite ";
+    let btn_skip = " [S]kip ";
+    let btn_overwrite_all = " Overwrite [A]ll ";
+    let btn_skip_all = " Skip A[l]l ";
+
+    // Row 1
+    let overwrite_style = if selected == 0 { selected_style } else { normal_style };
+    let skip_style = if selected == 1 { selected_style } else { normal_style };
+    frame.render_widget(
+        Paragraph::new(btn_overwrite).style(overwrite_style),
+        Rect::new(col1_x, button_y1, btn_overwrite.len() as u16, 1),
+    );
+    frame.render_widget(
+        Paragraph::new(btn_skip).style(skip_style),
+        Rect::new(col2_x, button_y1, btn_skip.len() as u16, 1),
+    );
+
+    // Row 2
+    let overwrite_all_style = if selected == 2 { selected_style } else { normal_style };
+    let skip_all_style = if selected == 3 { selected_style } else { normal_style };
+    frame.render_widget(
+        Paragraph::new(btn_overwrite_all).style(overwrite_all_style),
+        Rect::new(col1_x, button_y2, btn_overwrite_all.len() as u16, 1),
+    );
+    frame.render_widget(
+        Paragraph::new(btn_skip_all).style(skip_all_style),
+        Rect::new(col2_x, button_y2, btn_skip_all.len() as u16, 1),
+    );
+
+    // Help text at bottom
+    let help_line = Line::from(vec![
+        Span::styled("←→↑↓", theme.header_style()),
+        Span::styled(":select ", theme.dim_style()),
+        Span::styled("Enter", theme.header_style()),
+        Span::styled(":confirm ", theme.dim_style()),
+        Span::styled("Esc", theme.header_style()),
+        Span::styled(":cancel", theme.dim_style()),
+    ]);
+    let help_area = Rect::new(inner.x + 1, inner.y + inner.height - 1, inner.width - 2, 1);
+    frame.render_widget(
+        Paragraph::new(help_line).alignment(ratatui::layout::Alignment::Center),
+        help_area,
+    );
+}
+
 /// Format file size for display
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -937,6 +1056,9 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
             }
             DialogType::Progress => {
                 return handle_progress_dialog_input(app, code);
+            }
+            DialogType::DuplicateConflict => {
+                return handle_duplicate_conflict_input(app, code, modifiers);
             }
             _ => {
                 match code {
@@ -1270,6 +1392,170 @@ fn handle_progress_dialog_input(app: &mut App, code: KeyCode) -> bool {
         // Dialog will be closed when the operation completes (or is cancelled)
     }
     false
+}
+
+/// Handle duplicate conflict dialog input
+fn handle_duplicate_conflict_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> bool {
+    if let Some(ref mut dialog) = app.dialog {
+        match code {
+            // Shortcut keys
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                resolve_current_conflict(app, ConflictResolution::Overwrite);
+                return false;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                resolve_current_conflict(app, ConflictResolution::Skip);
+                return false;
+            }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                resolve_current_conflict(app, ConflictResolution::OverwriteAll);
+                return false;
+            }
+            KeyCode::Char('l') | KeyCode::Char('L') => {
+                resolve_current_conflict(app, ConflictResolution::SkipAll);
+                return false;
+            }
+
+            // Navigation - 2x2 grid layout:
+            // 0 (Overwrite)     1 (Skip)
+            // 2 (Overwrite All) 3 (Skip All)
+            KeyCode::Left => {
+                // Move left in row: 1->0, 3->2
+                if dialog.selected_button == 1 {
+                    dialog.selected_button = 0;
+                } else if dialog.selected_button == 3 {
+                    dialog.selected_button = 2;
+                }
+            }
+            KeyCode::Right => {
+                // Move right in row: 0->1, 2->3
+                if dialog.selected_button == 0 {
+                    dialog.selected_button = 1;
+                } else if dialog.selected_button == 2 {
+                    dialog.selected_button = 3;
+                }
+            }
+            KeyCode::Up => {
+                // Move up between rows: 2->0, 3->1
+                if dialog.selected_button == 2 {
+                    dialog.selected_button = 0;
+                } else if dialog.selected_button == 3 {
+                    dialog.selected_button = 1;
+                }
+            }
+            KeyCode::Down => {
+                // Move down between rows: 0->2, 1->3
+                if dialog.selected_button == 0 {
+                    dialog.selected_button = 2;
+                } else if dialog.selected_button == 1 {
+                    dialog.selected_button = 3;
+                }
+            }
+            KeyCode::Tab => {
+                // Cycle through buttons: 0->1->2->3->0
+                dialog.selected_button = (dialog.selected_button + 1) % 4;
+            }
+            KeyCode::BackTab => {
+                // Reverse cycle: 0->3->2->1->0
+                dialog.selected_button = if dialog.selected_button == 0 {
+                    3
+                } else {
+                    dialog.selected_button - 1
+                };
+            }
+
+            KeyCode::Enter => {
+                let resolution = match dialog.selected_button {
+                    0 => ConflictResolution::Overwrite,
+                    1 => ConflictResolution::Skip,
+                    2 => ConflictResolution::OverwriteAll,
+                    3 => ConflictResolution::SkipAll,
+                    _ => ConflictResolution::Skip,
+                };
+                resolve_current_conflict(app, resolution);
+                return false;
+            }
+
+            KeyCode::Esc => {
+                // Cancel entire operation - restore clipboard if it was a copy operation
+                if let Some(ref state) = app.conflict_state {
+                    if !state.is_move_operation {
+                        // Restore clipboard for copy operations
+                        if let Some(ref backup) = state.clipboard_backup {
+                            app.clipboard = Some(backup.clone());
+                        }
+                    }
+                }
+                app.dialog = None;
+                app.conflict_state = None;
+                app.show_message("Paste operation cancelled");
+            }
+
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Resolve current conflict with the given resolution
+fn resolve_current_conflict(app: &mut App, resolution: ConflictResolution) {
+    let should_finish = {
+        let state = match app.conflict_state.as_mut() {
+            Some(s) => s,
+            None => return,
+        };
+
+        match resolution {
+            ConflictResolution::Overwrite => {
+                // Mark current file for overwrite
+                if let Some((src, _, _)) = state.conflicts.get(state.current_index) {
+                    state.files_to_overwrite.push(src.clone());
+                }
+                advance_to_next_conflict(state)
+            }
+            ConflictResolution::Skip => {
+                // Mark current file for skip
+                if let Some((src, _, _)) = state.conflicts.get(state.current_index) {
+                    state.files_to_skip.push(src.clone());
+                }
+                advance_to_next_conflict(state)
+            }
+            ConflictResolution::OverwriteAll => {
+                // Mark all remaining conflicts for overwrite
+                for i in state.current_index..state.conflicts.len() {
+                    if let Some((src, _, _)) = state.conflicts.get(i) {
+                        state.files_to_overwrite.push(src.clone());
+                    }
+                }
+                true // Finished
+            }
+            ConflictResolution::SkipAll => {
+                // Mark all remaining conflicts for skip
+                for i in state.current_index..state.conflicts.len() {
+                    if let Some((src, _, _)) = state.conflicts.get(i) {
+                        state.files_to_skip.push(src.clone());
+                    }
+                }
+                true // Finished
+            }
+        }
+    };
+
+    if should_finish {
+        finish_conflict_resolution(app);
+    }
+}
+
+/// Advance to next conflict, returns true if all conflicts resolved
+fn advance_to_next_conflict(state: &mut ConflictState) -> bool {
+    state.current_index += 1;
+    state.current_index >= state.conflicts.len()
+}
+
+/// Finish conflict resolution and execute the paste operation
+fn finish_conflict_resolution(app: &mut App) {
+    app.dialog = None;
+    app.execute_paste_with_conflicts();
 }
 
 #[cfg(test)]

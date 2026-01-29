@@ -91,6 +91,33 @@ pub enum DialogType {
     LargeImageConfirm,
     TrueColorWarning,
     Progress,
+    DuplicateConflict,
+}
+
+/// Resolution option for duplicate file conflicts
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictResolution {
+    Overwrite,
+    Skip,
+    OverwriteAll,
+    SkipAll,
+}
+
+/// State for managing file conflict resolution during paste operations
+#[derive(Debug, Clone)]
+pub struct ConflictState {
+    /// List of conflicts: (source path, destination path, display name)
+    pub conflicts: Vec<(PathBuf, PathBuf, String)>,
+    /// Current conflict index being resolved
+    pub current_index: usize,
+    /// Files that user chose to overwrite
+    pub files_to_overwrite: Vec<PathBuf>,
+    /// Files that user chose to skip
+    pub files_to_skip: Vec<PathBuf>,
+    /// Backup of clipboard for the operation
+    pub clipboard_backup: Option<Clipboard>,
+    /// Whether this is a move (cut) operation
+    pub is_move_operation: bool,
 }
 
 /// Clipboard operation type for Ctrl+C/X/V operations
@@ -472,6 +499,9 @@ pub struct App {
 
     // File operation progress state
     pub file_operation_progress: Option<FileOperationProgress>,
+
+    // Conflict resolution state for duplicate file handling
+    pub conflict_state: Option<ConflictState>,
 }
 
 impl App {
@@ -526,6 +556,7 @@ impl App {
             previous_screen: None,
             clipboard: None,
             file_operation_progress: None,
+            conflict_state: None,
         }
     }
 
@@ -1075,12 +1106,14 @@ impl App {
         // Convert files to PathBuf
         let file_paths: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
 
-        // Start copy in background thread
+        // Start copy in background thread (empty overwrite/skip sets for F5 dialog copy)
         thread::spawn(move || {
             file_ops::copy_files_with_progress(
                 file_paths,
                 &source_path,
                 &target_path,
+                HashSet::new(),
+                HashSet::new(),
                 cancel_flag,
                 tx,
             );
@@ -1150,12 +1183,14 @@ impl App {
         // Convert files to PathBuf
         let file_paths: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
 
-        // Start move in background thread
+        // Start move in background thread (empty overwrite/skip sets for F6 dialog move)
         thread::spawn(move || {
             file_ops::move_files_with_progress(
                 file_paths,
                 &source_path,
                 &target_path,
+                HashSet::new(),
+                HashSet::new(),
                 cancel_flag,
                 tx,
             );
@@ -1297,6 +1332,62 @@ impl App {
             return;
         }
 
+        // Detect conflicts (files that already exist at destination)
+        let conflicts = self.detect_paste_conflicts(&clipboard, &target_path, &valid_files);
+
+        if !conflicts.is_empty() {
+            // Has conflicts - show conflict dialog
+            let is_move = clipboard.operation == ClipboardOperation::Cut;
+            self.conflict_state = Some(ConflictState {
+                conflicts,
+                current_index: 0,
+                files_to_overwrite: Vec::new(),
+                files_to_skip: Vec::new(),
+                clipboard_backup: Some(clipboard),
+                is_move_operation: is_move,
+            });
+            self.show_duplicate_conflict_dialog();
+            return;
+        }
+
+        // No conflicts - proceed with normal paste
+        self.execute_paste_operation(clipboard, valid_files, target_path);
+    }
+
+    /// Detect files that would conflict (already exist) at paste destination
+    fn detect_paste_conflicts(
+        &self,
+        clipboard: &Clipboard,
+        target_dir: &Path,
+        valid_files: &[String],
+    ) -> Vec<(PathBuf, PathBuf, String)> {
+        let mut conflicts = Vec::new();
+
+        for file_name in valid_files {
+            let src = clipboard.source_path.join(file_name);
+            let dest = target_dir.join(file_name);
+
+            if dest.exists() {
+                conflicts.push((src, dest, file_name.clone()));
+            }
+        }
+
+        conflicts
+    }
+
+    /// Show the duplicate conflict dialog
+    pub fn show_duplicate_conflict_dialog(&mut self) {
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::DuplicateConflict,
+            input: String::new(),
+            message: String::new(),
+            completion: None,
+            selected_button: 0,
+        });
+    }
+
+    /// Execute paste operation (internal, called after conflict resolution or when no conflicts)
+    fn execute_paste_operation(&mut self, clipboard: Clipboard, valid_files: Vec<String>, target_path: PathBuf) {
         // Determine operation type for progress
         let operation_type = match clipboard.operation {
             ClipboardOperation::Copy => FileOperationType::Copy,
@@ -1325,6 +1416,8 @@ impl App {
                         file_paths,
                         &source_path,
                         &target_path,
+                        HashSet::new(),
+                        HashSet::new(),
                         cancel_flag,
                         tx,
                     );
@@ -1334,6 +1427,118 @@ impl App {
                         file_paths,
                         &source_path,
                         &target_path,
+                        HashSet::new(),
+                        HashSet::new(),
+                        cancel_flag,
+                        tx,
+                    );
+                }
+            }
+        });
+
+        // Store progress state and show dialog
+        self.file_operation_progress = Some(progress);
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::Progress,
+            input: String::new(),
+            message: String::new(),
+            completion: None,
+            selected_button: 0,
+        });
+
+        // Keep clipboard for copy operations (can paste multiple times)
+        // Clear clipboard for cut operations (files are moved)
+        if clipboard.operation == ClipboardOperation::Copy {
+            self.clipboard = Some(clipboard);
+        }
+    }
+
+    /// Execute paste operation with conflict resolution (overwrite/skip sets)
+    pub fn execute_paste_with_conflicts(&mut self) {
+        let conflict_state = match self.conflict_state.take() {
+            Some(state) => state,
+            None => return,
+        };
+
+        let clipboard = match conflict_state.clipboard_backup {
+            Some(cb) => cb,
+            None => return,
+        };
+
+        let target_path = self.active_panel().path.clone();
+
+        // Build all files to process (from original clipboard)
+        let valid_files: Vec<String> = clipboard.files.clone();
+
+        // Build overwrite and skip sets from source paths
+        let files_to_overwrite: HashSet<PathBuf> = conflict_state
+            .files_to_overwrite
+            .into_iter()
+            .collect();
+        let files_to_skip: HashSet<PathBuf> = conflict_state
+            .files_to_skip
+            .into_iter()
+            .collect();
+
+        // Check if all files would be skipped
+        let files_to_process: Vec<&String> = valid_files.iter()
+            .filter(|f| {
+                let src = clipboard.source_path.join(f);
+                !files_to_skip.contains(&src)
+            })
+            .collect();
+
+        if files_to_process.is_empty() {
+            // All files were skipped - show message and restore clipboard if copy
+            if clipboard.operation == ClipboardOperation::Copy {
+                self.clipboard = Some(clipboard);
+            }
+            self.show_message("All files skipped");
+            self.refresh_panels();
+            return;
+        }
+
+        // Determine operation type for progress
+        let operation_type = match clipboard.operation {
+            ClipboardOperation::Copy => FileOperationType::Copy,
+            ClipboardOperation::Cut => FileOperationType::Move,
+        };
+
+        // Create progress state
+        let mut progress = FileOperationProgress::new(operation_type);
+        progress.is_active = true;
+        let cancel_flag = progress.cancel_flag.clone();
+
+        // Create channel for progress messages
+        let (tx, rx) = mpsc::channel();
+        progress.receiver = Some(rx);
+
+        // Convert files to PathBuf
+        let file_paths: Vec<PathBuf> = valid_files.iter().map(PathBuf::from).collect();
+        let source_path = clipboard.source_path.clone();
+
+        // Start operation in background thread
+        let clipboard_operation = clipboard.operation;
+        thread::spawn(move || {
+            match clipboard_operation {
+                ClipboardOperation::Copy => {
+                    file_ops::copy_files_with_progress(
+                        file_paths,
+                        &source_path,
+                        &target_path,
+                        files_to_overwrite,
+                        files_to_skip,
+                        cancel_flag,
+                        tx,
+                    );
+                }
+                ClipboardOperation::Cut => {
+                    file_ops::move_files_with_progress(
+                        file_paths,
+                        &source_path,
+                        &target_path,
+                        files_to_overwrite,
+                        files_to_skip,
                         cancel_flag,
                         tx,
                     );

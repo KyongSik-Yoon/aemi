@@ -322,19 +322,24 @@ pub fn copy_dir_recursive_with_progress(
 }
 
 /// Copy files with progress reporting (main entry point for progress-enabled copy)
+/// files_to_overwrite: Set of source paths that should overwrite existing destinations
+/// files_to_skip: Set of source paths that should be skipped if destination exists
 pub fn copy_files_with_progress(
     files: Vec<PathBuf>,
     source_dir: &Path,
     target_dir: &Path,
+    files_to_overwrite: HashSet<PathBuf>,
+    files_to_skip: HashSet<PathBuf>,
     cancel_flag: Arc<AtomicBool>,
     progress_tx: Sender<ProgressMessage>,
 ) {
     let mut success_count = 0;
     let mut failure_count = 0;
 
-    // Build full paths for size calculation
+    // Build full paths for size calculation (excluding skipped files)
     let full_paths: Vec<PathBuf> = files.iter()
         .map(|f| if f.is_absolute() { f.clone() } else { source_dir.join(f) })
+        .filter(|p| !files_to_skip.contains(p))
         .collect();
 
     // Calculate total size
@@ -367,14 +372,32 @@ pub fn copy_files_with_progress(
 
         let dest = target_dir.join(&filename);
 
+        // Check if this file should be skipped
+        if files_to_skip.contains(&src) {
+            continue;
+        }
+
         // Check if destination already exists
         if dest.exists() {
-            failure_count += 1;
-            let _ = progress_tx.send(ProgressMessage::Error(
-                filename,
-                "Target already exists".to_string(),
-            ));
-            continue;
+            if files_to_overwrite.contains(&src) {
+                // Delete existing file/directory before copying
+                if let Err(e) = delete_file(&dest) {
+                    failure_count += 1;
+                    let _ = progress_tx.send(ProgressMessage::Error(
+                        filename,
+                        format!("Failed to remove existing: {}", e),
+                    ));
+                    continue;
+                }
+            } else {
+                // Not in overwrite set and not in skip set - unexpected conflict
+                failure_count += 1;
+                let _ = progress_tx.send(ProgressMessage::Error(
+                    filename,
+                    "Target already exists".to_string(),
+                ));
+                continue;
+            }
         }
 
         let _ = progress_tx.send(ProgressMessage::FileStarted(filename.clone()));
@@ -443,19 +466,24 @@ pub fn copy_files_with_progress(
 }
 
 /// Move files with progress reporting
+/// files_to_overwrite: Set of source paths that should overwrite existing destinations
+/// files_to_skip: Set of source paths that should be skipped if destination exists
 pub fn move_files_with_progress(
     files: Vec<PathBuf>,
     source_dir: &Path,
     target_dir: &Path,
+    files_to_overwrite: HashSet<PathBuf>,
+    files_to_skip: HashSet<PathBuf>,
     cancel_flag: Arc<AtomicBool>,
     progress_tx: Sender<ProgressMessage>,
 ) {
     let mut success_count = 0;
     let mut failure_count = 0;
 
-    // Build full paths for size calculation
+    // Build full paths for size calculation (excluding skipped files)
     let full_paths: Vec<PathBuf> = files.iter()
         .map(|f| if f.is_absolute() { f.clone() } else { source_dir.join(f) })
+        .filter(|p| !files_to_skip.contains(p))
         .collect();
 
     // Calculate total size upfront for accurate progress
@@ -491,6 +519,11 @@ pub fn move_files_with_progress(
 
         let dest = target_dir.join(&filename);
 
+        // Check if this file should be skipped
+        if files_to_skip.contains(&src) {
+            continue;
+        }
+
         // Get file/dir size for progress tracking
         let (item_size, item_files) = if src.is_dir() {
             calculate_dir_size(&src, &cancel_flag).unwrap_or((0, 1))
@@ -500,12 +533,25 @@ pub fn move_files_with_progress(
 
         // Check if destination already exists
         if dest.exists() {
-            failure_count += 1;
-            let _ = progress_tx.send(ProgressMessage::Error(
-                filename,
-                "Target already exists".to_string(),
-            ));
-            continue;
+            if files_to_overwrite.contains(&src) {
+                // Delete existing file/directory before moving
+                if let Err(e) = delete_file(&dest) {
+                    failure_count += 1;
+                    let _ = progress_tx.send(ProgressMessage::Error(
+                        filename,
+                        format!("Failed to remove existing: {}", e),
+                    ));
+                    continue;
+                }
+            } else {
+                // Not in overwrite set and not in skip set - unexpected conflict
+                failure_count += 1;
+                let _ = progress_tx.send(ProgressMessage::Error(
+                    filename,
+                    "Target already exists".to_string(),
+                ));
+                continue;
+            }
         }
 
         let _ = progress_tx.send(ProgressMessage::FileStarted(filename.clone()));
