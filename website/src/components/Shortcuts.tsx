@@ -23,6 +23,14 @@ const shortcutGroups = [
     ],
   },
   {
+    title: 'Clipboard',
+    shortcuts: [
+      { key: 'Ctrl+C', action: 'Copy to clipboard' },
+      { key: 'Ctrl+X', action: 'Cut to clipboard' },
+      { key: 'Ctrl+V', action: 'Paste from clipboard' },
+    ],
+  },
+  {
     title: 'View & Tools',
     shortcuts: [
       { key: 'h', action: 'Help' },

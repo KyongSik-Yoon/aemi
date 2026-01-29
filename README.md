@@ -95,6 +95,14 @@ Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cod
 | `x` | Delete |
 | `r` | Rename |
 
+### Clipboard Operations
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Copy to clipboard |
+| `Ctrl+X` | Cut to clipboard |
+| `Ctrl+V` | Paste from clipboard |
+
 ### View & Tools
 
 | Key | Action |
