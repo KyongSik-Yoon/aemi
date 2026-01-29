@@ -238,10 +238,25 @@ fn apply_completion(dialog: &mut Dialog, base_dir: &Path, suggestion: &str) {
 }
 
 pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, theme: &Theme) {
-    // 자동완성 목록이 표시될 경우 높이 동적 조정
+    // 다이얼로그 크기 상수
+    const MAX_COMPLETION_ITEMS: u16 = 8;      // 자동완성 목록 최대 표시 항목 수
+    const COMPLETION_EXTRA_HEIGHT: u16 = 1;   // 자동완성 목록 추가 여백
+    const MAX_COMPLETION_HEIGHT: u16 = MAX_COMPLETION_ITEMS + COMPLETION_EXTRA_HEIGHT;
+
+    const DIALOG_MARGIN: u16 = 6;             // 다이얼로그 좌우 여백 (양쪽 3씩)
+    const DIALOG_MIN_WIDTH: u16 = 60;         // 다이얼로그 최소 너비
+    const SIMPLE_DIALOG_WIDTH: u16 = 50;      // 간단한 다이얼로그 너비
+
+    const GOTO_BASE_HEIGHT: u16 = 6;          // Goto 다이얼로그 기본 높이
+    const COPY_MOVE_BASE_HEIGHT: u16 = 7;     // Copy/Move 다이얼로그 기본 높이
+    const SIMPLE_INPUT_HEIGHT: u16 = 5;       // 간단한 입력 다이얼로그 높이
+    const CONFIRM_DIALOG_HEIGHT: u16 = 6;     // 확인 다이얼로그 높이
+    const PROGRESS_DIALOG_HEIGHT: u16 = 10;   // 프로그레스 다이얼로그 높이
+
+    // 자동완성 목록 현재 높이 계산
     let completion_height = if let Some(ref completion) = dialog.completion {
         if completion.visible && !completion.suggestions.is_empty() {
-            completion.suggestions.len().min(8) as u16 + 1
+            (completion.suggestions.len() as u16).min(MAX_COMPLETION_ITEMS) + COMPLETION_EXTRA_HEIGHT
         } else {
             0
         }
@@ -250,24 +265,37 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
     };
 
     // 다이얼로그 타입별 크기 설정
-    let (width, height) = match dialog.dialog_type {
-        DialogType::Delete | DialogType::LargeImageConfirm | DialogType::TrueColorWarning => (50u16, 6u16),
+    // Y좌표는 max_height 기준 고정, 실제 높이는 동적
+    let (width, height, max_height) = match dialog.dialog_type {
+        DialogType::Delete | DialogType::LargeImageConfirm | DialogType::TrueColorWarning => {
+            (SIMPLE_DIALOG_WIDTH, CONFIRM_DIALOG_HEIGHT, CONFIRM_DIALOG_HEIGHT)
+        }
         DialogType::Copy | DialogType::Move => {
-            let w = area.width.saturating_sub(6).max(60);
-            (w, 7 + completion_height)
+            let w = area.width.saturating_sub(DIALOG_MARGIN).max(DIALOG_MIN_WIDTH);
+            let max_h = COPY_MOVE_BASE_HEIGHT + MAX_COMPLETION_HEIGHT;
+            let h = COPY_MOVE_BASE_HEIGHT + completion_height;
+            (w, h, max_h)
         }
         DialogType::Goto => {
-            // 터미널 너비 - 여백 6 (양쪽 3씩)
-            let w = area.width.saturating_sub(6).max(60);
-            (w, 6 + completion_height)
+            let w = area.width.saturating_sub(DIALOG_MARGIN).max(DIALOG_MIN_WIDTH);
+            let max_h = GOTO_BASE_HEIGHT + MAX_COMPLETION_HEIGHT;
+            let h = GOTO_BASE_HEIGHT + completion_height;
+            (w, h, max_h)
         }
-        DialogType::Search | DialogType::Mkdir | DialogType::Rename => (50u16, 5u16),  // 간결한 입력창
-        DialogType::Progress => (50u16, 10u16),  // Progress dialog
-        DialogType::DuplicateConflict => (50u16, 10u16),  // Duplicate conflict dialog
+        DialogType::Search | DialogType::Mkdir | DialogType::Rename => {
+            (SIMPLE_DIALOG_WIDTH, SIMPLE_INPUT_HEIGHT, SIMPLE_INPUT_HEIGHT)
+        }
+        DialogType::Progress => {
+            (SIMPLE_DIALOG_WIDTH, PROGRESS_DIALOG_HEIGHT, PROGRESS_DIALOG_HEIGHT)
+        }
+        DialogType::DuplicateConflict => {
+            (SIMPLE_DIALOG_WIDTH, PROGRESS_DIALOG_HEIGHT, PROGRESS_DIALOG_HEIGHT)
+        }
     };
 
     let x = area.x + (area.width.saturating_sub(width)) / 2;
-    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    // Y좌표는 항상 최대 높이 기준으로 계산 (절대 고정)
+    let y = area.y + (area.height.saturating_sub(max_height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
 
     // Clear the area
@@ -438,8 +466,15 @@ fn draw_copy_move_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // 레이아웃 Y 좌표 계산 (상대적 위치)
+    let message_y = inner.y;
+    let input_y = message_y + 2;  // 메시지 아래 1줄 여백 후
+    let list_y = input_y + 1;     // 입력창 바로 아래
+    let help_y = inner.y + inner.height - 1;  // 하단
+    let list_height = help_y.saturating_sub(list_y).saturating_sub(1);  // 목록과 도움말 사이 여백
+
     // 파일 목록 메시지
-    let message_area = Rect::new(inner.x + 1, inner.y, inner.width - 2, 1);
+    let message_area = Rect::new(inner.x + 1, message_y, inner.width - 2, 1);
     frame.render_widget(
         Paragraph::new(dialog.message.clone()).style(theme.normal_style()),
         message_area,
@@ -544,11 +579,10 @@ fn draw_copy_move_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: 
         Span::styled(after_cursor, theme.normal_style()),
         Span::styled(&display_preview_after, theme.dim_style()),
     ]);
-    let input_area = Rect::new(inner.x + 1, inner.y + 2, inner.width - 2, 1);
+    let input_area = Rect::new(inner.x + 1, input_y, inner.width - 2, 1);
     frame.render_widget(Paragraph::new(input_line), input_area);
 
-    // 자동완성 목록 (입력창 아래 한 칸 여백)
-    let list_start_y = inner.y + 4;
+    // 자동완성 목록
     // 루트 경로일 때는 "/" 위치에 맞추기 위해 1 감소 (단, prefix가 있을 때만)
     let list_x = if is_root_path && display_prefix_start > 0 {
         inner.x + 1 + 2 + display_prefix_start as u16 - 1
@@ -566,7 +600,7 @@ fn draw_copy_move_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: 
             draw_completion_list(
                 frame,
                 completion,
-                Rect::new(list_x, list_start_y, list_width, inner.height.saturating_sub(6)),
+                Rect::new(list_x, list_y, list_width, list_height),
                 theme,
                 is_root_path,
             );
@@ -582,7 +616,7 @@ fn draw_copy_move_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: 
         Span::styled("Esc", theme.header_style()),
         Span::styled(":cancel", theme.dim_style()),
     ]);
-    let help_area = Rect::new(inner.x + 1, inner.y + inner.height - 1, inner.width - 2, 1);
+    let help_area = Rect::new(inner.x + 1, help_y, inner.width - 2, 1);
     frame.render_widget(Paragraph::new(help_line), help_area);
 }
 
@@ -649,6 +683,12 @@ fn draw_goto_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Them
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    // 레이아웃 Y 좌표 계산 (상대적 위치)
+    let input_y = inner.y + 1;    // 상단 여백 1줄
+    let list_y = input_y + 1;     // 입력창 바로 아래
+    let help_y = inner.y + inner.height - 1;  // 하단
+    let list_height = help_y.saturating_sub(list_y).saturating_sub(1);  // 목록과 도움말 사이 여백
 
     // 입력에서 완성할 이름(prefix)의 시작 위치 계산 (char 인덱스)
     let input_chars: Vec<char> = dialog.input.chars().collect();
@@ -763,11 +803,10 @@ fn draw_goto_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Them
         Span::styled(after_cursor, theme.normal_style()),
         Span::styled(&display_preview_after, theme.dim_style()),  // 흐리게 미리보기
     ]);
-    let input_area = Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1);
+    let input_area = Rect::new(inner.x + 1, input_y, inner.width - 2, 1);
     frame.render_widget(Paragraph::new(input_line), input_area);
 
     // 자동완성 목록 표시 (prefix 시작 위치에 맞춤)
-    let list_start_y = inner.y + 2;
     // x 좌표: inner.x + 1 (패딩) + 2 ("> ") + prefix 시작 위치
     // 루트 경로일 때는 "/" 위치에 맞추기 위해 1 감소 (단, prefix가 있을 때만)
     let list_x = if is_root_path && display_prefix_start > 0 {
@@ -786,7 +825,7 @@ fn draw_goto_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Them
             draw_completion_list(
                 frame,
                 completion,
-                Rect::new(list_x, list_start_y, list_width, inner.height.saturating_sub(3)),
+                Rect::new(list_x, list_y, list_width, list_height),
                 theme,
                 is_root_path,
             );
@@ -825,7 +864,7 @@ fn draw_goto_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Them
         ])
     };
 
-    let help_area = Rect::new(inner.x + 1, inner.y + inner.height - 1, inner.width - 2, 1);
+    let help_area = Rect::new(inner.x + 1, help_y, inner.width - 2, 1);
     frame.render_widget(Paragraph::new(help_line), help_area);
 }
 
