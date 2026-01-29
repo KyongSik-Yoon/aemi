@@ -630,8 +630,8 @@ impl App {
                         return;
                     }
 
-                    // Check file size (threshold: 10MB)
-                    const LARGE_IMAGE_THRESHOLD: u64 = 10 * 1024 * 1024;
+                    // Check file size (threshold: 50MB)
+                    const LARGE_IMAGE_THRESHOLD: u64 = 50 * 1024 * 1024;
                     let file_size = std::fs::metadata(&path)
                         .map(|m| m.len())
                         .unwrap_or(0);

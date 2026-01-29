@@ -106,11 +106,13 @@ fn run_app<B: ratatui::backend::Backend>(
     loop {
         terminal.draw(|f| ui::draw::draw(f, app))?;
 
-        // For AI screen or FileInfo with calculation, use fast polling for spinner animation
+        // For AI screen, FileInfo with calculation, or ImageViewer loading, use fast polling for spinner animation
         let is_file_info_calculating = app.current_screen == Screen::FileInfo
             && app.file_info_state.as_ref().map(|s| s.is_calculating).unwrap_or(false);
+        let is_image_loading = app.current_screen == Screen::ImageViewer
+            && app.image_viewer_state.as_ref().map(|s| s.is_loading).unwrap_or(false);
 
-        let poll_timeout = if app.current_screen == Screen::AIScreen || is_file_info_calculating {
+        let poll_timeout = if app.current_screen == Screen::AIScreen || is_file_info_calculating || is_image_loading {
             Duration::from_millis(100) // Fast polling for spinner animation
         } else {
             Duration::from_millis(250)
@@ -126,6 +128,13 @@ fn run_app<B: ratatui::backend::Backend>(
         // Poll for file info calculation if on FileInfo screen
         if app.current_screen == Screen::FileInfo {
             if let Some(ref mut state) = app.file_info_state {
+                state.poll();
+            }
+        }
+
+        // Poll for image loading if on ImageViewer screen
+        if app.current_screen == Screen::ImageViewer {
+            if let Some(ref mut state) = app.image_viewer_state {
                 state.poll();
             }
         }

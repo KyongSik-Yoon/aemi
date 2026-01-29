@@ -8,8 +8,16 @@ use ratatui::{
     Frame,
 };
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 
 use super::{app::{App, Screen}, theme::Theme};
+
+/// Result of async image loading
+struct ImageLoadResult {
+    image: Option<DynamicImage>,
+    error: Option<String>,
+}
 
 /// Check if terminal supports true color (24-bit RGB)
 pub fn supports_true_color() -> bool {
@@ -58,22 +66,195 @@ pub struct ImageViewerState {
     pub zoom: f32,
     pub offset_x: i32,
     pub offset_y: i32,
+    /// List of image files in the same directory
+    image_list: Vec<std::path::PathBuf>,
+    /// Current index in the image list
+    current_index: usize,
+    /// Whether image is currently loading
+    pub is_loading: bool,
+    /// Receiver for async image loading result
+    receiver: Option<Receiver<ImageLoadResult>>,
 }
 
 impl ImageViewerState {
     pub fn new(path: &Path) -> Self {
-        let (image, error) = match image::open(path) {
-            Ok(img) => (Some(img), None),
-            Err(e) => (None, Some(format!("Failed to load image: {}", e))),
-        };
+        // Scan for image files in the same directory
+        let (image_list, current_index) = Self::scan_images_in_directory(path);
 
-        Self {
+        let mut state = Self {
             path: path.to_path_buf(),
-            image,
-            error,
+            image: None,
+            error: None,
             zoom: 1.0,
             offset_x: 0,
             offset_y: 0,
+            image_list,
+            current_index,
+            is_loading: true,
+            receiver: None,
+        };
+
+        // Start async image loading
+        state.start_loading(path);
+        state
+    }
+
+    /// Start async loading of an image
+    fn start_loading(&mut self, path: &Path) {
+        self.is_loading = true;
+        self.image = None;
+        self.error = None;
+
+        let (tx, rx): (Sender<ImageLoadResult>, Receiver<ImageLoadResult>) = mpsc::channel();
+        self.receiver = Some(rx);
+
+        let path = path.to_path_buf();
+        thread::spawn(move || {
+            let result = match image::open(&path) {
+                Ok(img) => ImageLoadResult {
+                    image: Some(img),
+                    error: None,
+                },
+                Err(e) => ImageLoadResult {
+                    image: None,
+                    error: Some(format!("Failed to load image: {}", e)),
+                },
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Poll for image loading result
+    /// Returns true if still loading
+    pub fn poll(&mut self) -> bool {
+        if !self.is_loading {
+            return false;
+        }
+
+        if let Some(ref receiver) = self.receiver {
+            match receiver.try_recv() {
+                Ok(result) => {
+                    self.image = result.image;
+                    self.error = result.error;
+                    self.is_loading = false;
+                    self.receiver = None;
+                    return false;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    return true; // Still loading
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.is_loading = false;
+                    self.receiver = None;
+                    self.error = Some("Image loading failed".to_string());
+                    return false;
+                }
+            }
+        }
+        false
+    }
+
+    /// Scan images in the same directory and find current image index
+    fn scan_images_in_directory(path: &Path) -> (Vec<std::path::PathBuf>, usize) {
+        let mut image_list = Vec::new();
+        let mut current_index = 0;
+
+        if let Some(parent) = path.parent() {
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                let mut images: Vec<_> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| is_image_file(p))
+                    .collect();
+
+                // Sort by filename for consistent ordering
+                images.sort_by(|a, b| {
+                    a.file_name()
+                        .map(|s| s.to_string_lossy().to_lowercase())
+                        .cmp(&b.file_name().map(|s| s.to_string_lossy().to_lowercase()))
+                });
+
+                // Find current image index
+                if let Ok(canonical_path) = path.canonicalize() {
+                    for (i, img_path) in images.iter().enumerate() {
+                        if let Ok(canonical_img) = img_path.canonicalize() {
+                            if canonical_img == canonical_path {
+                                current_index = i;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback: compare by filename
+                    if let Some(filename) = path.file_name() {
+                        for (i, img_path) in images.iter().enumerate() {
+                            if img_path.file_name() == Some(filename) {
+                                current_index = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                image_list = images;
+            }
+        }
+
+        (image_list, current_index)
+    }
+
+    /// Navigate to the previous image in the directory
+    pub fn navigate_prev(&mut self) -> bool {
+        if self.image_list.is_empty() {
+            return false;
+        }
+
+        let new_index = if self.current_index == 0 {
+            self.image_list.len() - 1  // Wrap to last
+        } else {
+            self.current_index - 1
+        };
+
+        self.load_image_at_index(new_index)
+    }
+
+    /// Navigate to the next image in the directory
+    pub fn navigate_next(&mut self) -> bool {
+        if self.image_list.is_empty() {
+            return false;
+        }
+
+        let new_index = if self.current_index >= self.image_list.len() - 1 {
+            0  // Wrap to first
+        } else {
+            self.current_index + 1
+        };
+
+        self.load_image_at_index(new_index)
+    }
+
+    /// Load image at given index (async)
+    fn load_image_at_index(&mut self, index: usize) -> bool {
+        if index >= self.image_list.len() {
+            return false;
+        }
+
+        let new_path = self.image_list[index].clone();
+        self.path = new_path.clone();
+        self.current_index = index;
+        // Reset view when switching images
+        self.reset_view();
+        // Start async loading
+        self.start_loading(&new_path);
+        true
+    }
+
+    /// Get current image position info (e.g., "3/10")
+    pub fn get_position_info(&self) -> String {
+        if self.image_list.is_empty() {
+            String::new()
+        } else {
+            format!("{}/{}", self.current_index + 1, self.image_list.len())
         }
     }
 
@@ -107,6 +288,16 @@ pub fn is_image_file(path: &Path) -> bool {
     }
 }
 
+/// Get spinner frame character based on current time
+fn get_spinner_frame() -> char {
+    const SPINNER_FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let frame_idx = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() / 100) as usize % SPINNER_FRAMES.len();
+    SPINNER_FRAMES[frame_idx]
+}
+
 pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     // Draw dual panel in background
     super::draw::draw_dual_panel_background(frame, app, area, theme);
@@ -136,10 +327,17 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "Image".to_string());
 
+    let position_info = state.get_position_info();
     let title = if let Some(ref img) = state.image {
-        format!(" {} ({}x{}) - {:.0}% ", filename, img.width(), img.height(), state.zoom * 100.0)
-    } else {
+        if position_info.is_empty() {
+            format!(" {} ({}x{}) - {:.0}% ", filename, img.width(), img.height(), state.zoom * 100.0)
+        } else {
+            format!(" {} [{}] ({}x{}) - {:.0}% ", filename, position_info, img.width(), img.height(), state.zoom * 100.0)
+        }
+    } else if position_info.is_empty() {
         format!(" {} ", filename)
+    } else {
+        format!(" {} [{}] ", filename, position_info)
     };
 
     let block = Block::default()
@@ -150,6 +348,28 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
 
     let inner = block.inner(viewer_area);
     frame.render_widget(block, viewer_area);
+
+    // Show loading spinner if image is being loaded
+    if state.is_loading {
+        let spinner = get_spinner_frame();
+        let loading_lines = vec![
+            Line::from(""),
+            Line::from(""),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(format!(" {} ", spinner), Style::default().fg(theme.info)),
+                Span::styled("Loading image...", Style::default().fg(theme.info)),
+            ]),
+        ];
+
+        // Center the loading message
+        let center_y = inner.y + inner.height / 2 - 2;
+        let loading_area = Rect::new(inner.x, center_y, inner.width, 4);
+        let paragraph = Paragraph::new(loading_lines)
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(paragraph, loading_area);
+        return;
+    }
 
     if let Some(ref error) = state.error {
         let error_lines = vec![
@@ -169,6 +389,10 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     // Help line at bottom
     let help_area = Rect::new(inner.x, inner.y + inner.height.saturating_sub(1), inner.width, 1);
     let help = Line::from(vec![
+        Span::styled("PgUp", Style::default().fg(theme.success)),
+        Span::styled("/", theme.dim_style()),
+        Span::styled("PgDn", Style::default().fg(theme.success)),
+        Span::styled(" Prev/Next ", theme.dim_style()),
         Span::styled("+", Style::default().fg(theme.success)),
         Span::styled("/", theme.dim_style()),
         Span::styled("-", Style::default().fg(theme.success)),
@@ -276,6 +500,16 @@ pub fn handle_input(app: &mut App, code: KeyCode) {
 
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            // Get the filename of the last viewed image to focus on it
+            let last_image_name = state.path.file_name()
+                .map(|n| n.to_string_lossy().to_string());
+
+            // Set pending_focus on active panel so cursor lands on the last viewed image
+            if let Some(filename) = last_image_name {
+                app.active_panel_mut().pending_focus = Some(filename);
+                app.active_panel_mut().load_files();
+            }
+
             app.current_screen = Screen::DualPanel;
             app.image_viewer_state = None;
         }
@@ -299,6 +533,14 @@ pub fn handle_input(app: &mut App, code: KeyCode) {
         }
         KeyCode::Right => {
             state.pan(-5, 0);
+        }
+        // Navigate to previous image
+        KeyCode::PageUp => {
+            state.navigate_prev();
+        }
+        // Navigate to next image
+        KeyCode::PageDown => {
+            state.navigate_next();
         }
         _ => {}
     }
