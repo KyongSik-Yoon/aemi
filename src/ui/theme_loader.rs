@@ -29,9 +29,13 @@ pub struct ThemeJson {
     #[serde(default)]
     pub dialog: DialogColorsJson,
     #[serde(default)]
+    pub confirm_dialog: ConfirmDialogColorsJson,
+    #[serde(default)]
     pub settings: SettingsColorsJson,
     #[serde(default)]
     pub editor: EditorColorsJson,
+    #[serde(default)]
+    pub syntax: SyntaxColorsJson,
     #[serde(default)]
     pub viewer: ViewerColorsJson,
     #[serde(default)]
@@ -50,8 +54,6 @@ pub struct ThemeJson {
     pub help: HelpColorsJson,
     #[serde(default)]
     pub advanced_search: AdvancedSearchColorsJson,
-    #[serde(default)]
-    pub legacy: LegacyColorsJson,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -104,6 +106,8 @@ pub struct PanelColorsJson {
     pub header_bg_active: u8,
     #[serde(default = "default_249")]
     pub header_text: u8,
+    #[serde(default = "default_242")]
+    pub header_text_active: u8,
     #[serde(default = "default_243")]
     pub file_text: u8,
     #[serde(default = "default_67")]
@@ -240,6 +244,24 @@ pub struct DialogColorsJson {
     pub tar_exclude_button_selected_text: u8,
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct ConfirmDialogColorsJson {
+    #[serde(default = "default_255")]
+    pub bg: u8,
+    #[serde(default = "default_238")]
+    pub border: u8,
+    #[serde(default = "default_238")]
+    pub title: u8,
+    #[serde(default = "default_243")]
+    pub message_text: u8,
+    #[serde(default = "default_251")]
+    pub button_text: u8,
+    #[serde(default = "default_67")]
+    pub button_selected_bg: u8,
+    #[serde(default = "default_231")]
+    pub button_selected_text: u8,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SettingsColorsJson {
     #[serde(default = "default_255")]
@@ -323,6 +345,36 @@ pub struct EditorColorsJson {
 }
 
 #[derive(Debug, Deserialize, Default)]
+pub struct SyntaxColorsJson {
+    #[serde(default = "default_127")]
+    pub keyword: u8,
+    #[serde(default = "default_37")]
+    pub type_name: u8,
+    #[serde(default = "default_28")]
+    pub string: u8,
+    #[serde(default = "default_166")]
+    pub number: u8,
+    #[serde(default = "default_102")]
+    pub comment: u8,
+    #[serde(default = "default_241")]
+    pub operator: u8,
+    #[serde(default = "default_130")]
+    pub function: u8,
+    #[serde(default = "default_91")]
+    pub macro_name: u8,
+    #[serde(default = "default_243")]
+    pub attribute: u8,
+    #[serde(default = "default_236")]
+    pub variable: u8,
+    #[serde(default = "default_161")]
+    pub constant: u8,
+    #[serde(default = "default_240")]
+    pub bracket: u8,
+    #[serde(default = "default_236")]
+    pub normal: u8,
+}
+
+#[derive(Debug, Deserialize, Default)]
 pub struct ViewerColorsJson {
     #[serde(default = "default_255")]
     pub bg: u8,
@@ -334,6 +386,8 @@ pub struct ViewerColorsJson {
     pub line_number: u8,
     #[serde(default = "default_243")]
     pub text: u8,
+    #[serde(default = "default_21")]
+    pub bookmark_indicator: u8,
     #[serde(default = "default_67")]
     pub search_input_text: u8,
     #[serde(default = "default_255")]
@@ -452,6 +506,14 @@ pub struct SystemInfoColorsJson {
     pub bar_fill: u8,
     #[serde(default = "default_251")]
     pub bar_empty: u8,
+    #[serde(default = "default_34")]
+    pub usage_low: u8,
+    #[serde(default = "default_198")]
+    pub usage_medium: u8,
+    #[serde(default = "default_198")]
+    pub usage_high: u8,
+    #[serde(default = "default_238")]
+    pub tab_active: u8,
     #[serde(default = "default_21")]
     pub disk_header: u8,
     #[serde(default = "default_243")]
@@ -476,6 +538,8 @@ pub struct SearchResultColorsJson {
     pub header_text: u8,
     #[serde(default = "default_21")]
     pub column_header: u8,
+    #[serde(default = "default_251")]
+    pub column_header_dim: u8,
     #[serde(default = "default_238")]
     pub directory_text: u8,
     #[serde(default = "default_243")]
@@ -590,6 +654,8 @@ pub struct AdvancedSearchColorsJson {
     pub input_text: u8,
     #[serde(default = "default_238")]
     pub input_cursor: u8,
+    #[serde(default = "default_21")]
+    pub field_bracket: u8,
     #[serde(default = "default_34")]
     pub checkbox_checked: u8,
     #[serde(default = "default_251")]
@@ -606,61 +672,27 @@ pub struct AdvancedSearchColorsJson {
     pub footer_text: u8,
 }
 
-#[derive(Debug, Deserialize, Default)]
-pub struct LegacyColorsJson {
-    #[serde(default = "default_255")]
-    pub bg: u8,
-    #[serde(default = "default_255")]
-    pub bg_panel: u8,
-    #[serde(default = "default_67")]
-    pub bg_selected: u8,
-    #[serde(default = "default_254")]
-    pub bg_header: u8,
-    #[serde(default = "default_253")]
-    pub bg_header_active: u8,
-    #[serde(default = "default_253")]
-    pub bg_status_bar: u8,
-    #[serde(default = "default_243")]
-    pub text: u8,
-    #[serde(default = "default_251")]
-    pub text_dim: u8,
-    #[serde(default = "default_243")]
-    pub text_bold: u8,
-    #[serde(default = "default_231")]
-    pub text_selected: u8,
-    #[serde(default = "default_249")]
-    pub text_header: u8,
-    #[serde(default = "default_242")]
-    pub text_header_active: u8,
-    #[serde(default = "default_67")]
-    pub text_directory: u8,
-    #[serde(default = "default_251")]
-    pub border: u8,
-    #[serde(default = "default_238")]
-    pub border_active: u8,
-    #[serde(default = "default_34")]
-    pub success: u8,
-    #[serde(default = "default_198")]
-    pub warning: u8,
-    #[serde(default = "default_198")]
-    pub error: u8,
-    #[serde(default = "default_21")]
-    pub info: u8,
-    #[serde(default = "default_249")]
-    pub shortcut_key: u8,
-}
-
 // 기본값 함수들
 fn default_21() -> u8 { 21 }
+fn default_28() -> u8 { 28 }
 fn default_34() -> u8 { 34 }
+fn default_37() -> u8 { 37 }
 fn default_67() -> u8 { 67 }
 fn default_74() -> u8 { 74 }
+fn default_91() -> u8 { 91 }
+fn default_102() -> u8 { 102 }
 fn default_117() -> u8 { 117 }
+fn default_127() -> u8 { 127 }
+fn default_130() -> u8 { 130 }
+fn default_161() -> u8 { 161 }
+fn default_166() -> u8 { 166 }
 fn default_198() -> u8 { 198 }
 fn default_208() -> u8 { 208 }
 fn default_231() -> u8 { 231 }
 fn default_236() -> u8 { 236 }
 fn default_238() -> u8 { 238 }
+fn default_240() -> u8 { 240 }
+fn default_241() -> u8 { 241 }
 fn default_242() -> u8 { 242 }
 fn default_243() -> u8 { 243 }
 fn default_248() -> u8 { 248 }
@@ -767,6 +799,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         header_bg: idx(json.panel.header_bg),
         header_bg_active: idx(json.panel.header_bg_active),
         header_text: idx(json.panel.header_text),
+        header_text_active: idx(json.panel.header_text_active),
         file_text: idx(json.panel.file_text),
         directory_text: idx(json.panel.directory_text),
         selected_bg: idx(json.panel.selected_bg),
@@ -841,6 +874,16 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         tar_exclude_button_selected_text: idx(json.dialog.tar_exclude_button_selected_text),
     };
 
+    let confirm_dialog = ConfirmDialogColors {
+        bg: idx(json.confirm_dialog.bg),
+        border: idx(json.confirm_dialog.border),
+        title: idx(json.confirm_dialog.title),
+        message_text: idx(json.confirm_dialog.message_text),
+        button_text: idx(json.confirm_dialog.button_text),
+        button_selected_bg: idx(json.confirm_dialog.button_selected_bg),
+        button_selected_text: idx(json.confirm_dialog.button_selected_text),
+    };
+
     let settings = SettingsColors {
         bg: idx(json.settings.bg),
         border: idx(json.settings.border),
@@ -876,12 +919,29 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         find_option_active: idx(json.editor.find_option_active),
     };
 
+    let syntax = SyntaxColors {
+        keyword: idx(json.syntax.keyword),
+        type_name: idx(json.syntax.type_name),
+        string: idx(json.syntax.string),
+        number: idx(json.syntax.number),
+        comment: idx(json.syntax.comment),
+        operator: idx(json.syntax.operator),
+        function: idx(json.syntax.function),
+        macro_name: idx(json.syntax.macro_name),
+        attribute: idx(json.syntax.attribute),
+        variable: idx(json.syntax.variable),
+        constant: idx(json.syntax.constant),
+        bracket: idx(json.syntax.bracket),
+        normal: idx(json.syntax.normal),
+    };
+
     let viewer = ViewerColors {
         bg: idx(json.viewer.bg),
         border: idx(json.viewer.border),
         header_text: idx(json.viewer.header_text),
         line_number: idx(json.viewer.line_number),
         text: idx(json.viewer.text),
+        bookmark_indicator: idx(json.viewer.bookmark_indicator),
         search_input_text: idx(json.viewer.search_input_text),
         search_cursor_fg: idx(json.viewer.search_cursor_fg),
         search_cursor_bg: idx(json.viewer.search_cursor_bg),
@@ -944,6 +1004,10 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         value: idx(json.system_info.value),
         bar_fill: idx(json.system_info.bar_fill),
         bar_empty: idx(json.system_info.bar_empty),
+        usage_low: idx(json.system_info.usage_low),
+        usage_medium: idx(json.system_info.usage_medium),
+        usage_high: idx(json.system_info.usage_high),
+        tab_active: idx(json.system_info.tab_active),
         disk_header: idx(json.system_info.disk_header),
         disk_text: idx(json.system_info.disk_text),
         selected_bg: idx(json.system_info.selected_bg),
@@ -957,6 +1021,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         border: idx(json.search_result.border),
         header_text: idx(json.search_result.header_text),
         column_header: idx(json.search_result.column_header),
+        column_header_dim: idx(json.search_result.column_header_dim),
         directory_text: idx(json.search_result.directory_text),
         file_text: idx(json.search_result.file_text),
         selected_bg: idx(json.search_result.selected_bg),
@@ -1018,6 +1083,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         label: idx(json.advanced_search.label),
         input_text: idx(json.advanced_search.input_text),
         input_cursor: idx(json.advanced_search.input_cursor),
+        field_bracket: idx(json.advanced_search.field_bracket),
         checkbox_checked: idx(json.advanced_search.checkbox_checked),
         checkbox_unchecked: idx(json.advanced_search.checkbox_unchecked),
         button_text: idx(json.advanced_search.button_text),
@@ -1036,8 +1102,10 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         function_bar,
         message,
         dialog,
+        confirm_dialog,
         settings,
         editor,
+        syntax,
         viewer,
         process_manager,
         ai_screen,
@@ -1048,27 +1116,5 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         help,
         advanced_search,
         chars: ThemeChars::default(),
-
-        // Legacy fields
-        bg: idx(json.legacy.bg),
-        bg_panel: idx(json.legacy.bg_panel),
-        bg_selected: idx(json.legacy.bg_selected),
-        bg_header: idx(json.legacy.bg_header),
-        bg_header_active: idx(json.legacy.bg_header_active),
-        bg_status_bar: idx(json.legacy.bg_status_bar),
-        text: idx(json.legacy.text),
-        text_dim: idx(json.legacy.text_dim),
-        text_bold: idx(json.legacy.text_bold),
-        text_selected: idx(json.legacy.text_selected),
-        text_header: idx(json.legacy.text_header),
-        text_header_active: idx(json.legacy.text_header_active),
-        text_directory: idx(json.legacy.text_directory),
-        border: idx(json.legacy.border),
-        border_active: idx(json.legacy.border_active),
-        success: idx(json.legacy.success),
-        warning: idx(json.legacy.warning),
-        error: idx(json.legacy.error),
-        info: idx(json.legacy.info),
-        shortcut_key: idx(json.legacy.shortcut_key),
     }
 }

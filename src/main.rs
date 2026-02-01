@@ -32,6 +32,7 @@ fn print_help() {
     println!("    -h, --help              Print help information");
     println!("    -v, --version           Print version information");
     println!("    --prompt <TEXT>         Send prompt to AI and print rendered response");
+    println!("    --design                Enable theme hot-reload (for theme development)");
     println!();
     println!("HOMEPAGE: https://cokacdir.cokac.com");
 }
@@ -115,6 +116,8 @@ fn normalize_consecutive_empty_lines(text: &str) -> String {
 fn main() -> io::Result<()> {
     // Handle command line arguments
     let args: Vec<String> = env::args().collect();
+    let mut design_mode = false;
+
     if args.len() > 1 {
         match args[1].as_str() {
             "-h" | "--help" => {
@@ -133,6 +136,9 @@ fn main() -> io::Result<()> {
                 }
                 handle_prompt(&args[2]);
                 return Ok(());
+            }
+            "--design" => {
+                design_mode = true;
             }
             _ => {
                 eprintln!("Unknown option: {}", args[1]);
@@ -163,10 +169,16 @@ fn main() -> io::Result<()> {
         Err(e) => (config::Settings::default(), Some(e)),
     };
     let mut app = App::with_settings(settings);
+    app.design_mode = design_mode;
 
     // Show settings load error if any
     if let Some(err) = settings_error {
         app.show_message(&format!("Settings error: {} (using defaults)", err));
+    }
+
+    // Show design mode message if active
+    if design_mode {
+        app.show_message("Design mode: theme hot-reload enabled");
     }
 
     // Run app
@@ -235,6 +247,11 @@ fn run_app<B: ratatui::backend::Backend>(
             if let Some(ref mut state) = app.image_viewer_state {
                 state.poll();
             }
+        }
+
+        // Check for theme file changes (hot-reload, only in design mode)
+        if app.design_mode && app.theme_watch_state.check_for_changes() {
+            app.reload_theme();
         }
 
         // Poll for file operation progress
@@ -477,12 +494,21 @@ fn handle_dual_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
         KeyCode::Char('f') => app.show_search_dialog(),
         KeyCode::Char('/') => app.show_goto_dialog(),
         KeyCode::Char('1') => app.goto_home(),
+        KeyCode::Char('2') => app.refresh_panels(),
 
         // AI screen - '.'
         KeyCode::Char('.') => app.show_ai_screen(),
 
         // Settings dialog - '`'
         KeyCode::Char('`') => app.show_settings_dialog(),
+
+        // macOS: Open current folder in Finder
+        #[cfg(target_os = "macos")]
+        KeyCode::Char('o') | KeyCode::Char('O') => app.open_in_finder(),
+
+        // macOS: Open current folder in VS Code
+        #[cfg(target_os = "macos")]
+        KeyCode::Char('c') => app.open_in_vscode(),
 
         _ => {}
     }

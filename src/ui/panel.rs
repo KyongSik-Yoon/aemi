@@ -32,13 +32,13 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
         .title(format!(" {} ", display_path))
         .title_style(if is_active {
             Style::default()
-                .fg(theme.border_active)
+                .fg(theme.panel.border_active)
                 .add_modifier(Modifier::BOLD)
         } else {
-            theme.normal_style()
+            Style::default().fg(theme.panel.file_text)
         })
         .borders(Borders::ALL)
-        .border_style(theme.border_style(is_active));
+        .border_style(Style::default().fg(if is_active { theme.panel.border_active } else { theme.panel.border }));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -81,9 +81,9 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
     // Header row
     let header = create_header_line(panel, name_col, type_col, size_col, date_col, is_active, theme);
     let header_bg = if is_active {
-        theme.bg_header_active
+        theme.panel.header_bg_active
     } else {
-        theme.bg_header
+        theme.panel.header_bg
     };
     frame.render_widget(
         Paragraph::new(header).style(Style::default().bg(header_bg)),
@@ -221,9 +221,9 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
 
 fn create_header_line(panel: &PanelState, name_width: usize, type_width: usize, size_width: usize, date_width: usize, is_active: bool, theme: &Theme) -> Line<'static> {
     let header_style = if is_active {
-        Style::default().fg(theme.text_header_active).add_modifier(Modifier::BOLD)
+        Style::default().fg(theme.panel.header_text_active).add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(theme.text_header)
+        Style::default().fg(theme.panel.header_text)
     };
 
     // Handle very narrow width

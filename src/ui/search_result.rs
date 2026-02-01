@@ -196,7 +196,7 @@ pub fn draw(
         .title(title)
         .title_style(theme.header_style())
         .borders(Borders::ALL)
-        .border_style(theme.border_style(true));
+        .border_style(Style::default().fg(theme.search_result.border));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -218,19 +218,19 @@ pub fn draw(
     let header_line = Line::from(vec![
         Span::styled(
             format!("  {:3} ", "#"),
-            Style::default().fg(theme.text_dim),
+            Style::default().fg(theme.search_result.column_header_dim),
         ),
         Span::styled(
             format!("{:<width$} ", "Path", width = path_width),
-            Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.search_result.column_header).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("{:>10} ", "Size"),
-            Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.search_result.column_header).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("{:16}", "Modified"),
-            Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.search_result.column_header).add_modifier(Modifier::BOLD),
         ),
     ]);
 
@@ -295,10 +295,13 @@ pub fn draw(
             let sel_style = theme.selected_style();
             (sel_style, sel_style, sel_style, sel_style)
         } else if item.is_directory {
-            let dir_style = Style::default().fg(theme.text_directory);
-            (theme.dim_style(), dir_style, dir_style, theme.dim_style())
+            let dir_style = Style::default().fg(theme.search_result.directory_text);
+            let dim_style = Style::default().fg(theme.search_result.path_text);
+            (dim_style, dir_style, dir_style, dim_style)
         } else {
-            (theme.dim_style(), theme.normal_style(), theme.normal_style(), theme.dim_style())
+            let file_style = Style::default().fg(theme.search_result.file_text);
+            let dim_style = Style::default().fg(theme.search_result.path_text);
+            (dim_style, file_style, file_style, dim_style)
         };
 
         let line = Line::from(vec![

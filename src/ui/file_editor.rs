@@ -6,7 +6,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 use regex::Regex;
@@ -160,6 +160,7 @@ pub struct EditorState {
     // 문법 강조
     pub language: Language,
     pub highlighter: Option<SyntaxHighlighter>,
+    pub syntax_colors: crate::ui::theme::SyntaxColors,
 
     // 설정
     pub auto_indent: bool,
@@ -240,6 +241,7 @@ impl EditorState {
             goto_input: String::new(),
             language: Language::Plain,
             highlighter: None,
+            syntax_colors: crate::ui::theme::Theme::default().syntax,
             auto_indent: true,
             tab_size: 4,
             use_tabs: false,
@@ -265,6 +267,15 @@ impl EditorState {
     pub fn clear_message(&mut self) {
         self.message = None;
         self.message_timer = 0;
+    }
+
+    /// 테마의 syntax colors 설정
+    pub fn set_syntax_colors(&mut self, colors: crate::ui::theme::SyntaxColors) {
+        self.syntax_colors = colors;
+        // 하이라이터가 있으면 새 색상으로 재생성
+        if self.highlighter.is_some() {
+            self.highlighter = Some(SyntaxHighlighter::new(self.language, self.syntax_colors));
+        }
     }
 
     /// Maximum file size for editing (50MB - more restrictive than viewer)
@@ -317,7 +328,7 @@ impl EditorState {
 
         // 언어 감지
         self.language = Language::from_extension(path);
-        self.highlighter = Some(SyntaxHighlighter::new(self.language));
+        self.highlighter = Some(SyntaxHighlighter::new(self.language, self.syntax_colors));
 
         Ok(())
     }
@@ -1953,9 +1964,9 @@ impl EditorState {
 
 pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Theme) {
     let border_color = if state.modified {
-        theme.shortcut_key
+        theme.editor.modified_mark
     } else {
-        theme.border_active
+        theme.editor.border
     };
 
     let block = Block::default()
@@ -2047,10 +2058,10 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
         // 줄 번호
         let line_num_style = if is_cursor_line {
             Style::default()
-                .fg(theme.text_header)
+                .fg(theme.editor.line_number)
                 .add_modifier(Modifier::BOLD)
         } else {
-            theme.dim_style()
+            Style::default().fg(theme.editor.line_number)
         };
 
         let line_num_span = Span::styled(
@@ -2177,10 +2188,10 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
             };
 
             let cursor_style = Style::default()
-                .fg(theme.bg)
-                .bg(theme.bg_selected)
+                .fg(theme.editor.bg)
+                .bg(theme.editor.selection_bg)
                 .add_modifier(Modifier::SLOW_BLINK);
-            let input_style = Style::default().fg(theme.bg_selected);
+            let input_style = Style::default().fg(theme.editor.find_input_text);
 
             // Find 입력 필드
             let find_chars: Vec<char> = state.find_input.chars().collect();
@@ -2266,10 +2277,13 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
         let msg_width = (msg.len() + 4).min(inner.width as usize) as u16;
         let msg_x = inner.x + (inner.width.saturating_sub(msg_width)) / 2;
         let msg_y = inner.y + 1;
+        let msg_area = Rect::new(msg_x, msg_y, msg_width, 1);
+        // Clear the area first to ensure message is visible
+        frame.render_widget(Clear, msg_area);
         frame.render_widget(
             Paragraph::new(format!(" {} ", msg))
                 .style(Style::default().fg(theme.message.text).bg(theme.message.bg)),
-            Rect::new(msg_x, msg_y, msg_width, 1),
+            msg_area,
         );
     }
 
@@ -2359,9 +2373,9 @@ fn render_editor_line(
                 for (idx, (ml, ms, me)) in state.match_positions.iter().enumerate() {
                     if *ml == line_num && pos >= *ms && pos < *me {
                         if idx == state.current_match {
-                            style = style.bg(theme.bg_selected).fg(theme.bg);
+                            style = style.bg(theme.editor.match_current_bg).fg(theme.editor.bg);
                         } else {
-                            style = style.bg(theme.shortcut_key).fg(theme.bg);
+                            style = style.bg(theme.editor.match_bg).fg(theme.editor.bg);
                         }
                     }
                 }
@@ -2369,14 +2383,14 @@ fn render_editor_line(
                 // 매칭 괄호 하이라이트
                 if let Some((bl, bc)) = state.matching_bracket {
                     if bl == line_num && bc == pos {
-                        style = style.bg(theme.info).fg(Color::Black);
+                        style = style.bg(theme.editor.bracket_match).fg(Color::Black);
                     }
                 }
 
                 // 커서 하이라이트
                 if is_cursor_line && pos == state.cursor_col && state.selection.is_none() {
                     if in_find_mode {
-                        style = Style::default().fg(theme.text).bg(theme.bg_status_bar);
+                        style = Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg);
                     } else {
                         style = theme.selected_style();
                     }
@@ -2392,7 +2406,7 @@ fn render_editor_line(
         if is_cursor_line && state.cursor_col >= chars.len() && state.selection.is_none() {
             if state.cursor_col >= view_start && state.cursor_col < view_start + visible_width {
                 let cursor_style = if in_find_mode {
-                    Style::default().fg(theme.text).bg(theme.bg_status_bar)
+                    Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg)
                 } else {
                     theme.selected_style()
                 };
@@ -2416,9 +2430,9 @@ fn render_editor_line(
             for (idx, (ml, ms, me)) in state.match_positions.iter().enumerate() {
                 if *ml == line_num && i >= *ms && i < *me {
                     if idx == state.current_match {
-                        style = style.bg(theme.bg_selected).fg(theme.bg);
+                        style = style.bg(theme.editor.match_current_bg).fg(theme.editor.bg);
                     } else {
-                        style = style.bg(theme.shortcut_key).fg(theme.bg);
+                        style = style.bg(theme.editor.match_bg).fg(theme.editor.bg);
                     }
                 }
             }
@@ -2426,14 +2440,14 @@ fn render_editor_line(
             // 매칭 괄호
             if let Some((bl, bc)) = state.matching_bracket {
                 if bl == line_num && bc == i {
-                    style = style.bg(theme.info).fg(Color::Black);
+                    style = style.bg(theme.editor.bracket_match).fg(Color::Black);
                 }
             }
 
             // 커서
             if is_cursor_line && i == state.cursor_col && state.selection.is_none() {
                 if in_find_mode {
-                    style = Style::default().fg(theme.text).bg(theme.bg_status_bar);
+                    style = Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg);
                 } else {
                     style = theme.selected_style();
                 }
@@ -2446,7 +2460,7 @@ fn render_editor_line(
         if is_cursor_line && state.cursor_col >= chars.len() && state.selection.is_none() {
             if state.cursor_col >= view_start && state.cursor_col < view_start + visible_width {
                 let cursor_style = if in_find_mode {
-                    Style::default().fg(theme.text).bg(theme.bg_status_bar)
+                    Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg)
                 } else {
                     theme.selected_style()
                 };
@@ -2459,7 +2473,7 @@ fn render_editor_line(
         // 빈 줄에 커서 표시 (수평 스크롤이 0일 때만)
         if is_cursor_line && state.selection.is_none() && horizontal_scroll == 0 {
             let cursor_style = if in_find_mode {
-                Style::default().fg(theme.text).bg(theme.bg_status_bar)
+                Style::default().fg(theme.editor.text).bg(theme.status_bar.bg)
             } else {
                 theme.selected_style()
             };
@@ -2651,23 +2665,27 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     if modifiers.contains(KeyModifiers::CONTROL) {
         match code {
             KeyCode::Char('s') => {
-                match state.save_file() {
+                let save_result = state.save_file();
+                let is_settings = App::is_settings_file(&state.file_path);
+                match save_result {
                     Ok(_) => {
                         state.pending_exit = false;
-                        if App::is_settings_file(&state.file_path) {
-                            if app.reload_settings() {
-                                app.show_message("Settings saved and applied!");
-                            }
-                            // If reload_settings fails, it shows its own error message
+                        if is_settings {
+                            state.set_message("Settings saved and applied!", 30);
                         } else {
-                            app.show_message("File saved!");
+                            state.set_message("File saved!", 30);
                         }
-                        app.refresh_panels();
                     }
                     Err(e) => {
-                        app.show_message(&format!("Save error: {}", e));
+                        state.set_message(format!("Save error: {}", e), 50);
+                        return;
                     }
                 }
+                // Now we can call app methods (state borrow ends here due to NLL)
+                if is_settings {
+                    app.reload_settings();
+                }
+                app.refresh_panels();
                 return;
             }
             KeyCode::Char('x') => {
@@ -2861,7 +2879,7 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                 } else {
                     // 첫 번째 Esc: 경고 메시지
                     state.pending_exit = true;
-                    app.show_message("Unsaved changes! Press Esc again to discard, ^S to save");
+                    state.set_message("Unsaved changes! Press Esc again to discard, ^S to save", 60);
                 }
             } else {
                 // 변경사항 없으면 바로 종료

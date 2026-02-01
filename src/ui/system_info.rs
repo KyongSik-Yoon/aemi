@@ -221,11 +221,11 @@ fn format_bytes(bytes: u64) -> String {
 
 fn get_usage_color(percent: u8, theme: &Theme) -> Color {
     if percent >= 90 {
-        theme.error
+        theme.system_info.usage_high
     } else if percent >= 70 {
-        theme.warning
+        theme.system_info.usage_medium
     } else {
-        theme.success
+        theme.system_info.usage_low
     }
 }
 
@@ -271,13 +271,13 @@ fn draw_tab_bar(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: &
     for (label, tab) in tabs {
         let style = if state.current_tab == tab {
             Style::default()
-                .fg(theme.border_active)
+                .fg(theme.system_info.tab_active)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
-            theme.dim_style()
+            Style::default().fg(theme.system_info.label)
         };
         spans.push(Span::styled(label, style));
-        spans.push(Span::styled("  ", theme.normal_style()));
+        spans.push(Span::styled("  ", Style::default().fg(theme.system_info.label)));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -318,8 +318,8 @@ fn draw_system_tab(frame: &mut Frame, area: Rect, theme: &Theme) {
     // Memory block
     let mem_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(theme.dim_style())
-        .title(Span::styled(" Memory ", Style::default().fg(theme.success).add_modifier(Modifier::BOLD)));
+        .border_style(Style::default().fg(theme.system_info.border))
+        .title(Span::styled(" Memory ", Style::default().fg(theme.system_info.section_title).add_modifier(Modifier::BOLD)));
 
     let mem_inner = mem_block.inner(chunks[1]);
     frame.render_widget(mem_block, chunks[1]);
@@ -347,8 +347,8 @@ fn draw_system_tab(frame: &mut Frame, area: Rect, theme: &Theme) {
         create_info_line("Used:", &used_str, theme),
         create_info_line("Free:", &free_str, theme),
         Line::from(vec![
-            Span::styled("            ", theme.normal_style()),
-            Span::styled(bar, Style::default().fg(theme.success)),
+            Span::styled("            ", Style::default().fg(theme.system_info.label)),
+            Span::styled(bar, Style::default().fg(theme.system_info.bar_fill)),
         ]),
     ];
     frame.render_widget(Paragraph::new(mem_lines), mem_inner);
@@ -357,8 +357,8 @@ fn draw_system_tab(frame: &mut Frame, area: Rect, theme: &Theme) {
     let cpu_title = format!(" CPU ({} cores) ", data.cpu_count);
     let cpu_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(theme.dim_style())
-        .title(Span::styled(cpu_title, Style::default().fg(theme.success).add_modifier(Modifier::BOLD)));
+        .border_style(Style::default().fg(theme.system_info.border))
+        .title(Span::styled(cpu_title, Style::default().fg(theme.system_info.section_title).add_modifier(Modifier::BOLD)));
 
     let cpu_inner = cpu_block.inner(chunks[2]);
     frame.render_widget(cpu_block, chunks[2]);
@@ -399,12 +399,12 @@ fn draw_disk_tab(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: 
 fn draw_disk_list_wide(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: &Theme) {
     // Header
     let header = Line::from(vec![
-        Span::styled(format!("{:20}", "Filesystem"), Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{:>8}", "Size"), Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{:>8}", "Used"), Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{:>8}", "Avail"), Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{:>6}", "Use%"), Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
-        Span::styled("  Mount", Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:20}", "Filesystem"), Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:>8}", "Size"), Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:>8}", "Used"), Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:>8}", "Avail"), Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:>6}", "Use%"), Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
+        Span::styled("  Mount", Style::default().fg(theme.system_info.disk_header).add_modifier(Modifier::BOLD)),
     ]);
 
     let mut lines = vec![header];
@@ -482,8 +482,8 @@ fn draw_disk_list_narrow(frame: &mut Frame, state: &SystemInfoState, area: Rect,
 
 fn create_info_line<'a>(label: &'a str, value: &'a str, theme: &Theme) -> Line<'a> {
     Line::from(vec![
-        Span::styled(format!("{:15}", label), Style::default().fg(theme.info)),
-        Span::styled(value.to_string(), theme.normal_style()),
+        Span::styled(format!("{:15}", label), Style::default().fg(theme.system_info.disk_header)),
+        Span::styled(value.to_string(), Style::default().fg(theme.system_info.value)),
     ])
 }
 

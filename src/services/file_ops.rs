@@ -736,7 +736,7 @@ pub fn copy_file(src: &Path, dest: &Path) -> io::Result<()> {
 const MAX_COPY_DEPTH: usize = 256;
 
 /// Copy directory recursively with symlink loop detection
-fn copy_dir_recursive(src: &Path, dest: &Path) -> io::Result<()> {
+pub fn copy_dir_recursive(src: &Path, dest: &Path) -> io::Result<()> {
     let mut visited = HashSet::new();
     copy_dir_recursive_inner(src, dest, &mut visited, 0)
 }

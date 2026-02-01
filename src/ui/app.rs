@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
+use std::time::SystemTime;
 use chrono::{DateTime, Local};
 
 use crate::config::Settings;
@@ -12,6 +13,67 @@ use crate::services::file_ops::{self, FileOperationType, ProgressMessage, FileOp
 use crate::ui::file_viewer::ViewerState;
 use crate::ui::file_editor::EditorState;
 use crate::ui::file_info::FileInfoState;
+
+/// Theme file watcher state for hot-reload
+pub struct ThemeWatchState {
+    /// Path to the current theme file (if external)
+    pub theme_path: Option<PathBuf>,
+    /// Last modification time of the theme file
+    pub last_modified: Option<SystemTime>,
+    /// Counter for polling interval (check every 10 ticks = ~1 second)
+    pub check_counter: u8,
+}
+
+impl ThemeWatchState {
+    /// Create a new watch state for the given theme name
+    pub fn watch_theme(theme_name: &str) -> Self {
+        let theme_path = crate::ui::theme_loader::theme_path(theme_name);
+        let last_modified = theme_path.as_ref().and_then(|p| {
+            std::fs::metadata(p).ok().and_then(|m| m.modified().ok())
+        });
+
+        Self {
+            theme_path,
+            last_modified,
+            check_counter: 0,
+        }
+    }
+
+    /// Check if the theme file has been modified.
+    /// Returns true if the file was modified and should be reloaded.
+    /// Only checks every 10 calls (~1 second with 100ms tick).
+    pub fn check_for_changes(&mut self) -> bool {
+        self.check_counter = self.check_counter.wrapping_add(1);
+        if self.check_counter % 10 != 0 {
+            return false;
+        }
+
+        let Some(ref path) = self.theme_path else {
+            return false;
+        };
+
+        let current_modified = match std::fs::metadata(path) {
+            Ok(m) => m.modified().ok(),
+            Err(_) => return false,
+        };
+
+        if current_modified != self.last_modified {
+            self.last_modified = current_modified;
+            return true;
+        }
+
+        false
+    }
+
+    /// Update the watch state for a new theme
+    pub fn update_theme(&mut self, theme_name: &str) {
+        self.theme_path = crate::ui::theme_loader::theme_path(theme_name);
+        self.last_modified = self.theme_path.as_ref().and_then(|p| {
+            std::fs::metadata(p).ok().and_then(|m| m.modified().ok())
+        });
+        self.check_counter = 0;
+    }
+}
 
 /// Help screen state for scrolling
 pub struct HelpState {
@@ -111,6 +173,7 @@ pub enum DialogType {
     TarExcludeConfirm,
     CopyExcludeConfirm,
     LargeImageConfirm,
+    LargeFileConfirm,
     TrueColorWarning,
     Progress,
     DuplicateConflict,
@@ -661,6 +724,12 @@ pub struct App {
     // Theme (loaded from settings)
     pub theme: crate::ui::theme::Theme,
 
+    // Theme hot-reload watcher (only active in design mode)
+    pub theme_watch_state: ThemeWatchState,
+
+    // Design mode flag (--design): enables theme hot-reload
+    pub design_mode: bool,
+
     // File viewer state (새로운 고급 상태)
     pub viewer_state: Option<ViewerState>,
 
@@ -724,6 +793,9 @@ pub struct App {
     // Pending large image path (for confirmation dialog)
     pub pending_large_image: Option<std::path::PathBuf>,
 
+    // Pending large file path (for confirmation dialog)
+    pub pending_large_file: Option<std::path::PathBuf>,
+
     // Search result state (재귀 검색 결과)
     pub search_result_state: crate::ui::search_result::SearchResultState,
 
@@ -770,6 +842,8 @@ impl App {
             message_timer: 0,
             settings: Settings::default(),
             theme: crate::ui::theme::Theme::default(),
+            theme_watch_state: ThemeWatchState::watch_theme("light"),
+            design_mode: false,
 
             // 새로운 고급 상태
             viewer_state: None,
@@ -806,6 +880,7 @@ impl App {
             advanced_search_state: crate::ui::advanced_search::AdvancedSearchState::default(),
             image_viewer_state: None,
             pending_large_image: None,
+            pending_large_file: None,
             search_result_state: crate::ui::search_result::SearchResultState::default(),
             previous_screen: None,
             clipboard: None,
@@ -833,6 +908,7 @@ impl App {
 
         // Load theme from settings
         let theme = crate::ui::theme::Theme::load(&settings.theme.name);
+        let theme_watch_state = ThemeWatchState::watch_theme(&settings.theme.name);
 
         Self {
             left_panel: PanelState::with_settings(left_path, &settings.left_panel),
@@ -844,6 +920,8 @@ impl App {
             message_timer: 0,
             settings,
             theme,
+            theme_watch_state,
+            design_mode: false,
 
             // 새로운 고급 상태
             viewer_state: None,
@@ -880,6 +958,7 @@ impl App {
             advanced_search_state: crate::ui::advanced_search::AdvancedSearchState::default(),
             image_viewer_state: None,
             pending_large_image: None,
+            pending_large_file: None,
             search_result_state: crate::ui::search_result::SearchResultState::default(),
             previous_screen: None,
             clipboard: None,
@@ -935,6 +1014,7 @@ impl App {
         // Reload theme if name changed
         if new_settings.theme.name != self.settings.theme.name {
             self.theme = crate::ui::theme::Theme::load(&new_settings.theme.name);
+            self.theme_watch_state.update_theme(&new_settings.theme.name);
         }
 
         // Apply panel sort settings (keep current paths and selection)
@@ -999,6 +1079,7 @@ impl App {
             if new_theme_name != self.settings.theme.name {
                 self.settings.theme.name = new_theme_name.clone();
                 self.theme = crate::ui::theme::Theme::load(&new_theme_name);
+                self.theme_watch_state.update_theme(&new_theme_name);
             }
 
             // Save settings
@@ -1016,6 +1097,11 @@ impl App {
         self.theme = crate::ui::theme::Theme::load(&self.settings.theme.name);
         self.settings_state = None;
         self.dialog = None;
+    }
+
+    /// Reload current theme from file (for hot-reload)
+    pub fn reload_theme(&mut self) {
+        self.theme = crate::ui::theme::Theme::load(&self.settings.theme.name);
     }
 
     pub fn active_panel_mut(&mut self) -> &mut PanelState {
@@ -1122,8 +1208,61 @@ impl App {
                 let archive_path = panel.path.join(&file.name);
                 self.execute_untar(&archive_path);
             } else {
-                // It's a file - open editor
-                self.edit_file()
+                // It's a regular file - check size first
+                let path = panel.path.join(&file.name);
+                const LARGE_FILE_THRESHOLD: u64 = 50 * 1024 * 1024; // 50MB
+                let file_size = std::fs::metadata(&path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+
+                let is_image = crate::ui::image_viewer::is_image_file(&path);
+
+                if file_size > LARGE_FILE_THRESHOLD {
+                    // Show confirmation dialog for large file
+                    let size_mb = file_size as f64 / (1024.0 * 1024.0);
+                    if is_image {
+                        self.pending_large_image = Some(path);
+                        self.dialog = Some(Dialog {
+                            dialog_type: DialogType::LargeImageConfirm,
+                            input: String::new(),
+                            cursor_pos: 0,
+                            message: format!("This image is {:.1}MB. Open anyway?", size_mb),
+                            completion: None,
+                            selected_button: 1, // Default to "No"
+                        });
+                    } else {
+                        self.pending_large_file = Some(path);
+                        self.dialog = Some(Dialog {
+                            dialog_type: DialogType::LargeFileConfirm,
+                            input: String::new(),
+                            cursor_pos: 0,
+                            message: format!("This file is {:.1}MB. Open anyway?", size_mb),
+                            completion: None,
+                            selected_button: 1, // Default to "No"
+                        });
+                    }
+                } else if is_image {
+                    // Check true color support for images
+                    if !crate::ui::image_viewer::supports_true_color() {
+                        self.pending_large_image = Some(path);
+                        self.dialog = Some(Dialog {
+                            dialog_type: DialogType::TrueColorWarning,
+                            input: String::new(),
+                            cursor_pos: 0,
+                            message: "Terminal doesn't support true color. Open anyway?".to_string(),
+                            completion: None,
+                            selected_button: 1, // Default to "No"
+                        });
+                    } else {
+                        self.image_viewer_state = Some(
+                            crate::ui::image_viewer::ImageViewerState::new(&path)
+                        );
+                        self.current_screen = Screen::ImageViewer;
+                    }
+                } else {
+                    // Regular file - open editor
+                    self.edit_file()
+                }
             }
         }
     }
@@ -1161,6 +1300,53 @@ impl App {
             panel.selected_index = 0;
             panel.selected_files.clear();
             panel.load_files();
+        }
+    }
+
+    /// Open current folder in Finder (macOS only)
+    #[cfg(target_os = "macos")]
+    pub fn open_in_finder(&mut self) {
+        let path = self.active_panel().path.clone();
+        match std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+        {
+            Ok(_) => self.show_message(&format!("Opened in Finder: {}", path.display())),
+            Err(e) => self.show_message(&format!("Failed to open: {}", e)),
+        }
+    }
+
+    /// Open current folder in VS Code (macOS only)
+    /// Falls back to code-insiders if code is not available
+    #[cfg(target_os = "macos")]
+    pub fn open_in_vscode(&mut self) {
+        use std::process::Command;
+
+        let path = self.active_panel().path.clone();
+
+        // Check which command is available
+        let code_cmd = if Command::new("which")
+            .arg("code")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            "code"
+        } else if Command::new("which")
+            .arg("code-insiders")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            "code-insiders"
+        } else {
+            self.show_message("VS Code not found (tried: code, code-insiders)");
+            return;
+        };
+
+        match Command::new(code_cmd).arg(&path).spawn() {
+            Ok(_) => self.show_message(&format!("Opened in {}: {}", code_cmd, path.display())),
+            Err(e) => self.show_message(&format!("Failed to open {}: {}", code_cmd, e)),
         }
     }
 
@@ -1417,6 +1603,7 @@ impl App {
 
                 // 새로운 고급 뷰어 사용
                 let mut viewer = ViewerState::new();
+                viewer.set_syntax_colors(self.theme.syntax);
                 match viewer.load_file(&path) {
                     Ok(_) => {
                         self.viewer_state = Some(viewer);
@@ -1440,6 +1627,7 @@ impl App {
 
                 // 새로운 고급 편집기 사용
                 let mut editor = EditorState::new();
+                editor.set_syntax_colors(self.theme.syntax);
                 match editor.load_file(&path) {
                     Ok(_) => {
                         self.editor_state = Some(editor);
@@ -2044,8 +2232,14 @@ impl App {
         };
 
         if is_same_folder {
-            self.clipboard = Some(clipboard);
-            self.show_message("Source and target are the same folder");
+            // For Cut operation in same folder, it doesn't make sense
+            if clipboard.operation == ClipboardOperation::Cut {
+                self.clipboard = Some(clipboard);
+                self.show_message("Cannot move files to the same folder");
+                return;
+            }
+            // For Copy operation in same folder, create duplicate with _dup suffix
+            self.execute_same_folder_paste(clipboard);
             return;
         }
 
@@ -2127,6 +2321,49 @@ impl App {
         }
 
         conflicts
+    }
+
+    /// Generate a duplicate filename with _dup suffix, checking for existence
+    /// e.g., "file.txt" -> "file_dup.txt", if exists -> "file_dup2.txt", etc.
+    fn generate_dup_filename(name: &str, target_dir: &Path) -> String {
+        let generate_name = |base: &str, ext: &str, suffix: &str| -> String {
+            if ext.is_empty() {
+                format!("{}{}", base, suffix)
+            } else {
+                format!("{}{}{}", base, suffix, ext)
+            }
+        };
+
+        let (base, ext) = if let Some(dot_pos) = name.rfind('.') {
+            let (b, e) = name.split_at(dot_pos);
+            (b.to_string(), e.to_string())
+        } else {
+            (name.to_string(), String::new())
+        };
+
+        // Try _dup first
+        let dup_name = generate_name(&base, &ext, "_dup");
+        if !target_dir.join(&dup_name).exists() {
+            return dup_name;
+        }
+
+        // If _dup exists, try _dup2, _dup3, etc.
+        let mut counter = 2;
+        loop {
+            let suffix = format!("_dup{}", counter);
+            let dup_name = generate_name(&base, &ext, &suffix);
+            if !target_dir.join(&dup_name).exists() {
+                return dup_name;
+            }
+            counter += 1;
+            // Safety limit to prevent infinite loop
+            if counter > 10000 {
+                return generate_name(&base, &ext, &format!("_dup{}", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)));
+            }
+        }
     }
 
     /// Detect files that would conflict (already exist) at copy/move destination
@@ -2228,6 +2465,125 @@ impl App {
         if clipboard.operation == ClipboardOperation::Copy {
             self.clipboard = Some(clipboard);
         }
+    }
+
+    /// Execute paste operation for same folder (creates _dup copies)
+    fn execute_same_folder_paste(&mut self, clipboard: Clipboard) {
+        let source_path = clipboard.source_path.clone();
+
+        // Filter valid files (skip ".." and non-existent)
+        let valid_files: Vec<String> = clipboard.files.iter()
+            .filter(|f| *f != ".." && source_path.join(f).exists())
+            .cloned()
+            .collect();
+
+        if valid_files.is_empty() {
+            self.clipboard = Some(clipboard);
+            self.show_message("No valid files to duplicate");
+            return;
+        }
+
+        // Create progress state
+        let mut progress = FileOperationProgress::new(FileOperationType::Copy);
+        progress.is_active = true;
+        let cancel_flag = progress.cancel_flag.clone();
+
+        // Create channel for progress messages
+        let (tx, rx) = mpsc::channel();
+        progress.receiver = Some(rx);
+
+        // Build rename map: original name -> dup name
+        let mut rename_map: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for file_name in &valid_files {
+            let dup_name = Self::generate_dup_filename(file_name, &source_path);
+            let src = source_path.join(file_name);
+            let dest = source_path.join(&dup_name);
+            rename_map.push((src, dest));
+        }
+
+        let file_count = rename_map.len();
+
+        // Start operation in background thread
+        thread::spawn(move || {
+            let mut completed = 0;
+            let mut failed = 0;
+
+            for (src, dest) in rename_map {
+                if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
+
+                let file_name = src.file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                // Safety check: never overwrite existing files
+                if dest.exists() {
+                    let _ = tx.send(crate::services::file_ops::ProgressMessage::Error(
+                        file_name.clone(),
+                        "destination already exists".to_string(),
+                    ));
+                    failed += 1;
+                    continue;
+                }
+
+                let _ = tx.send(crate::services::file_ops::ProgressMessage::FileStarted(file_name.clone()));
+
+                let result = if src.is_dir() {
+                    // Use create_dir (not create_dir_all) to fail if already exists
+                    std::fs::create_dir(&dest)
+                        .and_then(|_| {
+                            // Now copy contents into the newly created directory
+                            for entry in std::fs::read_dir(&src)? {
+                                let entry = entry?;
+                                let entry_src = entry.path();
+                                let entry_dest = dest.join(entry.file_name());
+                                if entry_src.is_dir() {
+                                    crate::services::file_ops::copy_dir_recursive(&entry_src, &entry_dest)?;
+                                } else {
+                                    std::fs::copy(&entry_src, &entry_dest)?;
+                                }
+                            }
+                            Ok(())
+                        })
+                } else {
+                    // Use create_new to ensure we never overwrite
+                    std::fs::File::create_new(&dest)
+                        .and_then(|_| std::fs::copy(&src, &dest))
+                        .map(|_| ())
+                };
+
+                match result {
+                    Ok(_) => {
+                        completed += 1;
+                        let _ = tx.send(crate::services::file_ops::ProgressMessage::FileCompleted(file_name));
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        let _ = tx.send(crate::services::file_ops::ProgressMessage::Error(
+                            file_name,
+                            e.to_string(),
+                        ));
+                    }
+                }
+            }
+
+            let _ = tx.send(crate::services::file_ops::ProgressMessage::Completed(completed, failed));
+        });
+
+        // Store progress state and show dialog
+        self.file_operation_progress = Some(progress);
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::Progress,
+            input: String::new(),
+            cursor_pos: 0,
+            message: String::new(),
+            completion: None,
+            selected_button: 0,
+        });
+
+        // Keep clipboard for copy operations
+        self.clipboard = Some(clipboard);
     }
 
     /// Execute paste operation with conflict resolution (overwrite/skip sets)
@@ -2363,6 +2719,22 @@ impl App {
                 crate::ui::image_viewer::ImageViewerState::new(&path)
             );
             self.current_screen = Screen::ImageViewer;
+        }
+    }
+
+    pub fn execute_open_large_file(&mut self) {
+        if let Some(path) = self.pending_large_file.take() {
+            let mut editor = EditorState::new();
+            editor.set_syntax_colors(self.theme.syntax);
+            match editor.load_file(&path) {
+                Ok(_) => {
+                    self.editor_state = Some(editor);
+                    self.current_screen = Screen::FileEditor;
+                }
+                Err(e) => {
+                    self.show_message(&format!("Cannot open file: {}", e));
+                }
+            }
         }
     }
 

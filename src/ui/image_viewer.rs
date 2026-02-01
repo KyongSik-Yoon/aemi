@@ -342,9 +342,9 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
 
     let block = Block::default()
         .title(title)
-        .title_style(Style::default().fg(theme.border_active))
+        .title_style(Style::default().fg(theme.image_viewer.border))
         .borders(Borders::ALL)
-        .border_style(theme.border_style(true));
+        .border_style(Style::default().fg(theme.image_viewer.border));
 
     let inner = block.inner(viewer_area);
     frame.render_widget(block, viewer_area);
@@ -357,8 +357,8 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
             Line::from(""),
             Line::from(""),
             Line::from(vec![
-                Span::styled(format!(" {} ", spinner), Style::default().fg(theme.info)),
-                Span::styled("Loading image...", Style::default().fg(theme.info)),
+                Span::styled(format!(" {} ", spinner), Style::default().fg(theme.image_viewer.loading_spinner)),
+                Span::styled("Loading image...", Style::default().fg(theme.image_viewer.loading_text)),
             ]),
         ];
 
@@ -374,9 +374,9 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     if let Some(ref error) = state.error {
         let error_lines = vec![
             Line::from(""),
-            Line::from(Span::styled(error.clone(), Style::default().fg(theme.error))),
+            Line::from(Span::styled(error.clone(), Style::default().fg(theme.image_viewer.error_text))),
             Line::from(""),
-            Line::from(Span::styled("Press ESC to close", theme.dim_style())),
+            Line::from(Span::styled("Press ESC to close", Style::default().fg(theme.image_viewer.hint_text))),
         ];
         frame.render_widget(Paragraph::new(error_lines), inner);
         return;
@@ -389,20 +389,20 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     // Help line at bottom
     let help_area = Rect::new(inner.x, inner.y + inner.height.saturating_sub(1), inner.width, 1);
     let help = Line::from(vec![
-        Span::styled("PgUp", Style::default().fg(theme.success)),
-        Span::styled("/", theme.dim_style()),
-        Span::styled("PgDn", Style::default().fg(theme.success)),
-        Span::styled(" Prev/Next ", theme.dim_style()),
-        Span::styled("+", Style::default().fg(theme.success)),
-        Span::styled("/", theme.dim_style()),
-        Span::styled("-", Style::default().fg(theme.success)),
-        Span::styled(" Zoom ", theme.dim_style()),
-        Span::styled("Arrow", Style::default().fg(theme.success)),
-        Span::styled(" Pan ", theme.dim_style()),
-        Span::styled("r", Style::default().fg(theme.success)),
-        Span::styled(" Reset ", theme.dim_style()),
-        Span::styled("Esc", Style::default().fg(theme.success)),
-        Span::styled(" Close", theme.dim_style()),
+        Span::styled("PgUp", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled("/", Style::default().fg(theme.image_viewer.footer_separator)),
+        Span::styled("PgDn", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled(" Prev/Next ", Style::default().fg(theme.image_viewer.footer_text)),
+        Span::styled("+", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled("/", Style::default().fg(theme.image_viewer.footer_separator)),
+        Span::styled("-", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled(" Zoom ", Style::default().fg(theme.image_viewer.footer_text)),
+        Span::styled("Arrow", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled(" Pan ", Style::default().fg(theme.image_viewer.footer_text)),
+        Span::styled("r", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled(" Reset ", Style::default().fg(theme.image_viewer.footer_text)),
+        Span::styled("Esc", Style::default().fg(theme.image_viewer.footer_key)),
+        Span::styled(" Close", Style::default().fg(theme.image_viewer.footer_text)),
     ]);
     frame.render_widget(Paragraph::new(help), help_area);
 }

@@ -1,5 +1,7 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use std::path::Path;
+
+use crate::ui::theme::SyntaxColors;
 
 /// 토큰 유형
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,77 +112,32 @@ impl Language {
     }
 }
 
-/// 문법 강조 색상 스키마
-#[derive(Clone, Debug)]
-pub struct SyntaxColors {
-    pub keyword: Color,
-    pub type_color: Color,
-    pub string: Color,
-    pub number: Color,
-    pub comment: Color,
-    pub operator: Color,
-    pub function: Color,
-    pub macro_color: Color,
-    pub attribute: Color,
-    pub variable: Color,
-    pub constant: Color,
-    pub bracket: Color,
-    pub normal: Color,
-}
+/// 토큰 타입에 따른 스타일 반환
+pub fn style_for_token(colors: &SyntaxColors, token_type: TokenType) -> Style {
+    let color = match token_type {
+        TokenType::Keyword => colors.keyword,
+        TokenType::Type => colors.type_name,
+        TokenType::String => colors.string,
+        TokenType::Number => colors.number,
+        TokenType::Comment => colors.comment,
+        TokenType::Operator => colors.operator,
+        TokenType::Function => colors.function,
+        TokenType::Macro => colors.macro_name,
+        TokenType::Attribute => colors.attribute,
+        TokenType::Variable => colors.variable,
+        TokenType::Constant => colors.constant,
+        TokenType::Bracket => colors.bracket,
+        TokenType::Normal => colors.normal,
+    };
 
-impl Default for SyntaxColors {
-    fn default() -> Self {
-        Self {
-            keyword: Color::Indexed(239),
-            type_color: Color::Indexed(240),
-            string: Color::Indexed(242),
-            number: Color::Indexed(243),
-            comment: Color::Indexed(244),
-            operator: Color::Indexed(241),
-            function: Color::Indexed(240),
-            macro_color: Color::Indexed(239),
-            attribute: Color::Indexed(241),
-            variable: Color::Indexed(245),
-            constant: Color::Indexed(243),
-            bracket: Color::Indexed(245),
-            normal: Color::Indexed(245),
-        }
+    let mut style = Style::default().fg(color);
+    if token_type == TokenType::Comment {
+        style = style.add_modifier(Modifier::ITALIC);
     }
-}
-
-impl SyntaxColors {
-    /// 256 색상 호환 버전 (default와 동일)
-    pub fn compatible() -> Self {
-        Self::default()
+    if token_type == TokenType::Keyword {
+        style = style.add_modifier(Modifier::BOLD);
     }
-
-    /// 토큰 타입에 따른 스타일 반환
-    pub fn style_for(&self, token_type: TokenType) -> Style {
-        let color = match token_type {
-            TokenType::Keyword => self.keyword,
-            TokenType::Type => self.type_color,
-            TokenType::String => self.string,
-            TokenType::Number => self.number,
-            TokenType::Comment => self.comment,
-            TokenType::Operator => self.operator,
-            TokenType::Function => self.function,
-            TokenType::Macro => self.macro_color,
-            TokenType::Attribute => self.attribute,
-            TokenType::Variable => self.variable,
-            TokenType::Constant => self.constant,
-            TokenType::Bracket => self.bracket,
-            TokenType::Normal => self.normal,
-        };
-
-        let mut style = Style::default().fg(color);
-        if token_type == TokenType::Comment {
-            style = style.add_modifier(Modifier::ITALIC);
-        }
-        if token_type == TokenType::Keyword {
-            style = style.add_modifier(Modifier::BOLD);
-        }
-        style
-    }
+    style
 }
 
 /// 토큰
@@ -191,7 +148,7 @@ pub struct Token {
 }
 
 /// 문법 강조기
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SyntaxHighlighter {
     language: Language,
     colors: SyntaxColors,
@@ -200,18 +157,11 @@ pub struct SyntaxHighlighter {
 }
 
 impl SyntaxHighlighter {
-    pub fn new(language: Language) -> Self {
-        let truecolor = std::env::var("COLORTERM")
-            .map(|v| v == "truecolor" || v == "24bit")
-            .unwrap_or(false);
-
+    /// 테마의 SyntaxColors를 사용하여 생성
+    pub fn new(language: Language, colors: SyntaxColors) -> Self {
         Self {
             language,
-            colors: if truecolor {
-                SyntaxColors::default()
-            } else {
-                SyntaxColors::compatible()
-            },
+            colors,
             in_multiline_comment: false,
             in_multiline_string: false,
         }
@@ -245,7 +195,7 @@ impl SyntaxHighlighter {
 
     /// 토큰에 대한 스타일 가져오기
     pub fn style_for(&self, token_type: TokenType) -> Style {
-        self.colors.style_for(token_type)
+        style_for_token(&self.colors, token_type)
     }
 
     /// 상태 리셋
@@ -576,11 +526,13 @@ impl SyntaxHighlighter {
 
         while i < chars.len() {
             // 주석
-            if i + 3 < chars.len() && &line[i..i+4] == "<!--" {
+            if i + 3 < chars.len()
+                && chars[i] == '<' && chars[i+1] == '!' && chars[i+2] == '-' && chars[i+3] == '-'
+            {
                 let start = i;
                 i += 4;
                 while i + 2 < chars.len() {
-                    if &line[i..i+3] == "-->" {
+                    if chars[i] == '-' && chars[i+1] == '-' && chars[i+2] == '>' {
                         i += 3;
                         break;
                     }
@@ -2253,7 +2205,8 @@ mod tests {
 
     #[test]
     fn test_rust_tokenization() {
-        let mut highlighter = SyntaxHighlighter::new(Language::Rust);
+        let colors = crate::ui::theme::Theme::default().syntax;
+        let mut highlighter = SyntaxHighlighter::new(Language::Rust, colors);
         let tokens = highlighter.tokenize_line("fn main() {");
         assert!(tokens.iter().any(|t| t.text == "fn" && t.token_type == TokenType::Keyword));
         assert!(tokens.iter().any(|t| t.text == "main" && t.token_type == TokenType::Function));
@@ -2261,7 +2214,8 @@ mod tests {
 
     #[test]
     fn test_python_tokenization() {
-        let mut highlighter = SyntaxHighlighter::new(Language::Python);
+        let colors = crate::ui::theme::Theme::default().syntax;
+        let mut highlighter = SyntaxHighlighter::new(Language::Python, colors);
         let tokens = highlighter.tokenize_line("def hello():");
         assert!(tokens.iter().any(|t| t.text == "def" && t.token_type == TokenType::Keyword));
         assert!(tokens.iter().any(|t| t.text == "hello" && t.token_type == TokenType::Function));

@@ -35,14 +35,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     if (frame_area.width as u32 * frame_area.height as u32) > 65534 {
         // Terminal too large, show warning message only
         let msg = Paragraph::new("Terminal too large. Please resize smaller.")
-            .style(theme.warning_style());
+            .style(Style::default().fg(theme.message.text).add_modifier(Modifier::BOLD));
         let safe_rect = Rect::new(0, 0, frame_area.width.min(80), 1);
         frame.render_widget(msg, safe_rect);
         return;
     }
 
     // Fill entire screen with background color first
-    let background = Block::default().style(Style::default().bg(theme.bg));
+    let background = Block::default().style(Style::default().bg(theme.palette.bg));
     frame.render_widget(background, area);
 
     // Clear the entire screen first for full-screen views
@@ -200,14 +200,14 @@ fn draw_function_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     if let Some(ref msg) = app.message {
         let message = Paragraph::new(Span::styled(
             format!(" {} ", msg),
-            theme.warning_style(),
+            Style::default().fg(theme.message.text).add_modifier(Modifier::BOLD),
         ));
         frame.render_widget(message, area);
         return;
     }
 
     // 단축키: 첫 글자 강조 스타일
-    let shortcuts = [
+    let mut shortcuts: Vec<(&str, &str)> = vec![
         ("h", "elp "),
         ("i", "nfo "),
         ("e", "dit "),
@@ -219,14 +219,23 @@ fn draw_function_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         (".", "AI "),
         ("p", "roc "),
         ("1", "home "),
-        ("`", "set "),
-        ("q", "uit"),
+        ("2", "ref "),
     ];
 
+    // macOS only: open in Finder, open in VS Code
+    #[cfg(target_os = "macos")]
+    {
+        shortcuts.push(("o", "pen "));
+        shortcuts.push(("c", "ode "));
+    }
+
+    shortcuts.push(("`", "set "));
+    shortcuts.push(("q", "uit"));
+
     let mut spans = Vec::new();
-    for (key, rest) in shortcuts {
-        spans.push(Span::styled(key, Style::default().fg(theme.shortcut_key)));
-        spans.push(Span::styled(rest, theme.dim_style()));
+    for (key, rest) in &shortcuts {
+        spans.push(Span::styled(*key, Style::default().fg(theme.function_bar.key)));
+        spans.push(Span::styled(*rest, Style::default().fg(theme.function_bar.label)));
     }
 
     // Calculate shortcuts width and add padding + version

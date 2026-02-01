@@ -180,6 +180,7 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     lines.push(key_line("Tab", "Switch panel"));
     lines.push(key_line("Left/Right", "Switch panel (keep position)"));
     lines.push(key_line("1", "Go to home directory"));
+    lines.push(key_line("2", "Refresh file list"));
     lines.push(key_line("/", "Go to path dialog"));
     lines.push(Line::from(""));
 
@@ -222,6 +223,11 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     lines.push(key_line("T", "Create tar archive"));
     lines.push(key_line("X / Delete", "Delete file(s)"));
     lines.push(key_line("F", "Find/search files"));
+    #[cfg(target_os = "macos")]
+    {
+        lines.push(key_line("O", "Open folder in Finder"));
+        lines.push(key_line("C", "Open folder in VS Code"));
+    }
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -342,24 +348,40 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
         Span::styled("i", key_highlight_style),
         Span::styled("nfo ", desc_style),
         Span::styled("e", key_highlight_style),
-        Span::styled("dit", desc_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  k", key_highlight_style),
+        Span::styled("dit ", desc_style),
+        Span::styled("k", key_highlight_style),
         Span::styled("mkdir ", desc_style),
         Span::styled("x", key_highlight_style),
         Span::styled("del ", desc_style),
         Span::styled("r", key_highlight_style),
-        Span::styled("en ", desc_style),
-        Span::styled("t", key_highlight_style),
+        Span::styled("en", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  t", key_highlight_style),
         Span::styled("ar ", desc_style),
         Span::styled("f", key_highlight_style),
         Span::styled("ind ", desc_style),
         Span::styled(".", key_highlight_style),
         Span::styled("AI ", desc_style),
         Span::styled("p", key_highlight_style),
-        Span::styled("roc", desc_style),
+        Span::styled("roc ", desc_style),
+        Span::styled("1", key_highlight_style),
+        Span::styled("home ", desc_style),
+        Span::styled("2", key_highlight_style),
+        Span::styled("ref", desc_style),
     ]));
+    #[cfg(target_os = "macos")]
+    lines.push(Line::from(vec![
+        Span::styled("  o", key_highlight_style),
+        Span::styled("pen ", desc_style),
+        Span::styled("c", key_highlight_style),
+        Span::styled("ode ", desc_style),
+        Span::styled("`", key_highlight_style),
+        Span::styled("set ", desc_style),
+        Span::styled("q", key_highlight_style),
+        Span::styled("uit", desc_style),
+    ]));
+    #[cfg(not(target_os = "macos"))]
     lines.push(Line::from(vec![
         Span::styled("  `", key_highlight_style),
         Span::styled("set ", desc_style),

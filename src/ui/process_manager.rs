@@ -1,6 +1,7 @@
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
@@ -12,7 +13,7 @@ use crate::services::process::{self, SortField};
 pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(theme.border_style(true));
+        .border_style(Style::default().fg(theme.process_manager.border));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -136,7 +137,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         } else {
             format!("Kill process {}? (y/n)", pid)
         };
-        let confirm_line = Line::from(Span::styled(confirm_text, theme.warning_style()));
+        let confirm_line = Line::from(Span::styled(confirm_text, Style::default().fg(theme.process_manager.confirm_text).add_modifier(Modifier::BOLD)));
         frame.render_widget(
             Paragraph::new(confirm_line).alignment(ratatui::layout::Alignment::Center),
             Rect::new(inner.x, inner.y + inner.height - 3, inner.width, 1),

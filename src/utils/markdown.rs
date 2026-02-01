@@ -668,13 +668,13 @@ impl MarkdownTheme {
     /// Create MarkdownTheme using only Panel/Viewer/Editor palette colors
     pub fn from_theme(theme: &crate::ui::theme::Theme) -> Self {
         Self {
-            text: theme.text,                       // 243: normal text
-            dim: theme.text_dim,                    // 251: dim text
-            header: theme.text_directory,           // 67: directory blue (was info/21)
-            code: theme.editor.footer_key,          // 74: cyan (was warning/198)
-            link: theme.text_directory,             // 67: directory blue (was info/21)
-            blockquote: theme.text_header,          // 249: header text
-            success: theme.editor.footer_key,       // 74: cyan (was success/34)
+            text: theme.palette.fg,                 // 기본 텍스트
+            dim: theme.palette.fg_dim,              // 흐린 텍스트
+            header: theme.panel.directory_text,     // 디렉토리 색상
+            code: theme.editor.footer_key,          // 코드 색상
+            link: theme.panel.directory_text,       // 링크 색상
+            blockquote: theme.panel.header_text,    // 인용 색상
+            success: theme.editor.footer_key,       // 성공 색상
         }
     }
 }

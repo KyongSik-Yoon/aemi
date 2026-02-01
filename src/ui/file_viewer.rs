@@ -67,6 +67,7 @@ pub struct ViewerState {
     // 문법 강조
     pub language: Language,
     pub highlighter: Option<SyntaxHighlighter>,
+    pub syntax_colors: crate::ui::theme::SyntaxColors,
 
     // 인코딩
     pub encoding: String,
@@ -106,11 +107,21 @@ impl ViewerState {
             goto_input: String::new(),
             language: Language::Plain,
             highlighter: None,
+            syntax_colors: crate::ui::theme::Theme::default().syntax,
             encoding: "UTF-8".to_string(),
             is_binary: false,
             file_size: 0,
             total_lines: 0,
             visible_height: 20, // 기본값, 렌더링 시 업데이트됨
+        }
+    }
+
+    /// 테마의 syntax colors 설정
+    pub fn set_syntax_colors(&mut self, colors: crate::ui::theme::SyntaxColors) {
+        self.syntax_colors = colors;
+        // 하이라이터가 있으면 새 색상으로 재생성
+        if self.highlighter.is_some() {
+            self.highlighter = Some(SyntaxHighlighter::new(self.language, self.syntax_colors));
         }
     }
 
@@ -174,7 +185,7 @@ impl ViewerState {
         // 언어 감지 및 하이라이터 초기화
         self.language = Language::from_extension(path);
         if !self.is_binary {
-            self.highlighter = Some(SyntaxHighlighter::new(self.language));
+            self.highlighter = Some(SyntaxHighlighter::new(self.language, self.syntax_colors));
         }
 
         Ok(())
@@ -421,7 +432,7 @@ impl ViewerState {
 pub fn draw(frame: &mut Frame, state: &mut ViewerState, area: Rect, theme: &Theme) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(theme.border_style(true));
+        .border_style(Style::default().fg(theme.viewer.border));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -466,7 +477,7 @@ pub fn draw(frame: &mut Frame, state: &mut ViewerState, area: Rect, theme: &Them
             Span::styled(
                 format!(" [{}]", state.bookmarks.len()),
                 Style::default()
-                    .fg(theme.info)
+                    .fg(theme.viewer.bookmark_indicator)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
@@ -528,9 +539,9 @@ pub fn draw(frame: &mut Frame, state: &mut ViewerState, area: Rect, theme: &Them
 
             // 줄 번호 (첫 줄만 표시)
             let line_num_style = if is_bookmarked {
-                Style::default().fg(theme.info).add_modifier(Modifier::BOLD)
+                Style::default().fg(theme.viewer.bookmark_indicator).add_modifier(Modifier::BOLD)
             } else {
-                theme.dim_style()
+                Style::default().fg(theme.viewer.line_number)
             };
 
             let line_num_span = if *is_first {
@@ -600,9 +611,9 @@ pub fn draw(frame: &mut Frame, state: &mut ViewerState, area: Rect, theme: &Them
 
             // 줄 번호
             let line_num_style = if is_bookmarked {
-                Style::default().fg(theme.info).add_modifier(Modifier::BOLD)
+                Style::default().fg(theme.viewer.bookmark_indicator).add_modifier(Modifier::BOLD)
             } else {
-                theme.dim_style()
+                Style::default().fg(theme.viewer.line_number)
             };
 
             let line_num_span = Span::styled(
@@ -866,15 +877,15 @@ fn highlight_search_in_line(
             ));
         }
 
-        // 현재 매치와 다른 매치 구분 (에디터와 동일한 색상)
+        // 현재 매치와 다른 매치 구분
         let match_style = if match_idx == current_match {
             Style::default()
-                .bg(theme.bg_selected)
-                .fg(theme.bg)
+                .bg(theme.viewer.search_match_current_bg)
+                .fg(theme.viewer.search_match_current_fg)
         } else {
             Style::default()
-                .bg(theme.shortcut_key)
-                .fg(theme.bg)
+                .bg(theme.viewer.search_match_other_bg)
+                .fg(theme.viewer.search_match_other_fg)
         };
 
         spans.push(Span::styled(
@@ -915,10 +926,10 @@ fn highlight_search_in_wrapped_line(
     let mut spans = Vec::new();
     let mut last_end = 0;
 
-    // Wrapped 모드에서는 현재 매치 구분이 어려우므로 동일한 스타일 사용 (에디터와 동일한 색상)
+    // Wrapped 모드에서는 현재 매치 구분이 어려우므로 동일한 스타일 사용
     let match_style = Style::default()
-        .bg(theme.shortcut_key)
-        .fg(theme.bg);
+        .bg(theme.viewer.search_match_other_bg)
+        .fg(theme.viewer.search_match_other_fg);
 
     for (byte_start, matched) in lower_line.match_indices(&lower_term) {
         let byte_end = byte_start + matched.len();
@@ -1005,9 +1016,9 @@ fn render_line_with_syntax_and_search(
                 if char_idx >= start && char_idx < end {
                     // 매치된 부분: 배경색 적용, 문법 강조의 modifier(이탤릭 등) 유지
                     if match_idx == current_match {
-                        style = style.bg(theme.bg_selected).fg(theme.bg);
+                        style = style.bg(theme.viewer.search_match_current_bg).fg(theme.viewer.search_match_current_fg);
                     } else {
-                        style = style.bg(theme.shortcut_key).fg(theme.bg);
+                        style = style.bg(theme.viewer.search_match_other_bg).fg(theme.viewer.search_match_other_fg);
                     }
                     break;
                 }
@@ -1026,9 +1037,9 @@ fn render_line_with_syntax_and_search(
             for &(match_idx, start, end) in &line_matches {
                 if i >= start && i < end {
                     if match_idx == current_match {
-                        style = style.bg(theme.bg_selected).fg(theme.bg);
+                        style = style.bg(theme.viewer.search_match_current_bg).fg(theme.viewer.search_match_current_fg);
                     } else {
-                        style = style.bg(theme.shortcut_key).fg(theme.bg);
+                        style = style.bg(theme.viewer.search_match_other_bg).fg(theme.viewer.search_match_other_fg);
                     }
                     break;
                 }
@@ -1118,7 +1129,7 @@ fn render_wrapped_line_with_syntax_and_search(
             for &(start, end) in &match_ranges {
                 if char_idx >= start && char_idx < end {
                     // 매치된 부분: 배경색 적용, 문법 강조의 modifier(이탤릭 등) 유지
-                    style = style.bg(theme.shortcut_key).fg(theme.bg);
+                    style = style.bg(theme.viewer.search_match_other_bg).fg(theme.viewer.search_match_other_fg);
                     break;
                 }
             }
@@ -1135,7 +1146,7 @@ fn render_wrapped_line_with_syntax_and_search(
 
             for &(start, end) in &match_ranges {
                 if i >= start && i < end {
-                    style = style.bg(theme.shortcut_key).fg(theme.bg);
+                    style = style.bg(theme.viewer.search_match_other_bg).fg(theme.viewer.search_match_other_fg);
                     break;
                 }
             }

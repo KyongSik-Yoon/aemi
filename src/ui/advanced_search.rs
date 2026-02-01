@@ -139,7 +139,7 @@ pub fn draw(frame: &mut Frame, state: &AdvancedSearchState, area: Rect, theme: &
         .title(" Advanced Search ")
         .title_style(theme.header_style())
         .borders(Borders::ALL)
-        .border_style(theme.border_style(true))
+        .border_style(Style::default().fg(theme.advanced_search.border))
         .border_type(ratatui::widgets::BorderType::Double);
 
     let inner = block.inner(dialog_area);
@@ -157,29 +157,29 @@ pub fn draw(frame: &mut Frame, state: &AdvancedSearchState, area: Rect, theme: &
             Span::styled(
                 prefix,
                 if is_active {
-                    Style::default().fg(theme.border_active)
+                    Style::default().fg(theme.advanced_search.border)
                 } else {
-                    theme.normal_style()
+                    Style::default().fg(theme.advanced_search.label)
                 },
             ),
             Span::styled(
                 format!("{:10}", field.label()),
                 if is_active {
-                    Style::default().fg(theme.border_active)
+                    Style::default().fg(theme.advanced_search.border)
                 } else {
-                    theme.normal_style()
+                    Style::default().fg(theme.advanced_search.label)
                 },
             ),
-            Span::styled("[", Style::default().fg(theme.info)),
+            Span::styled("[", Style::default().fg(theme.advanced_search.field_bracket)),
             Span::styled(
                 format!("{:12}", value),
                 if is_active {
                     theme.selected_style()
                 } else {
-                    theme.normal_style()
+                    Style::default().fg(theme.advanced_search.input_text)
                 },
             ),
-            Span::styled("]", Style::default().fg(theme.info)),
+            Span::styled("]", Style::default().fg(theme.advanced_search.field_bracket)),
         ];
 
         if is_active {

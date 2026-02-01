@@ -70,6 +70,7 @@ pub struct PanelColors {
     pub header_bg: Color,
     pub header_bg_active: Color,
     pub header_text: Color,
+    pub header_text_active: Color,  // 활성 패널 헤더 텍스트
     pub file_text: Color,
     pub directory_text: Color,
     pub selected_bg: Color,
@@ -187,6 +188,21 @@ pub struct DialogColors {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 확인 다이얼로그 색상 (Large File/Image Confirm)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Clone, Copy)]
+pub struct ConfirmDialogColors {
+    pub bg: Color,                      // 배경
+    pub border: Color,                  // 테두리
+    pub title: Color,                   // 제목
+    pub message_text: Color,            // 메시지 텍스트
+    pub button_text: Color,             // 일반 버튼 텍스트
+    pub button_selected_bg: Color,      // 선택 버튼 배경
+    pub button_selected_text: Color,    // 선택 버튼 텍스트
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 설정 다이얼로그 색상
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -232,6 +248,27 @@ pub struct EditorColors {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 코드 하이라이팅 색상
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Clone, Copy, Debug)]
+pub struct SyntaxColors {
+    pub keyword: Color,      // if, else, for, while, fn, let, etc.
+    pub type_name: Color,    // String, i32, Vec, etc.
+    pub string: Color,       // "hello", 'c'
+    pub number: Color,       // 123, 3.14
+    pub comment: Color,      // // comment, /* comment */
+    pub operator: Color,     // +, -, *, /, =, ==, etc.
+    pub function: Color,     // function names
+    pub macro_name: Color,   // println!, vec!, etc.
+    pub attribute: Color,    // #[derive], @decorator
+    pub variable: Color,     // variable names
+    pub constant: Color,     // CONST_VALUE, true, false
+    pub bracket: Color,      // (), [], {}
+    pub normal: Color,       // default text
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 파일 뷰어 색상
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -242,6 +279,7 @@ pub struct ViewerColors {
     pub header_text: Color,
     pub line_number: Color,
     pub text: Color,
+    pub bookmark_indicator: Color,  // 북마크 줄 표시 색상
     pub search_input_text: Color,
     pub search_cursor_fg: Color,
     pub search_cursor_bg: Color,
@@ -334,6 +372,10 @@ pub struct SystemInfoColors {
     pub value: Color,
     pub bar_fill: Color,
     pub bar_empty: Color,
+    pub usage_low: Color,      // 낮은 사용량 (< 70%)
+    pub usage_medium: Color,   // 중간 사용량 (70-90%)
+    pub usage_high: Color,     // 높은 사용량 (>= 90%)
+    pub tab_active: Color,     // 활성 탭 색상
     pub disk_header: Color,
     pub disk_text: Color,
     pub selected_bg: Color,
@@ -352,6 +394,7 @@ pub struct SearchResultColors {
     pub border: Color,
     pub header_text: Color,
     pub column_header: Color,
+    pub column_header_dim: Color,  // 흐린 컬럼 헤더
     pub directory_text: Color,
     pub file_text: Color,
     pub selected_bg: Color,
@@ -454,6 +497,7 @@ pub struct AdvancedSearchColors {
     pub label: Color,
     pub input_text: Color,
     pub input_cursor: Color,
+    pub field_bracket: Color,  // 필드 괄호 색상
     pub checkbox_checked: Color,
     pub checkbox_unchecked: Color,
     pub button_text: Color,
@@ -483,8 +527,10 @@ pub struct Theme {
     pub function_bar: FunctionBarColors,
     pub message: MessageColors,
     pub dialog: DialogColors,
+    pub confirm_dialog: ConfirmDialogColors,
     pub settings: SettingsColors,
     pub editor: EditorColors,
+    pub syntax: SyntaxColors,
     pub viewer: ViewerColors,
     pub process_manager: ProcessManagerColors,
     pub ai_screen: AIScreenColors,
@@ -497,28 +543,6 @@ pub struct Theme {
 
     // 아이콘 문자
     pub chars: ThemeChars,
-
-    // ═══ 하위 호환성을 위한 기존 필드 (deprecated) ═══
-    pub bg: Color,
-    pub bg_panel: Color,
-    pub bg_selected: Color,
-    pub bg_header: Color,
-    pub bg_header_active: Color,
-    pub bg_status_bar: Color,
-    pub text: Color,
-    pub text_dim: Color,
-    pub text_bold: Color,
-    pub text_selected: Color,
-    pub text_header: Color,
-    pub text_header_active: Color,
-    pub text_directory: Color,
-    pub border: Color,
-    pub border_active: Color,
-    pub success: Color,
-    pub warning: Color,
-    pub error: Color,
-    pub info: Color,
-    pub shortcut_key: Color,
 }
 
 impl Default for Theme {
@@ -592,6 +616,7 @@ impl Theme {
             header_bg: Color::Indexed(254),
             header_bg_active: Color::Indexed(253),
             header_text: Color::Indexed(249),
+            header_text_active: Color::Indexed(242),  // 활성 패널 헤더 텍스트
             file_text: Color::Indexed(243),
             directory_text: Color::Indexed(67),
             selected_bg: Color::Indexed(67),
@@ -688,6 +713,17 @@ impl Theme {
             tar_exclude_button_selected_text: Color::Indexed(231), // 선택 버튼 텍스트
         };
 
+        // 확인 다이얼로그 (Large File/Image Confirm)
+        let confirm_dialog = ConfirmDialogColors {
+            bg: Color::Indexed(255),
+            border: Color::Indexed(238),
+            title: Color::Indexed(238),
+            message_text: Color::Indexed(243),
+            button_text: Color::Indexed(251),
+            button_selected_bg: Color::Indexed(67),
+            button_selected_text: Color::Indexed(231),
+        };
+
         // 설정 다이얼로그
         let settings = SettingsColors {
             bg: Color::Indexed(255),
@@ -725,6 +761,23 @@ impl Theme {
             find_option_active: Color::Indexed(74),
         };
 
+        // 코드 하이라이팅 (라이트 테마)
+        let syntax = SyntaxColors {
+            keyword: Color::Indexed(127),     // 보라색 (if, else, fn, let)
+            type_name: Color::Indexed(37),    // 청록색 (String, i32, Vec)
+            string: Color::Indexed(28),       // 녹색 ("hello")
+            number: Color::Indexed(166),      // 주황색 (123, 3.14)
+            comment: Color::Indexed(102),     // 회색 (// comment)
+            operator: Color::Indexed(241),    // 진한 회색 (+, -, =)
+            function: Color::Indexed(130),    // 갈색/주황 (function names)
+            macro_name: Color::Indexed(91),   // 자주색 (println!, vec!)
+            attribute: Color::Indexed(243),   // 회색 (#[derive])
+            variable: Color::Indexed(236),    // 진한 회색 (variables)
+            constant: Color::Indexed(161),    // 마젠타 (CONST, true, false)
+            bracket: Color::Indexed(240),     // 회색 ((), [], {})
+            normal: Color::Indexed(236),      // 기본 텍스트
+        };
+
         // 뷰어
         let viewer = ViewerColors {
             bg: Color::Indexed(255),
@@ -732,6 +785,7 @@ impl Theme {
             header_text: Color::Indexed(249),
             line_number: Color::Indexed(251),
             text: Color::Indexed(243),
+            bookmark_indicator: Color::Indexed(21),   // 북마크 표시 색상
             search_input_text: Color::Indexed(67),
             search_cursor_fg: Color::Indexed(255),
             search_cursor_bg: Color::Indexed(67),
@@ -812,6 +866,10 @@ impl Theme {
             value: Color::Indexed(243),
             bar_fill: Color::Indexed(34),
             bar_empty: Color::Indexed(251),
+            usage_low: Color::Indexed(34),     // 성공 색상 (녹색)
+            usage_medium: Color::Indexed(198), // 경고 색상 (핑크)
+            usage_high: Color::Indexed(198),   // 에러 색상 (핑크)
+            tab_active: Color::Indexed(238),   // 활성 테두리 색상
             disk_header: Color::Indexed(21),
             disk_text: Color::Indexed(243),
             selected_bg: Color::Indexed(67),
@@ -826,6 +884,7 @@ impl Theme {
             border: Color::Indexed(238),
             header_text: Color::Indexed(249),
             column_header: Color::Indexed(21),
+            column_header_dim: Color::Indexed(251),  // 흐린 컬럼 헤더
             directory_text: Color::Indexed(238),
             file_text: Color::Indexed(243),
             selected_bg: Color::Indexed(67),
@@ -912,6 +971,7 @@ impl Theme {
             label: Color::Indexed(243),
             input_text: Color::Indexed(243),
             input_cursor: Color::Indexed(238),
+            field_bracket: Color::Indexed(21),  // 필드 괄호 색상
             checkbox_checked: Color::Indexed(34),
             checkbox_unchecked: Color::Indexed(251),
             button_text: Color::Indexed(251),
@@ -930,8 +990,10 @@ impl Theme {
             function_bar,
             message,
             dialog,
+            confirm_dialog,
             settings,
             editor,
+            syntax,
             viewer,
             process_manager,
             ai_screen,
@@ -942,28 +1004,6 @@ impl Theme {
             help,
             advanced_search,
             chars: ThemeChars::default(),
-
-            // 하위 호환성 필드
-            bg: Color::Indexed(255),
-            bg_panel: Color::Indexed(255),
-            bg_selected: Color::Indexed(67),
-            bg_header: Color::Indexed(254),
-            bg_header_active: Color::Indexed(253),
-            bg_status_bar: Color::Indexed(253),
-            text: Color::Indexed(243),
-            text_dim: Color::Indexed(251),
-            text_bold: Color::Indexed(243),
-            text_selected: Color::Indexed(231),
-            text_header: Color::Indexed(249),
-            text_header_active: Color::Indexed(242),
-            text_directory: Color::Indexed(67),
-            border: Color::Indexed(251),
-            border_active: Color::Indexed(238),
-            success: Color::Indexed(34),
-            warning: Color::Indexed(198),
-            error: Color::Indexed(198),
-            info: Color::Indexed(21),
-            shortcut_key: Color::Indexed(249),
         }
     }
 
@@ -1001,6 +1041,7 @@ impl Theme {
             header_bg: Color::Indexed(236),
             header_bg_active: Color::Indexed(237),
             header_text: Color::Indexed(250),
+            header_text_active: Color::Indexed(255),  // 활성 패널 헤더 텍스트
             file_text: Color::Indexed(252),
             directory_text: Color::Indexed(117),
             selected_bg: Color::Indexed(117),
@@ -1077,6 +1118,17 @@ impl Theme {
             tar_exclude_button_selected_text: Color::Indexed(235), // 선택 버튼 텍스트
         };
 
+        // 확인 다이얼로그 (Large File/Image Confirm)
+        let confirm_dialog = ConfirmDialogColors {
+            bg: Color::Indexed(238),
+            border: Color::Indexed(253),
+            title: Color::Indexed(255),
+            message_text: Color::Indexed(253),
+            button_text: Color::Indexed(245),
+            button_selected_bg: Color::Indexed(61),
+            button_selected_text: Color::Indexed(255),
+        };
+
         let settings = SettingsColors {
             bg: Color::Indexed(236),
             border: Color::Indexed(252),
@@ -1112,12 +1164,30 @@ impl Theme {
             find_option_active: Color::Indexed(117),
         };
 
+        // 코드 하이라이팅 (다크 테마)
+        let syntax = SyntaxColors {
+            keyword: Color::Indexed(176),     // 연한 보라색 (if, else, fn, let)
+            type_name: Color::Indexed(81),    // 밝은 청록색 (String, i32, Vec)
+            string: Color::Indexed(114),      // 밝은 녹색 ("hello")
+            number: Color::Indexed(209),      // 밝은 주황색 (123, 3.14)
+            comment: Color::Indexed(102),     // 회색 (// comment)
+            operator: Color::Indexed(252),    // 밝은 회색 (+, -, =)
+            function: Color::Indexed(222),    // 노란색 (function names)
+            macro_name: Color::Indexed(141),  // 밝은 자주색 (println!, vec!)
+            attribute: Color::Indexed(245),   // 회색 (#[derive])
+            variable: Color::Indexed(252),    // 밝은 회색 (variables)
+            constant: Color::Indexed(210),    // 밝은 빨강/핑크 (CONST, true, false)
+            bracket: Color::Indexed(250),     // 밝은 회색 ((), [], {})
+            normal: Color::Indexed(252),      // 기본 텍스트
+        };
+
         let viewer = ViewerColors {
             bg: Color::Indexed(235),
             border: Color::Indexed(252),
             header_text: Color::Indexed(250),
             line_number: Color::Indexed(245),
             text: Color::Indexed(252),
+            bookmark_indicator: Color::Indexed(81),   // 북마크 표시 색상
             search_input_text: Color::Indexed(117),
             search_cursor_fg: Color::Indexed(235),
             search_cursor_bg: Color::Indexed(117),
@@ -1180,6 +1250,10 @@ impl Theme {
             value: Color::Indexed(252),
             bar_fill: Color::Indexed(114),
             bar_empty: Color::Indexed(245),
+            usage_low: Color::Indexed(114),    // 성공 색상 (녹색)
+            usage_medium: Color::Indexed(204), // 경고 색상 (핑크)
+            usage_high: Color::Indexed(204),   // 에러 색상 (핑크)
+            tab_active: Color::Indexed(252),   // 활성 테두리 색상
             disk_header: Color::Indexed(81),
             disk_text: Color::Indexed(252),
             selected_bg: Color::Indexed(117),
@@ -1193,6 +1267,7 @@ impl Theme {
             border: Color::Indexed(252),
             header_text: Color::Indexed(250),
             column_header: Color::Indexed(81),
+            column_header_dim: Color::Indexed(245),  // 흐린 컬럼 헤더
             directory_text: Color::Indexed(255),
             file_text: Color::Indexed(252),
             selected_bg: Color::Indexed(117),
@@ -1254,6 +1329,7 @@ impl Theme {
             label: Color::Indexed(252),
             input_text: Color::Indexed(252),
             input_cursor: Color::Indexed(252),
+            field_bracket: Color::Indexed(81),  // 필드 괄호 색상
             checkbox_checked: Color::Indexed(114),
             checkbox_unchecked: Color::Indexed(245),
             button_text: Color::Indexed(245),
@@ -1272,8 +1348,10 @@ impl Theme {
             function_bar,
             message,
             dialog,
+            confirm_dialog,
             settings,
             editor,
+            syntax,
             viewer,
             process_manager,
             ai_screen,
@@ -1284,94 +1362,833 @@ impl Theme {
             help,
             advanced_search,
             chars: ThemeChars::default(),
-
-            // 하위 호환성 필드
-            bg: Color::Indexed(235),
-            bg_panel: Color::Indexed(235),
-            bg_selected: Color::Indexed(117),
-            bg_header: Color::Indexed(236),
-            bg_header_active: Color::Indexed(237),
-            bg_status_bar: Color::Indexed(237),
-            text: Color::Indexed(252),
-            text_dim: Color::Indexed(245),
-            text_bold: Color::Indexed(252),
-            text_selected: Color::Indexed(235),
-            text_header: Color::Indexed(250),
-            text_header_active: Color::Indexed(255),
-            text_directory: Color::Indexed(117),
-            border: Color::Indexed(245),
-            border_active: Color::Indexed(252),
-            success: Color::Indexed(114),
-            warning: Color::Indexed(204),
-            error: Color::Indexed(204),
-            info: Color::Indexed(81),
-            shortcut_key: Color::Indexed(250),
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // 하위 호환성을 위한 스타일 메서드 (기존 코드에서 사용)
+    // 스타일 헬퍼 메서드
     // ═══════════════════════════════════════════════════════════════════════════
 
     pub fn normal_style(&self) -> Style {
-        Style::default().fg(self.text)
+        Style::default().fg(self.panel.file_text)
     }
 
     pub fn dim_style(&self) -> Style {
-        Style::default().fg(self.text_dim)
+        Style::default().fg(self.palette.fg_dim)
     }
 
     pub fn selected_style(&self) -> Style {
         Style::default()
-            .fg(self.text_selected)
-            .bg(self.bg_selected)
+            .fg(self.panel.selected_text)
+            .bg(self.panel.selected_bg)
     }
 
     pub fn directory_style(&self) -> Style {
         Style::default()
-            .fg(self.text_directory)
+            .fg(self.panel.directory_text)
             .add_modifier(Modifier::BOLD)
     }
 
     pub fn header_style(&self) -> Style {
         Style::default()
-            .fg(self.text_header)
+            .fg(self.panel.header_text)
             .add_modifier(Modifier::BOLD)
     }
 
     pub fn border_style(&self, active: bool) -> Style {
         if active {
-            Style::default().fg(self.border_active)
+            Style::default().fg(self.panel.border_active)
         } else {
-            Style::default().fg(self.border)
+            Style::default().fg(self.panel.border)
         }
     }
 
     pub fn warning_style(&self) -> Style {
         Style::default()
-            .fg(self.warning)
+            .fg(self.state.warning)
             .add_modifier(Modifier::BOLD)
     }
 
     pub fn error_style(&self) -> Style {
-        Style::default().fg(self.error)
+        Style::default().fg(self.state.error)
     }
 
     pub fn success_style(&self) -> Style {
-        Style::default().fg(self.success)
+        Style::default().fg(self.state.success)
     }
 
     pub fn marked_style(&self) -> Style {
-        Style::default().fg(self.warning)
+        Style::default().fg(self.panel.marked_text)
     }
 
     pub fn status_bar_style(&self) -> Style {
         Style::default()
-            .fg(self.text_header)
-            .bg(self.bg_status_bar)
+            .fg(self.status_bar.text)
+            .bg(self.status_bar.bg)
     }
 
     pub fn info_style(&self) -> Style {
-        Style::default().fg(self.info)
+        Style::default().fg(self.state.info)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // JSON 변환
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Color::Indexed(n)에서 n을 추출
+    fn color_index(color: Color) -> u8 {
+        match color {
+            Color::Indexed(n) => n,
+            _ => 0,
+        }
+    }
+
+    /// 테마 이름 반환
+    pub fn name(&self) -> &str {
+        // light와 dark 테마를 구분하기 위해 palette.bg 값으로 판단
+        // light: 255, dark: 235
+        if Self::color_index(self.palette.bg) >= 250 {
+            "light"
+        } else {
+            "dark"
+        }
+    }
+
+    /// Theme을 JSON 문자열로 변환 (설정 파일 저장용)
+    pub fn to_json(&self) -> String {
+        let ci = Self::color_index;
+        format!(r#"{{
+  "name": "{}",
+
+  "__palette__": "=== 기본 팔레트: 앱 전체에서 참조되는 시맨틱 컬러 토큰. 개별 컴포넌트 색상의 기반이 되는 핵심 색상 정의 ===",
+  "palette": {{
+    "__bg__": "앱 전체의 기본 배경색. 모든 UI 요소가 이 배경 위에 렌더링됨. fg, fg_dim, fg_strong 텍스트들과 충분한 명도 대비 필요. panel.bg, editor.bg, dialog.bg 등 각 컴포넌트 배경색의 기준점",
+    "bg": {},
+    "__bg_alt__": "bg와 구분되는 대체 배경색. 헤더, 푸터, 상태바 등 영역 구분이 필요한 곳에 사용. bg와 미세한 명도 차이로 시각적 계층 형성. status_bar.bg, editor.header_bg, editor.footer_bg 등에서 참조",
+    "bg_alt": {},
+    "__fg__": "기본 텍스트 색상. bg 위에 표시되는 일반 본문 텍스트. 가독성을 위해 bg와 높은 대비 필요. panel.file_text, editor.text, dialog.text 등 대부분의 텍스트 색상 기준",
+    "fg": {},
+    "__fg_dim__": "보조 텍스트 색상. fg보다 낮은 시각적 우선순위. 날짜, 크기, 힌트, 비활성 항목 등 부가 정보에 사용. panel.size_text, panel.date_text, status_bar.text_dim 등에서 참조. bg와의 대비는 fg보다 낮지만 여전히 읽을 수 있어야 함",
+    "fg_dim": {},
+    "__fg_strong__": "강조 텍스트 색상. fg보다 높은 시각적 우선순위. 제목, 디렉토리명, 중요 정보에 사용. panel.directory_text, header.title, dialog.title 등에서 참조. bg와 fg 사이에서 가장 높은 대비",
+    "fg_strong": {},
+    "__fg_inverse__": "반전 배경 위의 텍스트 색상. selected_bg, button_selected_bg 등 강조 배경 위에 표시될 때 사용. 해당 배경색들과 충분한 대비 필요. panel.selected_text, dialog.button_selected_text 등에서 참조",
+    "fg_inverse": {},
+    "__accent__": "정보성 강조색. 링크, 컬럼 헤더, 활성 상태 표시 등 사용자 주의를 끄는 요소에 사용. 중립적이면서 눈에 띄는 색상. process_manager.column_header, search_result.column_header 등에서 참조",
+    "accent": {},
+    "__shortcut__": "단축키 표시 색상. 키보드 단축키(F1, Ctrl+C 등)를 본문 텍스트와 구분하여 표시. function_bar.key, editor.footer_key, dialog.help_key_text 등에서 참조. fg와 구분되면서 bg 위에서 잘 보여야 함",
+    "shortcut": {},
+    "__positive__": "긍정/성공 상태 색상. 작업 완료, 체크마크, 진행바 채움 등에 사용. state.success와 동일하거나 유사. system_info.bar_fill, advanced_search.checkbox_checked 등에서 참조",
+    "positive": {},
+    "__highlight__": "강조/경고 색상. 마킹된 파일, 검색 매치, 주의가 필요한 상태 표시. panel.marked_text, editor.match_bg, search_result.match_highlight 등에서 참조. bg 위에서 즉시 눈에 띄어야 함"
+    "highlight": {}
+  }},
+
+  "__state__": "=== 상태 색상: 작업 결과와 시스템 상태를 사용자에게 전달하는 시맨틱 컬러 ===",
+  "state": {{
+    "__success__": "성공 상태 표시. 파일 저장 완료, 복사 성공 등 긍정적 결과. 일반적으로 녹색 계열. palette.positive와 동일하거나 유사하게 설정",
+    "success": {},
+    "__warning__": "경고 상태 표시. 덮어쓰기 확인, 용량 부족 경고 등 주의가 필요한 상황. 일반적으로 노란색/주황색 계열. error보다는 덜 심각한 상황에 사용",
+    "warning": {},
+    "__error__": "에러 상태 표시. 작업 실패, 파일 접근 오류 등 문제 상황. 일반적으로 빨간색 계열. 사용자가 즉시 인지해야 하는 심각한 상황에 사용",
+    "error": {},
+    "__info__": "정보 상태 표시. 일반 알림, 진행 상황 안내 등 중립적 정보. 일반적으로 파란색 계열. palette.accent와 유사하게 설정 가능"
+    "info": {}
+  }},
+
+  "__panel__": "=== 파일 패널: 메인 화면의 좌/우 듀얼 패널. 파일 탐색의 핵심 UI로 가장 많은 시간 노출되는 영역 ===",
+  "panel": {{
+    "__bg__": "파일 목록 패널의 기본 배경색. 좌우 듀얼 패널에서 파일/폴더 목록이 표시되는 메인 영역. 이 위에 file_text, directory_text, selected_bg가 렌더링됨. file_text와 충분한 명도 대비 필요. 장시간 사용해도 눈의 피로가 적은 색상 권장",
+    "bg": {},
+    "__border__": "비활성 패널의 테두리. 좌우 패널 중 현재 포커스가 없는 쪽. border_active보다 낮은 시각적 강조. bg와 구분되면서 border_active와도 명확히 구분되어야 함",
+    "border": {},
+    "__border_active__": "활성 패널의 테두리. 현재 키보드 포커스가 있는 패널. border보다 높은 시각적 강조로 사용자가 현재 작업 중인 패널을 즉시 인식할 수 있어야 함",
+    "border_active": {},
+    "__header_bg__": "비활성 패널 헤더의 배경색. 현재 경로를 표시하는 상단 영역. header_text가 이 위에 표시됨. bg와 미세하게 구분되어 헤더 영역임을 인식할 수 있어야 함. header_bg_active보다 낮은 강조",
+    "header_bg": {},
+    "__header_bg_active__": "활성 패널 헤더의 배경색. header_bg보다 높은 시각적 강조. header_text_active가 이 위에 표시됨. 사용자가 현재 작업 중인 패널의 경로를 쉽게 확인할 수 있어야 함",
+    "header_bg_active": {},
+    "__header_text__": "비활성 패널 헤더의 경로 텍스트. header_bg 위에 표시됨. header_text_active보다 낮은 시각적 강조. 읽을 수 있지만 활성 패널보다 덜 눈에 띄어야 함",
+    "header_text": {},
+    "__header_text_active__": "활성 패널 헤더의 경로 텍스트. header_bg_active 위에 표시됨. header_text보다 높은 시각적 강조. 현재 작업 디렉토리를 명확히 인식할 수 있어야 함",
+    "header_text_active": {},
+    "__file_text__": "일반 파일명 텍스트 색상. bg 위에 표시되는 파일 목록의 기본 텍스트. directory_text와 구분되어 파일/폴더를 시각적으로 구별할 수 있어야 함. 가장 많이 보이는 텍스트로 bg와 충분한 대비 필수",
+    "file_text": {},
+    "__directory_text__": "디렉토리(폴더)명 텍스트 색상. bg 위에 표시됨. file_text와 다른 색상으로 폴더를 즉시 구별할 수 있어야 함. 일반적으로 file_text보다 강조된 색상 또는 다른 색조 사용",
+    "directory_text": {},
+    "__selected_bg__": "현재 커서가 위치한 항목의 배경 하이라이트. 사용자의 현재 포커스를 명확히 표시하는 핵심 요소. bg와 확연히 구분되어야 함. 그 위에 selected_text가 표시됨. marked_text와도 시각적으로 구분 필요",
+    "selected_bg": {},
+    "__selected_text__": "선택된 항목의 텍스트 색상. selected_bg 위에 표시됨. selected_bg와 충분한 대비로 선택된 파일명을 명확히 읽을 수 있어야 함. palette.fg_inverse 참조",
+    "selected_text": {},
+    "__marked_text__": "Space키로 마킹된 파일의 텍스트 색상. 다중 선택된 파일들을 표시. bg 위에서 file_text, directory_text와 명확히 구분되어야 함. selected_bg와 겹칠 수 있으므로 selected_bg 위에서도 보여야 함",
+    "marked_text": {},
+    "__size_text__": "파일 크기 컬럼의 텍스트 색상. bg 위에 표시됨. file_text보다 낮은 시각적 우선순위. 보조 정보로서 읽을 수 있지만 파일명보다 덜 눈에 띄어야 함. palette.fg_dim 참조",
+    "size_text": {},
+    "__date_text__": "수정일 컬럼의 텍스트 색상. bg 위에 표시됨. size_text와 유사한 시각적 우선순위. 보조 정보로서 파일명보다 덜 강조됨. palette.fg_dim 참조"
+    "date_text": {}
+  }},
+
+  "__header__": "=== 앱 헤더: 화면 최상단의 앱 제목 및 브랜딩 영역. 항상 표시되는 고정 요소 ===",
+  "header": {{
+    "__bg__": "앱 헤더의 배경색. 화면 최상단에 위치하며 앱 제목이 표시되는 영역. panel.bg와 구분되어 헤더 영역임을 인식할 수 있어야 함. text, title이 이 위에 표시됨",
+    "bg": {},
+    "__text__": "헤더의 일반 텍스트 색상. bg 위에 표시되는 부가 정보. title보다 낮은 시각적 우선순위",
+    "text": {},
+    "__title__": "앱 제목(CKD) 텍스트 색상. bg 위에 표시되는 앱 브랜드명. text보다 높은 시각적 강조. 앱의 아이덴티티를 나타내는 요소"
+    "title": {}
+  }},
+
+  "__status_bar__": "=== 상태 표시줄: 현재 선택된 파일 정보, 디스크 사용량 등 컨텍스트 정보를 표시하는 하단 영역 ===",
+  "status_bar": {{
+    "__bg__": "상태 표시줄의 배경색. 화면 하단에 위치하며 현재 상태 정보가 표시됨. panel.bg와 구분되어 상태바 영역임을 인식할 수 있어야 함. palette.bg_alt 참조 가능. text, text_dim이 이 위에 표시됨",
+    "bg": {},
+    "__text__": "상태바의 주요 정보 텍스트. bg 위에 표시됨. 현재 선택된 파일명, 파일 타입 등 중요 정보. text_dim보다 높은 시각적 우선순위",
+    "text": {},
+    "__text_dim__": "상태바의 보조 정보 텍스트. bg 위에 표시됨. 파일 수, 총 용량, 마킹된 파일 수 등 부가 정보. text보다 낮은 시각적 강조. palette.fg_dim 참조"
+    "text_dim": {}
+  }},
+
+  "__function_bar__": "=== 기능키 바: F1~F10 단축키 가이드. 화면 최하단에서 사용 가능한 명령어를 안내 ===",
+  "function_bar": {{
+    "__bg__": "기능키 바의 배경색. 화면 최하단에 위치하며 F1~F10 단축키 안내가 표시됨. panel.bg, status_bar.bg와 구분 가능해야 함. key, label이 이 위에 표시됨",
+    "bg": {},
+    "__key__": "단축키 텍스트 색상 (F1, F2 등). bg 위에 표시됨. label과 쌍을 이루며 단축키 부분을 강조. label보다 높은 시각적 우선순위로 키를 먼저 인식할 수 있어야 함. palette.shortcut 참조",
+    "key": {},
+    "__label__": "단축키 설명 텍스트 (Help, Menu 등). bg 위에 표시됨. key 옆에 위치하여 해당 키의 기능 설명. key보다 낮은 시각적 강조"
+    "label": {}
+  }},
+
+  "__message__": "=== 메시지: 작업 결과나 에러를 일시적으로 표시하는 알림 영역. 상태바 위치에 오버레이됨 ===",
+  "message": {{
+    "__bg__": "메시지 영역의 배경색. 작업 완료/실패 시 일시적으로 표시되는 알림의 배경. text가 이 위에 표시됨. 기본 UI와 구분되어 메시지임을 인식할 수 있어야 함",
+    "bg": {},
+    "__text__": "메시지 텍스트 색상. bg 위에 표시됨. 작업 결과, 에러 메시지 등. 사용자가 즉시 인지해야 하는 정보로 bg와 높은 대비 필요. state.error, state.success 등과 연계 가능"
+    "text": {}
+  }},
+
+  "__dialog__": "=== 다이얼로그: 복사/이동/이름변경/검색 등 사용자 입력을 받는 모달 대화상자. 메인 화면 위에 오버레이로 표시됨 ===",
+  "dialog": {{
+    "__bg__": "다이얼로그의 기본 배경색. 메인 화면(panel) 위에 오버레이되는 모달 창의 배경. border로 둘러싸이며, 내부의 모든 요소(title, text, input, button 등)가 이 위에 표시됨. panel.bg와 구분되어 모달임을 인식할 수 있어야 함",
+    "bg": {},
+    "__border__": "다이얼로그의 테두리 색상. bg를 둘러싸며 다이얼로그 영역을 정의. 배경(panel.bg)과 다이얼로그(bg) 사이의 경계 역할",
+    "border": {},
+    "__title__": "다이얼로그 제목 텍스트 색상. bg 위 상단에 표시되는 대화상자 제목(Copy, Move, Rename 등). text보다 높은 시각적 강조로 다이얼로그의 목적을 명확히 전달",
+    "title": {},
+    "__text__": "다이얼로그의 일반 텍스트 색상. bg 위에 표시되는 설명, 안내 문구. text_dim보다 높은 시각적 우선순위",
+    "text": {},
+    "__text_dim__": "다이얼로그의 보조 텍스트 색상. bg 위에 표시되는 부가 설명, 힌트. text보다 낮은 시각적 강조",
+    "text_dim": {},
+    "__message_text__": "다이얼로그 내 안내 메시지 텍스트. bg 위에 표시됨. 'Copy file to:' 등 사용자에게 현재 작업을 안내하는 문구",
+    "message_text": {},
+    "__input_text__": "입력 필드의 텍스트 색상. bg 위에 표시되는 사용자 입력값. 사용자가 타이핑한 경로나 파일명이 명확히 보여야 함",
+    "input_text": {},
+    "__input_cursor_fg__": "입력 커서의 전경색. 커서 위치의 문자 색상. input_cursor_bg와 함께 현재 입력 위치를 표시",
+    "input_cursor_fg": {},
+    "__input_cursor_bg__": "입력 커서의 배경색. bg와 확연히 구분되어 현재 커서 위치를 명확히 표시. input_cursor_fg가 이 위에 표시됨",
+    "input_cursor_bg": {},
+    "__input_prompt__": "입력 프롬프트(>> 또는 >) 색상. bg 위에 표시되며 입력 필드의 시작을 나타냄. input_text와 구분되는 색상으로 프롬프트임을 인식",
+    "input_prompt": {},
+    "__button_text__": "비선택 버튼의 텍스트 색상. bg 위에 표시됨. button_selected_text보다 낮은 시각적 강조. OK, Cancel 등 선택 가능한 버튼 중 현재 포커스가 없는 버튼",
+    "button_text": {},
+    "__button_selected_bg__": "선택된 버튼의 배경색. 현재 포커스가 있는 버튼의 하이라이트. bg와 확연히 구분되어야 함. button_selected_text가 이 위에 표시됨. panel.selected_bg와 유사한 역할",
+    "button_selected_bg": {},
+    "__button_selected_text__": "선택된 버튼의 텍스트 색상. button_selected_bg 위에 표시됨. 선택된 버튼의 레이블이 명확히 보여야 함. palette.fg_inverse 참조",
+    "button_selected_text": {},
+    "__autocomplete_bg__": "자동완성 드롭다운 목록의 배경색. 입력 필드 아래에 표시되는 경로/파일 제안 목록. bg와 구분되거나 동일할 수 있음. autocomplete_text, autocomplete_selected_bg가 이 위에 표시됨",
+    "autocomplete_bg": {},
+    "__autocomplete_text__": "자동완성 목록의 파일 항목 텍스트. autocomplete_bg 위에 표시됨. autocomplete_directory_text와 구분되어 파일/폴더를 구별할 수 있어야 함",
+    "autocomplete_text": {},
+    "__autocomplete_directory_text__": "자동완성 목록의 디렉토리 항목 텍스트. autocomplete_bg 위에 표시됨. autocomplete_text와 다른 색상으로 폴더임을 즉시 인식. panel.directory_text와 유사한 역할",
+    "autocomplete_directory_text": {},
+    "__autocomplete_selected_bg__": "자동완성 목록에서 선택된 항목의 배경색. autocomplete_bg 위에 표시되며 현재 포커스를 나타냄. autocomplete_selected_text가 이 위에 표시됨",
+    "autocomplete_selected_bg": {},
+    "__autocomplete_selected_text__": "자동완성 목록에서 선택된 항목의 텍스트. autocomplete_selected_bg 위에 표시됨. 선택된 제안 항목이 명확히 보여야 함",
+    "autocomplete_selected_text": {},
+    "__autocomplete_scroll_info__": "자동완성 목록의 스크롤 위치 정보([1/10] 형식). autocomplete_bg 위에 표시됨. 현재 목록 위치를 안내하는 보조 정보",
+    "autocomplete_scroll_info": {},
+    "__preview_suffix_text__": "경로 미리보기의 접미사 텍스트. 입력 중인 경로의 자동완성 힌트. input_text와 구분되어 실제 입력과 제안을 구별",
+    "preview_suffix_text": {},
+    "__help_key_text__": "다이얼로그 하단 도움말의 단축키 부분. bg 위에 표시됨. Tab, Enter 등 사용 가능한 키 안내. help_label_text와 쌍을 이루며 키 부분을 강조",
+    "help_key_text": {},
+    "__help_label_text__": "다이얼로그 하단 도움말의 설명 부분. bg 위에 표시됨. help_key_text 옆에 위치하여 해당 키의 기능 설명",
+    "help_label_text": {},
+    "__progress_label_text__": "진행률 다이얼로그의 레이블 텍스트(File:, Total: 등). bg 위에 표시됨. 현재 진행 중인 작업의 항목명. progress_value_text와 쌍을 이룸",
+    "progress_label_text": {},
+    "__progress_value_text__": "진행률 다이얼로그의 값 텍스트. bg 위에 표시됨. 현재 처리 중인 파일명, 복사된 바이트 수 등. progress_label_text보다 강조될 수 있음",
+    "progress_value_text": {},
+    "__progress_bar_fill__": "진행률 바의 채워진 부분. 완료된 진행률을 시각적으로 표시. progress_bar_empty와 나란히 배치되어 전체 대비 완료량을 표현. palette.positive와 유사",
+    "progress_bar_fill": {},
+    "__progress_bar_empty__": "진행률 바의 빈 부분. 남은 진행률을 나타냄. progress_bar_fill과 함께 전체 진행 상황을 시각화",
+    "progress_bar_empty": {},
+    "__progress_percent_text__": "진행률 퍼센트 텍스트(45% 등). bg 위에 표시됨. 숫자로 정확한 진행률 표시",
+    "progress_percent_text": {},
+    "__conflict_filename_text__": "파일 충돌 다이얼로그에서 충돌 파일명 강조. bg 위에 표시됨. 어떤 파일이 충돌하는지 사용자가 즉시 인식할 수 있도록 강조. palette.highlight와 유사",
+    "conflict_filename_text": {},
+    "__conflict_count_text__": "충돌 다이얼로그의 진행 정보(1 of 3 conflicts). bg 위에 표시됨. 전체 충돌 수 대비 현재 위치를 안내",
+    "conflict_count_text": {},
+    "__conflict_shortcut_text__": "충돌 다이얼로그 버튼의 단축키 문자(O, S, A, l 등). 버튼 레이블 내에서 단축키를 강조. 빠른 키보드 조작을 안내",
+    "conflict_shortcut_text": {},
+    "__tar_exclude_title__": "압축 제외 확인 다이얼로그의 제목. tar_exclude_bg 위에 표시됨. dialog.title과 유사한 역할",
+    "tar_exclude_title": {},
+    "__tar_exclude_border__": "압축 제외 다이얼로그의 테두리. tar_exclude_bg를 둘러쌈. dialog.border와 유사한 역할",
+    "tar_exclude_border": {},
+    "__tar_exclude_bg__": "압축 제외 다이얼로그의 배경. dialog.bg와 동일하거나 유사",
+    "tar_exclude_bg": {},
+    "__tar_exclude_message_text__": "압축 제외 다이얼로그의 안내 메시지. tar_exclude_bg 위에 표시됨",
+    "tar_exclude_message_text": {},
+    "__tar_exclude_path_text__": "제외될 경로 목록의 텍스트. tar_exclude_bg 위에 표시됨. 어떤 파일/폴더가 제외되는지 명확히 표시. 경로이므로 주의를 끄는 색상 사용 가능",
+    "tar_exclude_path_text": {},
+    "__tar_exclude_scroll_info__": "제외 목록의 스크롤 정보. tar_exclude_bg 위에 표시됨. 목록이 길 때 현재 위치 안내",
+    "tar_exclude_scroll_info": {},
+    "__tar_exclude_button_text__": "압축 제외 다이얼로그의 비선택 버튼 텍스트. dialog.button_text와 유사",
+    "tar_exclude_button_text": {},
+    "__tar_exclude_button_selected_bg__": "압축 제외 다이얼로그의 선택된 버튼 배경. dialog.button_selected_bg와 유사",
+    "tar_exclude_button_selected_bg": {},
+    "__tar_exclude_button_selected_text__": "압축 제외 다이얼로그의 선택된 버튼 텍스트. tar_exclude_button_selected_bg 위에 표시됨"
+    "tar_exclude_button_selected_text": {}
+  }},
+
+  "__confirm_dialog__": "=== 확인 다이얼로그: 파일 삭제, 덮어쓰기, 대용량 파일 열기 등 사용자 확인이 필요한 작업의 모달 ===",
+  "confirm_dialog": {{
+    "__bg__": "확인 다이얼로그의 배경색. 위험하거나 중요한 작업 전 사용자 확인을 받는 모달 창. dialog.bg와 동일하거나 유사. title, message_text, 버튼들이 이 위에 표시됨",
+    "bg": {},
+    "__border__": "확인 다이얼로그의 테두리. bg를 둘러싸며 모달 영역을 정의. dialog.border와 유사",
+    "border": {},
+    "__title__": "확인 다이얼로그의 제목(Delete, Confirm 등). bg 위에 표시됨. 어떤 확인을 요청하는지 명확히 전달. 삭제 등 위험한 작업일 경우 주의를 끄는 색상 가능",
+    "title": {},
+    "__message_text__": "확인 메시지 본문. bg 위에 표시됨. 'Are you sure you want to delete?' 등 상세 설명",
+    "message_text": {},
+    "__button_text__": "비선택 버튼의 텍스트(Yes/No, OK/Cancel). bg 위에 표시됨. button_selected_text보다 낮은 시각적 강조",
+    "button_text": {},
+    "__button_selected_bg__": "선택된 버튼의 배경색. 현재 포커스가 있는 버튼 하이라이트. button_selected_text가 이 위에 표시됨",
+    "button_selected_bg": {},
+    "__button_selected_text__": "선택된 버튼의 텍스트. button_selected_bg 위에 표시됨. 현재 선택될 옵션이 명확히 보여야 함"
+    "button_selected_text": {}
+  }},
+
+  "__settings__": "=== 설정 다이얼로그: 테마 선택, 앱 설정 등을 변경하는 환경설정 화면 ===",
+  "settings": {{
+    "__bg__": "설정 다이얼로그의 배경색. 앱 설정을 변경하는 모달 창. dialog.bg와 유사. 설정 항목들과 도움말이 이 위에 표시됨",
+    "bg": {},
+    "__border__": "설정 다이얼로그의 테두리. bg를 둘러싸며 모달 영역을 정의",
+    "border": {},
+    "__title__": "설정 다이얼로그의 제목(Settings). bg 위에 표시됨",
+    "title": {},
+    "__label_text__": "설정 항목의 레이블(Theme:, Language: 등). bg 위에 표시됨. 각 설정 항목이 무엇인지 안내. value_text와 쌍을 이룸",
+    "label_text": {},
+    "__prompt__": "현재 선택된 설정 항목을 가리키는 프롬프트(>). bg 위에 표시됨. 현재 포커스가 어느 설정에 있는지 표시",
+    "prompt": {},
+    "__value_text__": "설정값 텍스트(light, dark 등). value_bg 위에 표시됨. 현재 선택된 값이 명확히 보여야 함",
+    "value_text": {},
+    "__value_bg__": "설정값의 배경색. 현재 선택된 값을 하이라이트. value_text가 이 위에 표시됨. bg와 구분되어 선택 영역을 표시",
+    "value_bg": {},
+    "__help_key__": "설정 다이얼로그 하단의 단축키(Enter, Esc 등). bg 위에 표시됨. 사용 가능한 키 안내",
+    "help_key": {},
+    "__help_text__": "설정 다이얼로그 하단의 도움말 텍스트. bg 위에 표시됨. help_key의 기능 설명"
+    "help_text": {}
+  }},
+
+  "__editor__": "=== 파일 에디터: F4로 열리는 내장 텍스트 편집기. 코드 편집, 설정 파일 수정 등에 사용. 전체 화면을 차지하는 뷰 ===",
+  "editor": {{
+    "__bg__": "에디터 편집 영역의 배경색. 코드/텍스트가 표시되는 메인 영역. text, syntax 하이라이팅, line_number, cursor 등 모든 편집 요소가 이 위에 렌더링됨. 장시간 편집에 적합한 눈의 피로가 적은 색상 권장",
+    "bg": {},
+    "__border__": "에디터 창의 테두리 색상. bg를 둘러싸며 에디터 영역을 정의. panel.bg와 에디터를 구분",
+    "border": {},
+    "__header_bg__": "에디터 상단 헤더의 배경색. 파일명과 커서 위치가 표시되는 영역. bg와 구분되어 헤더 영역임을 인식. header_text, header_info가 이 위에 표시됨. palette.bg_alt 참조 가능",
+    "header_bg": {},
+    "__header_text__": "헤더의 파일명 텍스트. header_bg 위에 표시됨. 현재 편집 중인 파일을 명확히 표시. header_info보다 높은 시각적 우선순위",
+    "header_text": {},
+    "__header_info__": "헤더의 커서 위치 정보(Line:Col). header_bg 위에 표시됨. header_text보다 낮은 시각적 강조. 현재 위치를 안내하는 보조 정보",
+    "header_info": {},
+    "__line_number__": "좌측 줄 번호 영역의 텍스트 색상. bg 위 좌측에 표시됨. text보다 낮은 시각적 강조로 본문과 구분. 편집 내용에 집중할 수 있도록 눈에 덜 띄게",
+    "line_number": {},
+    "__text__": "편집 영역의 기본 텍스트 색상. bg 위에 표시됨. 코드 하이라이팅이 없는 일반 텍스트. syntax 색상들과 함께 사용됨. bg와 높은 대비로 가독성 확보",
+    "text": {},
+    "__cursor__": "텍스트 커서(캐럿) 색상. bg 위에 표시됨. 현재 입력 위치를 명확히 표시. 깜빡이며 주의를 끔",
+    "cursor": {},
+    "__selection_bg__": "텍스트 선택 영역의 배경색. 드래그로 선택한 텍스트 블록의 하이라이트. bg와 확연히 구분되어야 함. selection_text가 이 위에 표시됨. panel.selected_bg와 유사한 역할",
+    "selection_bg": {},
+    "__selection_text__": "선택된 텍스트의 색상. selection_bg 위에 표시됨. 선택 영역 내 텍스트가 읽을 수 있어야 함",
+    "selection_text": {},
+    "__match_bg__": "검색 결과 매치 부분의 배경색. Ctrl+F로 검색 시 일치하는 모든 부분 하이라이트. bg 위에 표시됨. match_current_bg와 구분되어 '다른 매치'임을 표시",
+    "match_bg": {},
+    "__match_current_bg__": "현재 포커스된 검색 결과의 배경색. 여러 매치 중 현재 위치한 매치를 강조. match_bg보다 더 눈에 띄어야 함. 현재 커서가 위치한 검색 결과",
+    "match_current_bg": {},
+    "__bracket_match__": "괄호 매칭 표시 색상. 커서가 괄호 위에 있을 때 대응하는 괄호 쌍을 하이라이트. bg 위에서 눈에 띄어야 함. 코드 구조 파악에 도움",
+    "bracket_match": {},
+    "__modified_mark__": "수정됨 표시(*) 색상. header 영역에서 파일이 수정되었음을 나타내는 표시. header_bg 위에 표시됨. 저장하지 않은 변경사항이 있음을 주의 환기",
+    "modified_mark": {},
+    "__footer_bg__": "에디터 하단바의 배경색. 단축키 안내와 검색/바꾸기 UI가 표시되는 영역. bg, header_bg와 구분되어 푸터 영역임을 인식. palette.bg_alt 참조 가능",
+    "footer_bg": {},
+    "__footer_key__": "하단바의 단축키 텍스트(Ctrl+S, Ctrl+F 등). footer_bg 위에 표시됨. footer_text와 쌍을 이루며 키 부분을 강조. palette.shortcut 참조",
+    "footer_key": {},
+    "__footer_text__": "하단바의 단축키 설명 텍스트(Save, Find 등). footer_bg 위에 표시됨. footer_key보다 낮은 시각적 강조",
+    "footer_text": {},
+    "__find_input_text__": "찾기/바꾸기 입력 필드의 텍스트. footer_bg 위에 표시됨. 사용자가 입력한 검색어가 명확히 보여야 함",
+    "find_input_text": {},
+    "__find_option__": "찾기 옵션(Case sensitive, Whole word)의 비활성 상태 색상. footer_bg 위에 표시됨. find_option_active보다 낮은 시각적 강조. 현재 꺼진 옵션",
+    "find_option": {},
+    "__find_option_active__": "찾기 옵션의 활성 상태 색상. footer_bg 위에 표시됨. find_option보다 높은 시각적 강조. 현재 켜진 옵션임을 명확히 표시"
+    "find_option_active": {}
+  }},
+
+  "__syntax__": "=== 코드 하이라이팅: 에디터/뷰어에서 프로그래밍 언어 문법을 색상으로 구분. 모두 editor.bg 또는 viewer.bg 위에 표시됨. 서로 구분되면서도 조화로운 색상 팔레트 필요 ===",
+  "syntax": {{
+    "__keyword__": "제어문/선언 키워드(if, else, for, while, fn, let, return, class, def 등). 언어의 구조를 정의하는 핵심 토큰. 다른 syntax 색상들과 구분되는 고유한 색상. 일반적으로 강조색 사용",
+    "keyword": {},
+    "__type_name__": "타입명(String, i32, Vec, int, bool, List 등). 데이터 타입을 나타내는 토큰. keyword와 구분되면서 의미적 연관성 가능. 일반적으로 keyword와 다른 색조",
+    "type_name": {},
+    "__string__": "문자열 리터럴(\"hello\", 'world', `template` 등). 따옴표로 둘러싸인 텍스트 데이터. 다른 코드와 명확히 구분되어야 함. 일반적으로 따뜻한 색상 계열",
+    "string": {},
+    "__number__": "숫자 리터럴(123, 3.14, 0xFF, 1e10 등). 수치 데이터. string과 함께 리터럴 값을 나타내지만 구분되어야 함",
+    "number": {},
+    "__comment__": "주석(// line comment, /* block */, # comment 등). 실행되지 않는 설명 텍스트. 다른 코드보다 낮은 시각적 강조. 읽을 수 있지만 코드에 집중할 수 있도록 눈에 덜 띄게",
+    "comment": {},
+    "__operator__": "연산자(+, -, *, /, =, ==, !=, &&, || 등). 연산을 수행하는 기호. normal과 같거나 약간 다른 색상. 지나치게 강조하지 않는 것이 일반적",
+    "operator": {},
+    "__function__": "함수/메서드 이름(main, print, calculate, onClick 등). 호출 가능한 코드 블록의 이름. keyword, variable과 구분되어 함수임을 인식",
+    "function": {},
+    "__macro_name__": "매크로(println!, vec!, #define, @decorator 등). 메타프로그래밍 요소. function과 구분되어 매크로/어노테이션임을 인식",
+    "macro_name": {},
+    "__attribute__": "어트리뷰트/데코레이터(#[derive], @Override, [Attribute] 등). 코드에 메타데이터를 추가하는 요소. comment와 유사하게 부가 정보이지만 의미 있는 요소",
+    "attribute": {},
+    "__variable__": "변수명. 데이터를 저장하는 식별자. normal과 같거나 유사할 수 있음. 다른 syntax 요소들과 대비되는 기본 텍스트 역할",
+    "variable": {},
+    "__constant__": "상수(CONST_VALUE, MAX_SIZE, true, false, null, None 등). 변경되지 않는 값. variable보다 강조되어 상수임을 인식. 대문자 상수와 예약어 포함",
+    "constant": {},
+    "__bracket__": "괄호류((), [], {{}}, <> 등). 코드 구조를 정의하는 구분자. operator와 유사하거나 같을 수 있음. editor.bracket_match와 연계",
+    "bracket": {},
+    "__normal__": "하이라이팅 규칙에 매칭되지 않는 일반 텍스트. editor.text와 동일하거나 유사. 기본 폴백 색상"
+    "normal": {}
+  }},
+
+  "__viewer__": "=== 파일 뷰어: F3으로 열리는 읽기 전용 파일 보기. 텍스트/헥스 모드 지원. 전체 화면을 차지하는 뷰 ===",
+  "viewer": {{
+    "__bg__": "뷰어의 기본 배경색. 파일 내용이 표시되는 메인 영역. text, syntax 하이라이팅, line_number 등이 이 위에 렌더링됨. editor.bg와 동일하거나 유사 가능",
+    "bg": {},
+    "__border__": "뷰어 창의 테두리 색상. bg를 둘러싸며 뷰어 영역을 정의",
+    "border": {},
+    "__header_text__": "상단 헤더의 파일명 텍스트. 현재 보고 있는 파일을 표시. border 영역 또는 bg 상단에 표시됨",
+    "header_text": {},
+    "__line_number__": "좌측 줄 번호 색상. bg 위에 표시됨. text보다 낮은 시각적 강조. editor.line_number와 유사한 역할",
+    "line_number": {},
+    "__text__": "파일 내용의 기본 텍스트 색상. bg 위에 표시됨. 코드 파일의 경우 syntax 색상이 적용되지 않은 부분의 기본색. editor.text와 유사",
+    "text": {},
+    "__bookmark_indicator__": "북마크된 줄을 표시하는 인디케이터 색상. line_number 영역 또는 줄 배경에 표시됨. 사용자가 표시해둔 위치를 즉시 인식할 수 있어야 함",
+    "bookmark_indicator": {},
+    "__search_input_text__": "검색 입력 필드의 텍스트 색상. 하단 검색 UI에서 사용자가 입력한 검색어. bg 또는 별도 입력 영역 위에 표시됨",
+    "search_input_text": {},
+    "__search_cursor_fg__": "검색 입력 커서의 전경색. search_cursor_bg와 함께 현재 입력 위치 표시",
+    "search_cursor_fg": {},
+    "__search_cursor_bg__": "검색 입력 커서의 배경색. 현재 입력 위치를 하이라이트",
+    "search_cursor_bg": {},
+    "__search_match_current_bg__": "현재 포커스된 검색 매치의 배경색. 여러 매치 중 현재 위치한 매치를 강조. search_match_other_bg보다 더 눈에 띄어야 함. search_match_current_fg가 이 위에 표시됨",
+    "search_match_current_bg": {},
+    "__search_match_current_fg__": "현재 검색 매치의 텍스트 색상. search_match_current_bg 위에 표시됨. 매치된 텍스트가 읽을 수 있어야 함",
+    "search_match_current_fg": {},
+    "__search_match_other_bg__": "다른 검색 매치들의 배경색. 현재 포커스가 아닌 모든 매치 표시. search_match_current_bg보다 낮은 강조. search_match_other_fg가 이 위에 표시됨",
+    "search_match_other_bg": {},
+    "__search_match_other_fg__": "다른 검색 매치들의 텍스트 색상. search_match_other_bg 위에 표시됨",
+    "search_match_other_fg": {},
+    "__search_info__": "검색 정보 텍스트(1/10 matches, Not found 등). 검색 결과 수와 현재 위치를 안내. 보조 정보로서 주요 UI보다 낮은 강조",
+    "search_info": {},
+    "__hex_offset__": "헥스 뷰 모드에서 좌측 오프셋 주소(00000000:). bg 위에 표시됨. hex_bytes, hex_ascii와 시각적으로 구분되어 주소 영역임을 인식",
+    "hex_offset": {},
+    "__hex_bytes__": "헥스 뷰 모드에서 바이트 값(FF 0A 2B 등). bg 위에 표시됨. 실제 바이너리 데이터 표시. hex_offset, hex_ascii와 구분",
+    "hex_bytes": {},
+    "__hex_ascii__": "헥스 뷰 모드에서 ASCII 표현(우측). bg 위에 표시됨. 바이트의 문자 표현. hex_bytes와 쌍을 이루며 데이터 해석에 도움",
+    "hex_ascii": {},
+    "__wrap_indicator__": "줄 바꿈 표시자(↩ 또는 유사 기호). 긴 줄이 화면 너비를 초과하여 래핑될 때 표시. line_number 영역 또는 줄 끝에 표시. text보다 낮은 시각적 강조",
+    "wrap_indicator": {},
+    "__footer_key__": "하단 도움말의 단축키 텍스트. 사용 가능한 키 안내. editor.footer_key와 유사",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말의 설명 텍스트. footer_key의 기능 설명"
+    "footer_text": {}
+  }},
+
+  "__process_manager__": "=== 프로세스 관리자: 시스템에서 실행 중인 프로세스 목록과 리소스 사용량을 표시. 프로세스 종료 기능 제공 ===",
+  "process_manager": {{
+    "__bg__": "프로세스 관리자의 배경색. 프로세스 목록이 표시되는 메인 영역. text, column_header, selected_bg 등이 이 위에 표시됨",
+    "bg": {},
+    "__border__": "프로세스 관리자 창의 테두리 색상. bg를 둘러쌈",
+    "border": {},
+    "__header_text__": "상단 헤더의 텍스트. 창 제목 또는 시스템 정보 요약",
+    "header_text": {},
+    "__column_header__": "컬럼 헤더(PID, Name, CPU%, MEM% 등). bg 위에 표시됨. text와 구분되어 헤더행임을 인식. 정렬 가능한 컬럼 표시. palette.accent 참조",
+    "column_header": {},
+    "__text__": "프로세스 정보의 기본 텍스트. bg 위에 표시됨. 프로세스명, PID 등 일반 정보. cpu_high, mem_high와 대비되는 정상 상태 표시",
+    "text": {},
+    "__selected_bg__": "현재 선택된 프로세스 행의 배경색. bg와 확연히 구분되어 현재 포커스 표시. selected_text가 이 위에 표시됨. panel.selected_bg와 유사",
+    "selected_bg": {},
+    "__selected_text__": "선택된 프로세스의 텍스트 색상. selected_bg 위에 표시됨. 선택된 프로세스 정보가 명확히 보여야 함",
+    "selected_text": {},
+    "__cpu_high__": "높은 CPU 사용량 강조 색상. bg 위에 표시됨. 특정 임계값(예: 80%) 이상일 때 text 대신 사용. 주의가 필요한 프로세스를 즉시 인식. state.warning 또는 state.error와 유사",
+    "cpu_high": {},
+    "__mem_high__": "높은 메모리 사용량 강조 색상. cpu_high와 유사한 역할. 메모리 사용량이 높은 프로세스 강조",
+    "mem_high": {},
+    "__confirm_text__": "프로세스 종료 확인 메시지 텍스트. 위험한 작업 전 경고. bg 위에 표시되거나 별도 확인 UI에 표시",
+    "confirm_text": {},
+    "__footer_key__": "하단 도움말의 단축키(k:Kill, q:Quit 등). 프로세스 관리에 사용할 수 있는 키 안내",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말의 설명 텍스트. footer_key의 기능 설명"
+    "footer_text": {}
+  }},
+
+  "__ai_screen__": "=== AI 화면: Claude AI와 대화하는 채팅 인터페이스. 상단 히스토리 영역과 하단 입력 영역으로 구성 ===",
+  "ai_screen": {{
+    "__bg__": "AI 화면의 기본 배경색. 전체 채팅 인터페이스의 배경. 히스토리, 입력 영역 등이 이 위에 배치됨",
+    "bg": {},
+    "__history_border__": "대화 히스토리 영역의 테두리. bg 위에 히스토리 영역을 구분. input_border와 함께 화면 구조를 정의",
+    "history_border": {},
+    "__history_title__": "히스토리 영역 제목. 현재 세션 정보, 경로 등. history_border 내부 상단에 표시",
+    "history_title": {},
+    "__history_placeholder__": "대화가 없을 때 표시되는 플레이스홀더. bg 위에 표시됨. 'Start a conversation...' 등 안내 문구. message_text보다 낮은 시각적 강조",
+    "history_placeholder": {},
+    "__history_scroll_info__": "히스토리 스크롤 위치 정보. 긴 대화에서 현재 위치 안내",
+    "history_scroll_info": {},
+    "__user_prefix__": "사용자 메시지 접두사(> 또는 You:). bg 위에 표시됨. 사용자가 보낸 메시지를 구분. assistant_prefix와 대비되어 발신자 구별",
+    "user_prefix": {},
+    "__assistant_prefix__": "AI 응답 접두사(< 또는 AI:). bg 위에 표시됨. AI가 보낸 메시지를 구분. user_prefix와 다른 색상으로 대화 흐름 파악",
+    "assistant_prefix": {},
+    "__error_prefix__": "에러 메시지 접두사(!). 오류 발생 시 표시. 주의를 끄는 색상. state.error와 유사",
+    "error_prefix": {},
+    "__system_prefix__": "시스템 메시지 접두사(*). 연결 상태, 세션 정보 등 시스템 안내. user_prefix, assistant_prefix보다 낮은 강조",
+    "system_prefix": {},
+    "__message_text__": "메시지 본문 텍스트. bg 위에 표시됨. 대화 내용의 기본 색상. 가독성을 위해 bg와 높은 대비 필요",
+    "message_text": {},
+    "__input_border__": "입력 영역의 테두리. bg 위에 입력 영역을 구분. history_border와 함께 화면 구조 정의",
+    "input_border": {},
+    "__input_prompt__": "입력 프롬프트(>). 입력 영역에서 입력 시작점을 표시. user_prefix와 동일하거나 유사",
+    "input_prompt": {},
+    "__input_text__": "사용자 입력 텍스트. 입력 영역에서 타이핑 중인 메시지. message_text와 동일하거나 유사",
+    "input_text": {},
+    "__input_cursor__": "입력 커서 색상. 현재 타이핑 위치 표시",
+    "input_cursor": {},
+    "__input_placeholder__": "입력 플레이스홀더. 입력 전 안내 문구('Type a message...'). input_text보다 낮은 시각적 강조",
+    "input_placeholder": {},
+    "__processing_spinner__": "AI 응답 대기 중 스피너/로딩 표시 색상. 처리 중임을 시각적으로 안내",
+    "processing_spinner": {},
+    "__processing_text__": "처리 중 안내 텍스트('Thinking...'). processing_spinner와 함께 표시",
+    "processing_text": {},
+    "__error_text__": "에러 메시지 텍스트. API 오류, 연결 실패 등. state.error와 유사",
+    "error_text": {},
+    "__footer_key__": "하단 도움말의 단축키. Enter:Send, Esc:Exit 등",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말 설명"
+    "footer_text": {}
+  }},
+
+  "__system_info__": "=== 시스템 정보: CPU, 메모리, 디스크 사용량 등 시스템 리소스 모니터링 화면. 탭으로 섹션 전환 ===",
+  "system_info": {{
+    "__bg__": "시스템 정보 화면의 배경색. 리소스 사용량 정보가 표시되는 메인 영역. section_title, label, value, bar 요소들이 이 위에 렌더링됨",
+    "bg": {},
+    "__border__": "시스템 정보 창의 테두리 색상. bg를 둘러쌈",
+    "border": {},
+    "__section_title__": "섹션 제목(CPU, Memory, Network 등). bg 위에 표시됨. 각 정보 그룹을 구분하는 헤더. label, value보다 높은 시각적 강조",
+    "section_title": {},
+    "__label__": "정보 레이블(Used:, Free:, Total: 등). bg 위에 표시됨. value와 쌍을 이루며 어떤 정보인지 안내",
+    "label": {},
+    "__value__": "정보 값(8GB, 45%, 192.168.1.1 등). bg 위에 표시됨. label과 쌍을 이룸. 실제 수치 표시",
+    "value": {},
+    "__bar_fill__": "사용량 바의 채워진 부분. 현재 사용량을 시각화. bar_empty와 함께 전체 대비 사용량 표현. palette.positive와 유사하거나 usage_low/medium/high에 따라 동적으로 변경 가능",
+    "bar_fill": {},
+    "__bar_empty__": "사용량 바의 빈 부분. 남은 용량/여유분을 나타냄. bar_fill과 함께 전체 용량 시각화",
+    "bar_empty": {},
+    "__usage_low__": "낮은 사용량 상태 색상(70% 미만). 정상적인 리소스 상태. state.success와 유사. 안심할 수 있는 색상",
+    "usage_low": {},
+    "__usage_medium__": "중간 사용량 상태 색상(70-90%). 주의가 필요한 수준. state.warning과 유사. 경고성 색상",
+    "usage_medium": {},
+    "__usage_high__": "높은 사용량 상태 색상(90% 이상). 위험한 리소스 상태. state.error와 유사. 즉각적인 주의 필요",
+    "usage_high": {},
+    "__tab_active__": "활성 탭의 표시 색상. 여러 정보 탭(Overview, CPU, Memory 등) 중 현재 선택된 탭. border 또는 별도 탭 영역에 표시",
+    "tab_active": {},
+    "__disk_header__": "디스크 섹션의 헤더. 마운트된 디스크 목록의 컬럼 헤더(Device, Mount, Size 등). section_title 또는 column_header와 유사",
+    "disk_header": {},
+    "__disk_text__": "디스크 정보 텍스트. 각 디스크의 상세 정보. value와 유사",
+    "disk_text": {},
+    "__selected_bg__": "선택된 항목의 배경색(디스크 목록에서). bg와 구분되어 현재 포커스 표시. selected_text가 이 위에 표시됨",
+    "selected_bg": {},
+    "__selected_text__": "선택된 항목의 텍스트 색상. selected_bg 위에 표시됨",
+    "selected_text": {},
+    "__footer_key__": "하단 도움말의 단축키",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말 설명"
+    "footer_text": {}
+  }},
+
+  "__search_result__": "=== 검색 결과: 파일/폴더 검색 결과를 목록으로 표시. 검색어 매치 하이라이트, 경로 탐색 기능 제공 ===",
+  "search_result": {{
+    "__bg__": "검색 결과 화면의 배경색. 검색된 파일/폴더 목록이 표시되는 영역. file_text, directory_text, selected_bg 등이 이 위에 렌더링됨",
+    "bg": {},
+    "__border__": "검색 결과 창의 테두리. bg를 둘러쌈",
+    "border": {},
+    "__header_text__": "상단 헤더 텍스트. 검색어, 결과 수 등 검색 정보 요약",
+    "header_text": {},
+    "__column_header__": "컬럼 헤더(Name, Path, Size, Date 등). bg 위에 표시됨. 결과 목록의 열 제목. palette.accent 참조",
+    "column_header": {},
+    "__column_header_dim__": "보조 컬럼 헤더. column_header보다 낮은 시각적 강조. 덜 중요한 컬럼에 사용",
+    "column_header_dim": {},
+    "__directory_text__": "검색 결과 중 디렉토리 항목. bg 위에 표시됨. file_text와 구분되어 폴더임을 인식. panel.directory_text와 유사",
+    "directory_text": {},
+    "__file_text__": "검색 결과 중 파일 항목. bg 위에 표시됨. 기본 결과 텍스트. panel.file_text와 유사",
+    "file_text": {},
+    "__selected_bg__": "선택된 검색 결과의 배경색. bg와 확연히 구분. selected_text가 이 위에 표시됨. 현재 포커스된 결과 항목",
+    "selected_bg": {},
+    "__selected_text__": "선택된 검색 결과의 텍스트 색상. selected_bg 위에 표시됨",
+    "selected_text": {},
+    "__match_highlight__": "검색어와 일치하는 부분의 하이라이트 색상. 파일명/경로에서 매치된 텍스트를 강조. bg 위에서 즉시 눈에 띄어야 함. palette.highlight 참조",
+    "match_highlight": {},
+    "__path_text__": "파일 경로 텍스트. bg 위에 표시됨. 검색된 파일의 위치를 표시. file_text보다 낮은 시각적 강조로 보조 정보 역할",
+    "path_text": {},
+    "__footer_key__": "하단 도움말의 단축키(Enter:Open, Esc:Close 등)",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말 설명"
+    "footer_text": {}
+  }},
+
+  "__image_viewer__": "=== 이미지 뷰어: 이미지 파일 미리보기. 줌, 패닝, 회전 기능 제공. 전체 화면 오버레이 ===",
+  "image_viewer": {{
+    "__bg__": "이미지 뷰어의 배경색. 이미지가 표시되는 영역의 배경. 이미지 외곽 여백 영역에 보임. 이미지 감상에 집중할 수 있는 중립적 색상 권장",
+    "bg": {},
+    "__border__": "이미지 뷰어 창의 테두리. bg를 둘러쌈",
+    "border": {},
+    "__title_text__": "제목바 텍스트. 파일명, 해상도(1920x1080), 줌 레벨(100%) 등 표시. border 상단 또는 bg 위에 오버레이",
+    "title_text": {},
+    "__loading_spinner__": "이미지 로딩 중 스피너/애니메이션 색상. bg 위 중앙에 표시. 로딩 상태를 시각적으로 안내",
+    "loading_spinner": {},
+    "__loading_text__": "로딩 중 안내 텍스트('Loading image...'). bg 위에 표시. loading_spinner와 함께 표시",
+    "loading_text": {},
+    "__error_text__": "이미지 로드 실패 시 에러 메시지. bg 위에 표시. 'Failed to load image' 등. state.error와 유사",
+    "error_text": {},
+    "__hint_text__": "조작 힌트 텍스트('Press ESC to close'). bg 위에 표시. 낮은 시각적 강조로 이미지 감상 방해하지 않게",
+    "hint_text": {},
+    "__footer_key__": "하단 도움말의 단축키(+/-:Zoom, Arrow:Pan 등)",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말 설명",
+    "footer_text": {},
+    "__footer_separator__": "하단 도움말 항목 구분자(/). footer_key와 footer_text 사이 또는 항목 간 구분"
+    "footer_separator": {}
+  }},
+
+  "__file_info__": "=== 파일 정보: 선택된 파일/폴더의 상세 정보를 표시하는 모달. 크기, 권한, 날짜 등 메타데이터 ===",
+  "file_info": {{
+    "__bg__": "파일 정보 다이얼로그의 배경색. 파일 메타데이터가 표시되는 모달 창. label, value 등 정보가 이 위에 표시됨",
+    "bg": {},
+    "__border__": "파일 정보 창의 테두리. bg를 둘러싸며 모달 영역 정의",
+    "border": {},
+    "__title__": "다이얼로그 제목('File Information'). bg 위 상단에 표시",
+    "title": {},
+    "__label__": "정보 레이블(Name:, Size:, Type:, Modified: 등). bg 위에 표시됨. value와 쌍을 이루며 어떤 정보인지 안내. value보다 낮은 시각적 강조",
+    "label": {},
+    "__value__": "정보 값의 기본 색상. bg 위에 표시됨. 특별히 지정되지 않은 값들의 기본색",
+    "value": {},
+    "__value_name__": "파일/폴더 이름 값. bg 위에 표시됨. 가장 중요한 정보로 다른 value보다 강조 가능. panel.directory_text 또는 palette.fg_strong 참조",
+    "value_name": {},
+    "__value_path__": "파일 경로 값. bg 위에 표시됨. 전체 경로 표시. value와 동일하거나 유사",
+    "value_path": {},
+    "__value_type__": "파일 타입 값(Directory, Text File, Image 등). bg 위에 표시됨",
+    "value_type": {},
+    "__value_size__": "파일 크기 값(1.5 MB, 계산 중... 등). bg 위에 표시됨. 숫자 정보로 강조 가능",
+    "value_size": {},
+    "__value_permission__": "파일 권한 값(rwxr-xr-x, 755 등). bg 위에 표시됨",
+    "value_permission": {},
+    "__value_owner__": "소유자/그룹 값(user:group). bg 위에 표시됨",
+    "value_owner": {},
+    "__value_date__": "날짜/시간 값(수정일, 생성일 등). bg 위에 표시됨",
+    "value_date": {},
+    "__calculating_spinner__": "폴더 크기 계산 중 스피너. 디렉토리 크기 계산 시 표시. bg 위에 value_size 옆 또는 대신 표시",
+    "calculating_spinner": {},
+    "__calculating_text__": "계산 중 텍스트('Calculating...'). calculating_spinner와 함께 표시",
+    "calculating_text": {},
+    "__error_text__": "정보 읽기 실패 시 에러 메시지. bg 위에 표시. state.error와 유사",
+    "error_text": {},
+    "__hint_text__": "하단 힌트 텍스트('Press any key to close'). bg 위에 표시"
+    "hint_text": {}
+  }},
+
+  "__help__": "=== 도움말 화면: 사용 가능한 모든 단축키를 섹션별로 정리하여 표시. 키보드 기반 파일 관리자의 핵심 참조 자료 ===",
+  "help": {{
+    "__bg__": "도움말 화면의 배경색. 단축키 목록이 표시되는 모달 창. section_title, key, description 등이 이 위에 렌더링됨",
+    "bg": {},
+    "__border__": "도움말 창의 테두리. bg를 둘러쌈",
+    "border": {},
+    "__title__": "도움말 창 제목('Keyboard Shortcuts' 등). bg 위 상단에 표시",
+    "title": {},
+    "__section_title__": "단축키 그룹 제목(Navigation, File Operations, View, Search 등). bg 위에 표시됨. 단축키들을 기능별로 분류. key, description보다 높은 시각적 강조",
+    "section_title": {},
+    "__section_decorator__": "섹션 제목 장식선(──, === 등). bg 위에 표시됨. 섹션 간 구분을 시각화. section_title보다 낮은 강조",
+    "section_decorator": {},
+    "__key__": "단축키 텍스트(F1, Ctrl+C, Space 등). bg 위에 표시됨. description과 쌍을 이룸. 키 부분을 강조하여 빠른 참조 가능. palette.shortcut 참조",
+    "key": {},
+    "__key_highlight__": "특별히 강조되는 단축키. key 중에서 더 중요하거나 자주 사용되는 키. key와 다른 색상으로 추가 강조",
+    "key_highlight": {},
+    "__description__": "단축키 설명 텍스트('Open file', 'Copy to clipboard' 등). bg 위에 표시됨. key 옆에 위치하여 해당 키의 기능 설명. key보다 낮은 시각적 강조",
+    "description": {},
+    "__hint_text__": "하단 힌트 텍스트('Press any key to close'). bg 위에 표시됨. 창 닫는 방법 안내"
+    "hint_text": {}
+  }},
+
+  "__advanced_search__": "=== 고급 검색: 파일명 패턴, 크기 범위, 날짜 필터 등 상세 검색 조건을 설정하는 폼 다이얼로그 ===",
+  "advanced_search": {{
+    "__bg__": "고급 검색 다이얼로그의 배경색. 검색 조건 입력 폼이 표시되는 모달 창. label, input, checkbox, button 등이 이 위에 렌더링됨",
+    "bg": {},
+    "__border__": "고급 검색 창의 테두리. bg를 둘러쌈",
+    "border": {},
+    "__title__": "다이얼로그 제목('Advanced Search'). bg 위 상단에 표시",
+    "title": {},
+    "__label__": "검색 조건 레이블(Pattern:, Size:, Date: 등). bg 위에 표시됨. 각 입력 필드가 무엇인지 안내. input_text와 쌍을 이룸",
+    "label": {},
+    "__input_text__": "검색 조건 입력 텍스트. bg 위에 표시됨. 사용자가 입력한 검색 패턴, 크기 조건 등",
+    "input_text": {},
+    "__input_cursor__": "입력 필드 커서. 현재 입력 위치 표시",
+    "input_cursor": {},
+    "__field_bracket__": "입력 필드 괄호([, ]). bg 위에 표시됨. 입력 영역의 시작과 끝을 표시. label과 구분되는 색상",
+    "field_bracket": {},
+    "__checkbox_checked__": "체크된 체크박스 색상([x] 또는 [✓]). bg 위에 표시됨. 옵션이 활성화됨을 표시. palette.positive 참조. checkbox_unchecked와 명확히 구분",
+    "checkbox_checked": {},
+    "__checkbox_unchecked__": "체크 안 된 체크박스 색상([ ]). bg 위에 표시됨. 옵션이 비활성화됨을 표시. checkbox_checked보다 낮은 시각적 강조",
+    "checkbox_unchecked": {},
+    "__button_text__": "비선택 버튼의 텍스트(Search, Cancel 등). bg 위에 표시됨. button_selected_text보다 낮은 강조",
+    "button_text": {},
+    "__button_selected_bg__": "선택된 버튼의 배경색. 현재 포커스가 있는 버튼 하이라이트. button_selected_text가 이 위에 표시됨",
+    "button_selected_bg": {},
+    "__button_selected_text__": "선택된 버튼의 텍스트 색상. button_selected_bg 위에 표시됨",
+    "button_selected_text": {},
+    "__footer_key__": "하단 도움말의 단축키(Tab:Next field, Enter:Search 등)",
+    "footer_key": {},
+    "__footer_text__": "하단 도움말 설명"
+    "footer_text": {}
+  }}
+}}"#,
+            // name
+            self.name(),
+            // palette
+            ci(self.palette.bg), ci(self.palette.bg_alt), ci(self.palette.fg), ci(self.palette.fg_dim),
+            ci(self.palette.fg_strong), ci(self.palette.fg_inverse), ci(self.palette.accent),
+            ci(self.palette.shortcut), ci(self.palette.positive), ci(self.palette.highlight),
+            // state
+            ci(self.state.success), ci(self.state.warning), ci(self.state.error), ci(self.state.info),
+            // panel
+            ci(self.panel.bg), ci(self.panel.border), ci(self.panel.border_active),
+            ci(self.panel.header_bg), ci(self.panel.header_bg_active),
+            ci(self.panel.header_text), ci(self.panel.header_text_active),
+            ci(self.panel.file_text), ci(self.panel.directory_text),
+            ci(self.panel.selected_bg), ci(self.panel.selected_text), ci(self.panel.marked_text),
+            ci(self.panel.size_text), ci(self.panel.date_text),
+            // header
+            ci(self.header.bg), ci(self.header.text), ci(self.header.title),
+            // status_bar
+            ci(self.status_bar.bg), ci(self.status_bar.text), ci(self.status_bar.text_dim),
+            // function_bar
+            ci(self.function_bar.bg), ci(self.function_bar.key), ci(self.function_bar.label),
+            // message
+            ci(self.message.bg), ci(self.message.text),
+            // dialog
+            ci(self.dialog.bg), ci(self.dialog.border), ci(self.dialog.title),
+            ci(self.dialog.text), ci(self.dialog.text_dim), ci(self.dialog.message_text),
+            ci(self.dialog.input_text), ci(self.dialog.input_cursor_fg), ci(self.dialog.input_cursor_bg),
+            ci(self.dialog.input_prompt), ci(self.dialog.button_text),
+            ci(self.dialog.button_selected_bg), ci(self.dialog.button_selected_text),
+            ci(self.dialog.autocomplete_bg), ci(self.dialog.autocomplete_text),
+            ci(self.dialog.autocomplete_directory_text), ci(self.dialog.autocomplete_selected_bg),
+            ci(self.dialog.autocomplete_selected_text), ci(self.dialog.autocomplete_scroll_info),
+            ci(self.dialog.preview_suffix_text), ci(self.dialog.help_key_text), ci(self.dialog.help_label_text),
+            ci(self.dialog.progress_label_text), ci(self.dialog.progress_value_text),
+            ci(self.dialog.progress_bar_fill), ci(self.dialog.progress_bar_empty),
+            ci(self.dialog.progress_percent_text), ci(self.dialog.conflict_filename_text),
+            ci(self.dialog.conflict_count_text), ci(self.dialog.conflict_shortcut_text),
+            ci(self.dialog.tar_exclude_title), ci(self.dialog.tar_exclude_border),
+            ci(self.dialog.tar_exclude_bg), ci(self.dialog.tar_exclude_message_text),
+            ci(self.dialog.tar_exclude_path_text), ci(self.dialog.tar_exclude_scroll_info),
+            ci(self.dialog.tar_exclude_button_text), ci(self.dialog.tar_exclude_button_selected_bg),
+            ci(self.dialog.tar_exclude_button_selected_text),
+            // confirm_dialog
+            ci(self.confirm_dialog.bg), ci(self.confirm_dialog.border), ci(self.confirm_dialog.title),
+            ci(self.confirm_dialog.message_text), ci(self.confirm_dialog.button_text),
+            ci(self.confirm_dialog.button_selected_bg), ci(self.confirm_dialog.button_selected_text),
+            // settings
+            ci(self.settings.bg), ci(self.settings.border), ci(self.settings.title),
+            ci(self.settings.label_text), ci(self.settings.prompt),
+            ci(self.settings.value_text), ci(self.settings.value_bg),
+            ci(self.settings.help_key), ci(self.settings.help_text),
+            // editor
+            ci(self.editor.bg), ci(self.editor.border), ci(self.editor.header_bg),
+            ci(self.editor.header_text), ci(self.editor.header_info), ci(self.editor.line_number),
+            ci(self.editor.text), ci(self.editor.cursor), ci(self.editor.selection_bg), ci(self.editor.selection_text),
+            ci(self.editor.match_bg), ci(self.editor.match_current_bg), ci(self.editor.bracket_match),
+            ci(self.editor.modified_mark), ci(self.editor.footer_bg), ci(self.editor.footer_key),
+            ci(self.editor.footer_text), ci(self.editor.find_input_text),
+            ci(self.editor.find_option), ci(self.editor.find_option_active),
+            // syntax
+            ci(self.syntax.keyword), ci(self.syntax.type_name), ci(self.syntax.string), ci(self.syntax.number),
+            ci(self.syntax.comment), ci(self.syntax.operator), ci(self.syntax.function), ci(self.syntax.macro_name),
+            ci(self.syntax.attribute), ci(self.syntax.variable), ci(self.syntax.constant),
+            ci(self.syntax.bracket), ci(self.syntax.normal),
+            // viewer
+            ci(self.viewer.bg), ci(self.viewer.border), ci(self.viewer.header_text), ci(self.viewer.line_number),
+            ci(self.viewer.text), ci(self.viewer.bookmark_indicator), ci(self.viewer.search_input_text),
+            ci(self.viewer.search_cursor_fg), ci(self.viewer.search_cursor_bg),
+            ci(self.viewer.search_match_current_bg), ci(self.viewer.search_match_current_fg),
+            ci(self.viewer.search_match_other_bg), ci(self.viewer.search_match_other_fg),
+            ci(self.viewer.search_info), ci(self.viewer.hex_offset), ci(self.viewer.hex_bytes),
+            ci(self.viewer.hex_ascii), ci(self.viewer.wrap_indicator),
+            ci(self.viewer.footer_key), ci(self.viewer.footer_text),
+            // process_manager
+            ci(self.process_manager.bg), ci(self.process_manager.border), ci(self.process_manager.header_text),
+            ci(self.process_manager.column_header), ci(self.process_manager.text),
+            ci(self.process_manager.selected_bg), ci(self.process_manager.selected_text),
+            ci(self.process_manager.cpu_high), ci(self.process_manager.mem_high),
+            ci(self.process_manager.confirm_text), ci(self.process_manager.footer_key),
+            ci(self.process_manager.footer_text),
+            // ai_screen
+            ci(self.ai_screen.bg), ci(self.ai_screen.history_border), ci(self.ai_screen.history_title),
+            ci(self.ai_screen.history_placeholder), ci(self.ai_screen.history_scroll_info),
+            ci(self.ai_screen.user_prefix), ci(self.ai_screen.assistant_prefix),
+            ci(self.ai_screen.error_prefix), ci(self.ai_screen.system_prefix), ci(self.ai_screen.message_text),
+            ci(self.ai_screen.input_border), ci(self.ai_screen.input_prompt), ci(self.ai_screen.input_text),
+            ci(self.ai_screen.input_cursor), ci(self.ai_screen.input_placeholder),
+            ci(self.ai_screen.processing_spinner), ci(self.ai_screen.processing_text),
+            ci(self.ai_screen.error_text), ci(self.ai_screen.footer_key), ci(self.ai_screen.footer_text),
+            // system_info
+            ci(self.system_info.bg), ci(self.system_info.border), ci(self.system_info.section_title),
+            ci(self.system_info.label), ci(self.system_info.value),
+            ci(self.system_info.bar_fill), ci(self.system_info.bar_empty),
+            ci(self.system_info.usage_low), ci(self.system_info.usage_medium), ci(self.system_info.usage_high),
+            ci(self.system_info.tab_active), ci(self.system_info.disk_header), ci(self.system_info.disk_text),
+            ci(self.system_info.selected_bg), ci(self.system_info.selected_text),
+            ci(self.system_info.footer_key), ci(self.system_info.footer_text),
+            // search_result
+            ci(self.search_result.bg), ci(self.search_result.border), ci(self.search_result.header_text),
+            ci(self.search_result.column_header), ci(self.search_result.column_header_dim),
+            ci(self.search_result.directory_text), ci(self.search_result.file_text),
+            ci(self.search_result.selected_bg), ci(self.search_result.selected_text),
+            ci(self.search_result.match_highlight), ci(self.search_result.path_text),
+            ci(self.search_result.footer_key), ci(self.search_result.footer_text),
+            // image_viewer
+            ci(self.image_viewer.bg), ci(self.image_viewer.border), ci(self.image_viewer.title_text),
+            ci(self.image_viewer.loading_spinner), ci(self.image_viewer.loading_text),
+            ci(self.image_viewer.error_text), ci(self.image_viewer.hint_text),
+            ci(self.image_viewer.footer_key), ci(self.image_viewer.footer_text),
+            ci(self.image_viewer.footer_separator),
+            // file_info
+            ci(self.file_info.bg), ci(self.file_info.border), ci(self.file_info.title),
+            ci(self.file_info.label), ci(self.file_info.value), ci(self.file_info.value_name),
+            ci(self.file_info.value_path), ci(self.file_info.value_type), ci(self.file_info.value_size),
+            ci(self.file_info.value_permission), ci(self.file_info.value_owner), ci(self.file_info.value_date),
+            ci(self.file_info.calculating_spinner), ci(self.file_info.calculating_text),
+            ci(self.file_info.error_text), ci(self.file_info.hint_text),
+            // help
+            ci(self.help.bg), ci(self.help.border), ci(self.help.title), ci(self.help.section_title),
+            ci(self.help.section_decorator), ci(self.help.key), ci(self.help.key_highlight),
+            ci(self.help.description), ci(self.help.hint_text),
+            // advanced_search
+            ci(self.advanced_search.bg), ci(self.advanced_search.border), ci(self.advanced_search.title),
+            ci(self.advanced_search.label), ci(self.advanced_search.input_text),
+            ci(self.advanced_search.input_cursor), ci(self.advanced_search.field_bracket),
+            ci(self.advanced_search.checkbox_checked), ci(self.advanced_search.checkbox_unchecked),
+            ci(self.advanced_search.button_text), ci(self.advanced_search.button_selected_bg),
+            ci(self.advanced_search.button_selected_text),
+            ci(self.advanced_search.footer_key), ci(self.advanced_search.footer_text),
+        )
     }
 }

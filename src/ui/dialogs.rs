@@ -268,7 +268,7 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
     // 다이얼로그 타입별 크기 설정
     // Y좌표는 max_height 기준 고정, 실제 높이는 동적
     let (width, height, max_height) = match dialog.dialog_type {
-        DialogType::Delete | DialogType::LargeImageConfirm | DialogType::TrueColorWarning => {
+        DialogType::Delete | DialogType::LargeImageConfirm | DialogType::LargeFileConfirm | DialogType::TrueColorWarning => {
             (SIMPLE_DIALOG_WIDTH, CONFIRM_DIALOG_HEIGHT, CONFIRM_DIALOG_HEIGHT)
         }
         DialogType::Copy | DialogType::Move => {
@@ -314,6 +314,9 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         }
         DialogType::LargeImageConfirm => {
             draw_confirm_dialog(frame, dialog, dialog_area, theme, " Large Image ");
+        }
+        DialogType::LargeFileConfirm => {
+            draw_confirm_dialog(frame, dialog, dialog_area, theme, " Large File ");
         }
         DialogType::TrueColorWarning => {
             draw_confirm_dialog(frame, dialog, dialog_area, theme, " True Color ");
@@ -432,7 +435,7 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
         let message_area = Rect::new(inner.x + 1, message_y, inner.width - 2, 1);
         // Use warning style for error messages (ending with !)
         let message_style = if dialog.message.ends_with('!') {
-            theme.warning_style()
+            Style::default().fg(theme.state.warning).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.dialog.text)
         };
@@ -453,10 +456,10 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
 fn draw_confirm_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Theme, title: &str) {
     let block = Block::default()
         .title(title)
-        .title_style(Style::default().fg(theme.dialog.title).add_modifier(Modifier::BOLD))
+        .title_style(Style::default().fg(theme.confirm_dialog.title).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.dialog.border))
-        .style(Style::default().bg(theme.dialog.bg));
+        .border_style(Style::default().fg(theme.confirm_dialog.border))
+        .style(Style::default().bg(theme.confirm_dialog.bg));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -465,16 +468,16 @@ fn draw_confirm_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &T
     let message_area = Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1);
     frame.render_widget(
         Paragraph::new(dialog.message.clone())
-            .style(Style::default().fg(theme.dialog.message_text))
+            .style(Style::default().fg(theme.confirm_dialog.message_text))
             .alignment(ratatui::layout::Alignment::Center),
         message_area,
     );
 
     // 버튼 스타일
     let selected_style = Style::default()
-        .fg(theme.dialog.button_selected_text)
-        .bg(theme.dialog.button_selected_bg);
-    let normal_style = Style::default().fg(theme.dialog.button_text);
+        .fg(theme.confirm_dialog.button_selected_text)
+        .bg(theme.confirm_dialog.button_selected_bg);
+    let normal_style = Style::default().fg(theme.confirm_dialog.button_text);
 
     let yes_style = if dialog.selected_button == 0 { selected_style } else { normal_style };
     let no_style = if dialog.selected_button == 1 { selected_style } else { normal_style };
@@ -1496,6 +1499,31 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
                     _ => {}
                 }
             }
+            DialogType::LargeFileConfirm => {
+                match code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        app.dialog = None;
+                        app.execute_open_large_file();
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                        app.dialog = None;
+                        app.pending_large_file = None;
+                    }
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                        dialog.selected_button = 1 - dialog.selected_button;
+                    }
+                    KeyCode::Enter => {
+                        if dialog.selected_button == 0 {
+                            app.dialog = None;
+                            app.execute_open_large_file();
+                        } else {
+                            app.dialog = None;
+                            app.pending_large_file = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             DialogType::Copy | DialogType::Move => {
                 return handle_copy_move_dialog_input(app, code, modifiers);
             }
@@ -1530,6 +1558,18 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
                             let archive_path = current_path.join(&input);
                             if archive_path.exists() {
                                 // Update dialog message to show error, keep dialog open
+                                if let Some(ref mut d) = app.dialog {
+                                    d.message = format!("'{}' already exists!", input);
+                                }
+                                return false;
+                            }
+                        }
+
+                        // For Rename dialog, check if target file already exists
+                        if dialog_type == DialogType::Rename && !input.trim().is_empty() {
+                            let current_path = app.active_panel().path.clone();
+                            let new_path = current_path.join(&input);
+                            if new_path.exists() {
                                 if let Some(ref mut d) = app.dialog {
                                     d.message = format!("'{}' already exists!", input);
                                 }

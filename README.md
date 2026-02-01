@@ -89,6 +89,7 @@ Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cod
 | `PgUp`/`PgDn` | Move 10 lines |
 | `/` | Go to path |
 | `1` | Go to home directory |
+| `2` | Refresh file list |
 
 ### File Operations
 
@@ -117,6 +118,13 @@ Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cod
 | `e` | Edit file |
 | `p` | Process manager |
 | `` ` `` | Settings |
+
+### macOS Only
+
+| Key | Action |
+|-----|--------|
+| `o` | Open folder in Finder |
+| `c` | Open folder in VS Code |
 
 ### Selection & AI
 
