@@ -14,6 +14,15 @@ use crate::ui::file_viewer::ViewerState;
 use crate::ui::file_editor::EditorState;
 use crate::ui::file_info::FileInfoState;
 
+/// Escape a string for safe use in shell commands
+/// Wraps the string in single quotes and escapes any existing single quotes
+fn shell_escape(s: &str) -> String {
+    // Use single quotes and escape any single quotes within
+    // 'path' -> for normal strings
+    // 'path'\''with'\''quotes' -> for strings containing single quotes
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Theme file watcher state for hot-reload
 pub struct ThemeWatchState {
     /// Path to the current theme file (if external)
@@ -178,6 +187,7 @@ pub enum DialogType {
     Progress,
     DuplicateConflict,
     Settings,
+    ExtensionHandlerError,
 }
 
 /// Settings dialog state
@@ -718,6 +728,9 @@ pub struct App {
     pub message: Option<String>,
     pub message_timer: u8,
 
+    // Flag to request full screen redraw (after terminal mode command)
+    pub needs_full_redraw: bool,
+
     // Settings
     pub settings: Settings,
 
@@ -840,6 +853,7 @@ impl App {
             dialog: None,
             message: None,
             message_timer: 0,
+            needs_full_redraw: false,
             settings: Settings::default(),
             theme: crate::ui::theme::Theme::default(),
             theme_watch_state: ThemeWatchState::watch_theme("light"),
@@ -918,6 +932,7 @@ impl App {
             dialog: None,
             message: None,
             message_timer: 0,
+            needs_full_redraw: false,
             settings,
             theme,
             theme_watch_state,
@@ -976,6 +991,12 @@ impl App {
     /// Save current settings to config file
     pub fn save_settings(&mut self) {
         use crate::config::PanelSettings;
+
+        // Preserve extension_handler from current file (user may have edited it externally)
+        // Load current file to get the latest extension_handler
+        if let Ok(current_file_settings) = Settings::load_with_error() {
+            self.settings.extension_handler = current_file_settings.extension_handler;
+        }
 
         // Update settings from current state
         self.settings.left_panel = PanelSettings {
@@ -1040,11 +1061,15 @@ impl App {
         // Update tar_path setting
         self.settings.tar_path = new_settings.tar_path;
 
+        // Update extension_handler setting
+        self.settings.extension_handler = new_settings.extension_handler;
+
         // Update settings
         self.settings.theme = new_settings.theme;
         self.settings.left_panel = new_settings.left_panel;
         self.settings.right_panel = new_settings.right_panel;
 
+        self.show_message("Settings reloaded");
         true
     }
 
@@ -1203,13 +1228,34 @@ impl App {
                     panel.selected_files.clear();
                     panel.load_files();
                 }
-            } else if Self::is_archive_file(&file.name) {
-                // It's an archive file - extract it
-                let archive_path = panel.path.join(&file.name);
-                self.execute_untar(&archive_path);
             } else {
-                // It's a regular file - check size first
+                // It's a file - check for extension handler first
                 let path = panel.path.join(&file.name);
+
+                // Try extension handler first (takes priority over all default behaviors)
+                match self.try_extension_handler(&path) {
+                    Ok(true) => {
+                        // Handler executed successfully, nothing more to do
+                        return;
+                    }
+                    Ok(false) => {
+                        // No handler defined, continue with default behavior
+                    }
+                    Err(error_msg) => {
+                        // All handlers failed, show error dialog
+                        self.show_extension_handler_error(&error_msg);
+                        return;
+                    }
+                }
+
+                // Default behavior: check file type
+                if Self::is_archive_file(&file.name) {
+                    // It's an archive file - extract it
+                    self.execute_untar(&path);
+                    return;
+                }
+
+                // Check file size for large file warning
                 const LARGE_FILE_THRESHOLD: u64 = 50 * 1024 * 1024; // 50MB
                 let file_size = std::fs::metadata(&path)
                     .map(|m| m.len())
@@ -1277,6 +1323,178 @@ impl App {
             || lower.ends_with(".tbz2")
             || lower.ends_with(".tar.xz")
             || lower.ends_with(".txz")
+    }
+
+    /// Try to execute extension handler commands for a file
+    /// Returns Ok(true) if a handler was executed successfully
+    /// Returns Ok(false) if no handler is defined for this extension
+    /// Returns Err(error_message) if all handlers failed
+    ///
+    /// Handler prefix:
+    /// - No prefix: Background execution (for GUI apps like feh, vlc)
+    /// - @ prefix: Terminal mode execution (for TUI apps like vim, nano)
+    ///   Example: "@vim {{FILEPATH}}" - suspends TUI, runs vim, restores TUI
+    fn try_extension_handler(&mut self, path: &std::path::Path) -> Result<bool, String> {
+        // Get file extension
+        let extension = match path.extension() {
+            Some(ext) => ext.to_string_lossy().to_string(),
+            None => return Ok(false), // No extension, use default behavior
+        };
+
+        // Check if there's a handler for this extension
+        let handlers = match self.settings.get_extension_handler(&extension) {
+            Some(h) => h.clone(),
+            None => return Ok(false), // No handler defined, use default behavior
+        };
+
+        if handlers.is_empty() {
+            return Ok(false);
+        }
+
+        // Escape file path for shell (handle spaces and special characters)
+        let file_path_str = path.to_string_lossy().to_string();
+        let escaped_path = shell_escape(&file_path_str);
+        let mut last_error = String::new();
+
+        // Try each handler in order (fallback mechanism)
+        for handler_template in &handlers {
+            // Check for terminal mode prefix (@)
+            let (is_terminal_mode, template) = if handler_template.starts_with('@') {
+                (true, &handler_template[1..])
+            } else {
+                (false, handler_template.as_str())
+            };
+
+            // Replace {{FILEPATH}} with escaped file path
+            let command = template.replace("{{FILEPATH}}", &escaped_path);
+
+            if is_terminal_mode {
+                // Terminal mode: suspend TUI, run command, restore TUI
+                match self.execute_terminal_command(&command) {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {
+                        last_error = format!("Command failed: {}", template);
+                        continue;
+                    }
+                    Err(e) => {
+                        last_error = e;
+                        continue;
+                    }
+                }
+            } else {
+                // Background mode: spawn and detach
+                match self.execute_background_command(&command, template) {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {
+                        // Command failed, error already set in last_error via closure
+                        continue;
+                    }
+                    Err(e) => {
+                        last_error = e;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // All handlers failed
+        Err(last_error)
+    }
+
+    /// Execute a command in terminal mode (blocking, inherits stdio)
+    /// Suspends the TUI, runs the command, then restores the TUI
+    fn execute_terminal_command(&mut self, command: &str) -> Result<bool, String> {
+        use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+        use crossterm::cursor::{Hide, Show};
+        use crossterm::execute;
+        use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+        use std::io::{stdout, Write};
+
+        // Show cursor and leave alternate screen
+        let _ = execute!(stdout(), Show, LeaveAlternateScreen);
+        let _ = disable_raw_mode();
+
+        // Clear screen for clean command output
+        print!("\x1B[2J\x1B[H");
+        let _ = stdout().flush();
+
+        // Execute command with inherited stdio
+        let result = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status();
+
+        // Restore: enable raw mode, enter alternate screen, hide cursor
+        let _ = enable_raw_mode();
+        let _ = execute!(stdout(), EnterAlternateScreen, Hide);
+
+        // Request full redraw on next frame
+        self.needs_full_redraw = true;
+
+        match result {
+            Ok(status) => Ok(status.success()),
+            Err(e) => Err(format!("Failed to execute: {}", e)),
+        }
+    }
+
+    /// Execute a command in background mode (non-blocking, detached)
+    fn execute_background_command(&self, command: &str, template: &str) -> Result<bool, String> {
+        let result = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match result {
+            Ok(mut child) => {
+                // Wait briefly to check if command started successfully
+                std::thread::sleep(std::time::Duration::from_millis(100));
+
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        // Process exited quickly - likely an error
+                        if !status.success() {
+                            // Try to get stderr
+                            if let Some(mut stderr) = child.stderr.take() {
+                                use std::io::Read;
+                                let mut err_msg = String::new();
+                                let _ = stderr.read_to_string(&mut err_msg);
+                                if err_msg.trim().is_empty() {
+                                    return Err(format!("Command failed: {}", template));
+                                } else {
+                                    return Err(err_msg.trim().to_string());
+                                }
+                            }
+                            return Err(format!("Command failed: {}", template));
+                        }
+                        Ok(true) // Command succeeded quickly
+                    }
+                    Ok(None) => {
+                        // Process still running - consider it successful
+                        Ok(true)
+                    }
+                    Err(e) => Err(format!("Failed to check process: {}", e)),
+                }
+            }
+            Err(e) => Err(format!("Failed to execute '{}': {}", template, e)),
+        }
+    }
+
+    /// Show extension handler error dialog
+    fn show_extension_handler_error(&mut self, error_message: &str) {
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::ExtensionHandlerError,
+            input: String::new(),
+            cursor_pos: 0,
+            message: error_message.to_string(),
+            completion: None,
+            selected_button: 0,
+        });
     }
 
     pub fn go_to_parent(&mut self) {

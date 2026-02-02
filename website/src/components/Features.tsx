@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Columns, Bot, Keyboard, Eye, Zap, Activity, Image, Search, Palette } from 'lucide-react'
+import { Columns, Bot, Keyboard, Eye, Zap, Activity, Image, Search, Palette, Settings2 } from 'lucide-react'
 import Card from './ui/Card'
 
 const features: { icon: typeof Zap; title: string; description: string; highlight?: boolean }[] = [
@@ -33,6 +33,11 @@ const features: { icon: typeof Zap; title: string; description: string; highligh
     icon: Image,
     title: 'Image Viewer',
     description: 'View images directly in the terminal with zoom and pan support. Navigate through images in a directory.',
+  },
+  {
+    icon: Settings2,
+    title: 'Custom File Handlers',
+    description: 'Define custom programs for each file extension. Open images in feh, videos in VLC, code in vim — with fallback support and terminal mode for TUI apps.',
   },
   {
     icon: Activity,

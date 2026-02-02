@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -65,6 +66,12 @@ pub struct Settings {
     pub theme: ThemeSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tar_path: Option<String>,
+    /// Extension handlers: maps file extensions to command arrays
+    /// Example: {"jpg": ["imageviewer {{FILEPATH}}", "imgviewer {{FILEPATH}}"]}
+    /// Commands are tried in order until one succeeds (fallback)
+    /// {{FILEPATH}} is replaced with the actual file path
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub extension_handler: HashMap<String, Vec<String>>,
 }
 
 fn default_active_panel() -> String {
@@ -79,6 +86,7 @@ impl Default for Settings {
             active_panel: default_active_panel(),
             theme: ThemeSettings::default(),
             tar_path: None,
+            extension_handler: HashMap::new(),
         }
     }
 }
@@ -250,6 +258,23 @@ impl Settings {
             }
         }
         fallback()
+    }
+
+    /// Gets the extension handler for a given file extension (case-insensitive)
+    /// Supports pipe-separated extensions: "jpg|jpeg|png"
+    /// Returns None if no handler is defined for this extension
+    pub fn get_extension_handler(&self, extension: &str) -> Option<&Vec<String>> {
+        let ext_lower = extension.to_lowercase();
+        // Try to find a matching handler (case-insensitive, supports pipe-separated extensions)
+        for (key, value) in &self.extension_handler {
+            // Split by pipe and check each extension
+            for key_ext in key.split('|') {
+                if key_ext.trim().to_lowercase() == ext_lower {
+                    return Some(value);
+                }
+            }
+        }
+        None
     }
 }
 

@@ -210,6 +210,12 @@ fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
 ) -> io::Result<()> {
     loop {
+        // Check if full redraw is needed (after terminal mode command like vim)
+        if app.needs_full_redraw {
+            terminal.clear()?;
+            app.needs_full_redraw = false;
+        }
+
         terminal.draw(|f| ui::draw::draw(f, app))?;
 
         // For AI screen, FileInfo with calculation, ImageViewer loading, or file operation progress, use fast polling

@@ -271,6 +271,10 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         DialogType::Delete | DialogType::LargeImageConfirm | DialogType::LargeFileConfirm | DialogType::TrueColorWarning => {
             (SIMPLE_DIALOG_WIDTH, CONFIRM_DIALOG_HEIGHT, CONFIRM_DIALOG_HEIGHT)
         }
+        DialogType::ExtensionHandlerError => {
+            // Error dialog: wider to accommodate error messages, taller for multi-line
+            (65, 8, 8)
+        }
         DialogType::Copy | DialogType::Move => {
             let w = area.width.saturating_sub(DIALOG_MARGIN).max(DIALOG_MIN_WIDTH);
             let max_h = COPY_MOVE_BASE_HEIGHT + MAX_COMPLETION_HEIGHT;
@@ -352,6 +356,9 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
             if let Some(ref state) = app.settings_state {
                 draw_settings_dialog(frame, state, dialog_area, theme);
             }
+        }
+        DialogType::ExtensionHandlerError => {
+            draw_error_dialog(frame, dialog, dialog_area, theme, " Handler Error ");
         }
     }
 }
@@ -489,6 +496,42 @@ fn draw_confirm_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &T
         Span::styled("    ", Style::default()),
         Span::styled(" No ", no_style),
         Span::styled("  ", Style::default()),
+    ]);
+    let button_area = Rect::new(inner.x + 1, inner.y + inner.height - 2, inner.width - 2, 1);
+    frame.render_widget(
+        Paragraph::new(buttons).alignment(ratatui::layout::Alignment::Center),
+        button_area,
+    );
+}
+
+/// Error dialog with OK button only
+fn draw_error_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Theme, title: &str) {
+    let block = Block::default()
+        .title(title)
+        .title_style(Style::default().fg(theme.confirm_dialog.title).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.confirm_dialog.border))
+        .style(Style::default().bg(theme.confirm_dialog.bg));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Message (can be multi-line, wrapped)
+    let message_area = Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, inner.height - 4);
+    frame.render_widget(
+        Paragraph::new(dialog.message.clone())
+            .style(Style::default().fg(theme.confirm_dialog.message_text))
+            .wrap(ratatui::widgets::Wrap { trim: true }),
+        message_area,
+    );
+
+    // OK button (always selected)
+    let selected_style = Style::default()
+        .fg(theme.confirm_dialog.button_selected_text)
+        .bg(theme.confirm_dialog.button_selected_bg);
+
+    let buttons = Line::from(vec![
+        Span::styled(" OK ", selected_style),
     ]);
     let button_area = Rect::new(inner.x + 1, inner.y + inner.height - 2, inner.width - 2, 1);
     frame.render_widget(
@@ -1544,6 +1587,15 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
             }
             DialogType::Settings => {
                 return handle_settings_dialog_input(app, code);
+            }
+            DialogType::ExtensionHandlerError => {
+                // Simple error dialog - any key closes it
+                match code {
+                    KeyCode::Enter | KeyCode::Esc | KeyCode::Char(_) => {
+                        app.dialog = None;
+                    }
+                    _ => {}
+                }
             }
             _ => {
                 match code {

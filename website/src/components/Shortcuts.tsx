@@ -43,8 +43,8 @@ const shortcutGroups = [
   {
     title: 'macOS Only',
     shortcuts: [
-      { key: 'o', action: 'Open folder in Finder' },
-      { key: 'c', action: 'Open folder in VS Code' },
+      { key: 'o', action: 'Open in Finder (open command)' },
+      { key: 'c', action: 'Open in VS Code (code/code-insiders)' },
     ],
   },
   {

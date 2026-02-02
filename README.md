@@ -74,6 +74,148 @@ npm install -g @anthropic-ai/claude-code
 
 Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code)
 
+## Custom File Handlers (Extension Handler)
+
+You can define custom programs to open files based on their extension. When you press `Enter` on a file, the configured handler will be executed instead of the built-in viewer/editor.
+
+### Configuration File
+
+Edit `~/.cokacdir/settings.json` and add the `extension_handler` section:
+
+```json
+{
+  "extension_handler": {
+    "jpg|jpeg|png|gif|webp": ["feh {{FILEPATH}}", "eog {{FILEPATH}}"],
+    "mp4|avi|mkv|webm": ["vlc {{FILEPATH}}", "mpv {{FILEPATH}}"],
+    "pdf": ["evince {{FILEPATH}}", "xdg-open {{FILEPATH}}"],
+    "rs|py|js|ts": ["@vim {{FILEPATH}}", "@nano {{FILEPATH}}"],
+    "md": ["@vim {{FILEPATH}}"]
+  }
+}
+```
+
+### Syntax
+
+| Element | Description |
+|---------|-------------|
+| `extension_handler` | Main configuration key |
+| `"jpg\|jpeg\|png"` | Pipe-separated extensions (case-insensitive) |
+| `["cmd1", "cmd2"]` | Array of commands (fallback order) |
+| `{{FILEPATH}}` | Placeholder replaced with actual file path |
+| `@` prefix | Terminal mode for TUI apps (vim, nano, etc.) |
+
+### Execution Modes
+
+| Mode | Prefix | Behavior | Use Case |
+|------|--------|----------|----------|
+| Background | (none) | Launches program and returns immediately | GUI apps (feh, vlc, evince) |
+| Terminal | `@` | Suspends COKACDIR, runs program, restores on exit | TUI apps (vim, nano, less) |
+
+### Fallback Mechanism
+
+Commands are tried in order. If the first command fails, the next one is attempted:
+
+```json
+{
+  "extension_handler": {
+    "jpg": ["feh {{FILEPATH}}", "eog {{FILEPATH}}", "xdg-open {{FILEPATH}}"]
+  }
+}
+```
+
+1. Try `feh` first
+2. If `feh` fails → try `eog`
+3. If `eog` fails → try `xdg-open`
+4. If all fail → show error dialog
+
+### Examples
+
+#### Image Viewer
+
+```json
+{
+  "extension_handler": {
+    "jpg|jpeg|png|gif|bmp|webp|ico|tiff": ["feh {{FILEPATH}}"]
+  }
+}
+```
+
+#### Video Player
+
+```json
+{
+  "extension_handler": {
+    "mp4|avi|mkv|webm|mov|flv": ["vlc {{FILEPATH}}", "mpv {{FILEPATH}}"]
+  }
+}
+```
+
+#### PDF Reader
+
+```json
+{
+  "extension_handler": {
+    "pdf": ["evince {{FILEPATH}}", "okular {{FILEPATH}}", "xdg-open {{FILEPATH}}"]
+  }
+}
+```
+
+#### Text Editor (Terminal Mode)
+
+```json
+{
+  "extension_handler": {
+    "txt|md|rst": ["@vim {{FILEPATH}}"],
+    "rs|py|js|ts|go|c|cpp|h": ["@vim {{FILEPATH}}", "code {{FILEPATH}}"]
+  }
+}
+```
+
+#### Open with VS Code
+
+```json
+{
+  "extension_handler": {
+    "rs|py|js|ts|json|yaml|toml": ["code {{FILEPATH}}"]
+  }
+}
+```
+
+### Complete Example
+
+```json
+{
+  "left_panel": {
+    "sort_by": "name",
+    "sort_order": "asc"
+  },
+  "right_panel": {
+    "sort_by": "name",
+    "sort_order": "asc"
+  },
+  "active_panel": "left",
+  "theme": {
+    "name": "dark"
+  },
+  "extension_handler": {
+    "jpg|jpeg|png|gif|webp|bmp": ["feh {{FILEPATH}}", "eog {{FILEPATH}}"],
+    "mp4|avi|mkv|webm|mov": ["vlc {{FILEPATH}}"],
+    "pdf": ["evince {{FILEPATH}}"],
+    "txt|md": ["@vim {{FILEPATH}}"],
+    "rs|py|js|ts": ["@vim {{FILEPATH}}", "code {{FILEPATH}}"],
+    "html": ["firefox {{FILEPATH}}", "xdg-open {{FILEPATH}}"]
+  }
+}
+```
+
+### Notes
+
+- **Case-insensitive**: `JPG`, `jpg`, `Jpg` are all matched
+- **Spaces in paths**: File paths with spaces are automatically escaped
+- **Undefined extensions**: Files without a handler use the built-in viewer/editor
+- **Hot-reload**: Edit settings.json in COKACDIR's editor and save (`Ctrl+S`) to apply changes immediately
+- **Error handling**: If all handlers fail, an error dialog shows the last error message
+
 ## Keyboard Shortcuts
 
 ### Navigation
@@ -123,8 +265,34 @@ Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cod
 
 | Key | Action |
 |-----|--------|
-| `o` | Open folder in Finder |
-| `c` | Open folder in VS Code |
+| `o` | Open current folder in Finder |
+| `c` | Open current folder in VS Code |
+
+#### `o` - Open in Finder
+
+Opens the current panel's directory in macOS Finder. Uses the native `open` command.
+
+```
+# Equivalent terminal command
+open /path/to/current/folder
+```
+
+#### `c` - Open in VS Code
+
+Opens the current panel's directory in Visual Studio Code. Automatically detects which VS Code variant is installed:
+
+1. First tries `code` (VS Code stable)
+2. Falls back to `code-insiders` (VS Code Insiders)
+3. Shows error if neither is found
+
+```
+# Equivalent terminal command
+code /path/to/current/folder
+# or
+code-insiders /path/to/current/folder
+```
+
+**Note**: VS Code CLI (`code` command) must be installed. In VS Code, press `Cmd+Shift+P` and run "Shell Command: Install 'code' command in PATH".
 
 ### Selection & AI
 

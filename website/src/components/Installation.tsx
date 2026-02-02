@@ -75,6 +75,38 @@ export default function Installation() {
             Learn more at <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener noreferrer" className="text-accent-cyan hover:underline">docs.anthropic.com</a>
           </p>
         </motion.div>
+
+        {/* Custom File Handlers */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="mt-6 p-6 rounded-xl border border-zinc-800 bg-bg-card"
+        >
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <span className="text-accent-cyan">⚙️</span>
+            Custom File Handlers (Optional)
+          </h3>
+          <p className="text-zinc-400 text-sm mb-4">
+            Define custom programs for each file extension in <code className="text-accent-green">~/.cokacdir/settings.json</code>
+          </p>
+          <div className="bg-bg-elevated rounded-lg p-4 font-mono text-sm overflow-x-auto">
+            <pre className="text-zinc-300">{`{
+  "extension_handler": {
+    "jpg|jpeg|png|gif": ["feh {{FILEPATH}}"],
+    "mp4|avi|mkv": ["vlc {{FILEPATH}}"],
+    "pdf": ["evince {{FILEPATH}}"],
+    "rs|py|js": ["@vim {{FILEPATH}}"]
+  }
+}`}</pre>
+          </div>
+          <div className="mt-4 space-y-2 text-xs text-zinc-500">
+            <p><code className="text-accent-cyan">|</code> — Combine multiple extensions</p>
+            <p><code className="text-accent-cyan">@</code> — Terminal mode for TUI apps (vim, nano)</p>
+            <p><code className="text-accent-cyan">["cmd1", "cmd2"]</code> — Fallback commands</p>
+          </div>
+        </motion.div>
       </div>
     </section>
   )
