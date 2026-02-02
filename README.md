@@ -365,6 +365,192 @@ code-insiders /path/to/current/folder
 | `PgUp`/`PgDn` | Previous/Next image |
 | `Esc`/`q` | Close viewer |
 
+## Theme Customization
+
+COKACDIR supports fully customizable themes. You can modify the built-in themes or create your own.
+
+### Theme File Location
+
+```
+~/.cokacdir/themes/
+├── light.json    # Light theme (default)
+└── dark.json     # Dark theme
+```
+
+Theme files are automatically created on first launch. To switch themes, edit `~/.cokacdir/settings.json`:
+
+```json
+{
+  "theme": {
+    "name": "dark"
+  }
+}
+```
+
+### Understanding Indexed Colors
+
+COKACDIR uses **256 Indexed Colors** for maximum terminal compatibility. Instead of RGB values, colors are specified as numbers from 0 to 255.
+
+#### Color Ranges
+
+| Range | Description |
+|-------|-------------|
+| 0-7 | Standard colors (black, red, green, yellow, blue, magenta, cyan, white) |
+| 8-15 | Bright/bold versions of standard colors |
+| 16-231 | 216-color cube (6×6×6 RGB combinations) |
+| 232-255 | 24-step grayscale (dark to light) |
+
+#### Common Color Values
+
+| Value | Color | Value | Color |
+|-------|-------|-------|-------|
+| 0 | Black | 15 | Bright White |
+| 1 | Red | 21 | Blue |
+| 2 | Green | 34 | Green |
+| 3 | Yellow | 81 | Cyan |
+| 4 | Blue | 196 | Bright Red |
+| 5 | Magenta | 226 | Yellow |
+| 7 | White | 255 | White |
+
+#### Grayscale (232-255)
+
+```
+232 ████ (darkest)
+238 ████
+243 ████
+248 ████
+253 ████
+255 ████ (brightest/white)
+```
+
+### Theme File Structure
+
+Theme files are JSON with the following main sections:
+
+```json
+{
+  "name": "mytheme",
+  "palette": {
+    "bg": 235,           // Main background
+    "bg_alt": 236,       // Header/status bar background
+    "fg": 252,           // Main text
+    "fg_dim": 245,       // Secondary text
+    "fg_strong": 255,    // Emphasized text (directories, titles)
+    "fg_inverse": 235,   // Text on selected items
+    "accent": 81,        // Accent color (headers, prompts)
+    "shortcut": 117,     // Shortcut key display
+    "positive": 114,     // Success/progress indicators
+    "highlight": 204     // Warnings, errors, markers
+  },
+  "panel": {
+    "bg": 235,
+    "border": 240,
+    "border_active": 81,
+    "file_text": 252,
+    "directory_text": 81,
+    "selected_bg": 240,
+    "selected_text": 255,
+    "marked_text": 204
+    // ... more fields
+  },
+  "editor": { /* ... */ },
+  "viewer": { /* ... */ },
+  "dialog": { /* ... */ }
+  // ... 19 UI component sections total
+}
+```
+
+### Adding New Themes
+
+You can add unlimited custom themes by creating new JSON files in the themes folder. The filename (without `.json`) becomes the theme name.
+
+```
+~/.cokacdir/themes/
+├── light.json       # Built-in: "light"
+├── dark.json        # Built-in: "dark"
+├── mytheme.json     # Custom: "mytheme"
+└── solarized.json   # Custom: "solarized"
+```
+
+### Creating a Custom Theme
+
+1. **Create a new theme file** (copy from existing or start fresh):
+   ```bash
+   cp ~/.cokacdir/themes/dark.json ~/.cokacdir/themes/mytheme.json
+   ```
+
+2. **Edit the theme file**:
+   ```bash
+   # Using COKACDIR's built-in editor
+   cokacdir
+   # Navigate to ~/.cokacdir/themes/mytheme.json and press Enter
+   ```
+
+3. **Change the theme name** and **modify color values** (0-255):
+   ```json
+   {
+     "name": "mytheme",
+     "palette": {
+       "bg": 234,        // Darker background
+       "accent": 39,     // Different accent color
+       // ...
+     }
+   }
+   ```
+
+4. **Apply the theme** in `~/.cokacdir/settings.json`:
+   ```json
+   {
+     "theme": {
+       "name": "mytheme"
+     }
+   }
+   ```
+
+5. **Restart COKACDIR** or save settings.json within the app to apply.
+
+### UI Components Reference
+
+| Section | Description | Key Fields |
+|---------|-------------|------------|
+| `palette` | Base colors | bg, fg, accent, highlight |
+| `panel` | File panels | file_text, directory_text, selected_bg |
+| `header` | App header | bg, text, title |
+| `status_bar` | Bottom status | bg, text, text_dim |
+| `dialog` | Dialogs | input_text, button_selected_bg |
+| `editor` | File editor | text, line_number, cursor |
+| `viewer` | File viewer | text, search_match_bg |
+| `syntax` | Code highlighting | keyword, string, comment |
+| `process_manager` | Process list | cpu_high, mem_high |
+| `ai_screen` | AI interface | user_prefix, assistant_prefix |
+
+### Tips
+
+- **Test colors**: Use a 256-color chart to find values. Search "256 color terminal chart" online.
+- **Grayscale tip**: Values 232-255 are pure grayscale, useful for backgrounds and subtle UI.
+- **Hot-reload**: Edit theme files within COKACDIR and save — changes apply immediately in design mode (`--design` flag).
+- **Backup**: Keep a copy of your custom themes before updating COKACDIR.
+
+### Example: High Contrast Dark Theme
+
+```json
+{
+  "name": "high-contrast",
+  "palette": {
+    "bg": 16,            // Pure black
+    "bg_alt": 233,       // Very dark gray
+    "fg": 255,           // Pure white
+    "fg_dim": 250,       // Light gray
+    "fg_strong": 231,    // Bright white
+    "fg_inverse": 16,    // Black (for selections)
+    "accent": 51,        // Bright cyan
+    "shortcut": 226,     // Bright yellow
+    "positive": 46,      // Bright green
+    "highlight": 196     // Bright red
+  }
+}
+```
+
 ## Supported Platforms
 
 - macOS (Apple Silicon & Intel)
