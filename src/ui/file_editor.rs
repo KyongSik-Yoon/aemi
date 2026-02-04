@@ -70,23 +70,34 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// 블록 커서 선택: 현재 커서 위치의 문자를 포함하기 위해 end_col = col + 1
     pub fn new(line: usize, col: usize) -> Self {
         Self {
             start_line: line,
             start_col: col,
             end_line: line,
-            end_col: col,
+            end_col: col + 1,
         }
     }
 
     /// 정규화된 선택 영역 (시작이 항상 끝보다 앞)
+    /// 블록 커서 선택: start_col = anchor, end_col = cursor + 1
     pub fn normalized(&self) -> (usize, usize, usize, usize) {
-        if self.start_line < self.end_line
-            || (self.start_line == self.end_line && self.start_col <= self.end_col)
-        {
+        if self.start_line == self.end_line {
+            // 단일 줄: 블록 커서 선택
+            // anchor와 cursor 사이의 모든 문자 선택 (양쪽 끝 포함)
+            let anchor = self.start_col;
+            let cursor = self.end_col.saturating_sub(1);
+            let min_col = anchor.min(cursor);
+            let max_col = anchor.max(cursor) + 1;
+            (self.start_line, min_col, self.end_line, max_col)
+        } else if self.start_line < self.end_line {
+            // 정방향 (아래로 선택): anchor -> cursor
             (self.start_line, self.start_col, self.end_line, self.end_col)
         } else {
-            (self.end_line, self.end_col, self.start_line, self.start_col)
+            // 역방향 (위로 선택): cursor <- anchor
+            // cursor 위치 문자와 anchor 위치 문자 모두 포함
+            (self.end_line, self.end_col.saturating_sub(1), self.start_line, self.start_col + 1)
         }
     }
 
@@ -276,6 +287,94 @@ impl EditorState {
         if self.highlighter.is_some() {
             self.highlighter = Some(SyntaxHighlighter::new(self.language, self.syntax_colors));
         }
+    }
+
+    /// 버퍼 위치(char index) -> Visual Column
+    /// TAB 문자는 tab_size 단위로 정렬된 위치까지 확장됨
+    pub fn char_to_visual(&self, line: &str, char_idx: usize) -> usize {
+        let mut visual_col = 0;
+        for (i, c) in line.chars().enumerate() {
+            if i >= char_idx {
+                break;
+            }
+            if c == '\t' {
+                // TAB은 다음 tab_size 배수 위치까지 확장
+                visual_col = (visual_col / self.tab_size + 1) * self.tab_size;
+            } else {
+                visual_col += 1;
+            }
+        }
+        visual_col
+    }
+
+    /// Visual Column -> 버퍼 위치(char index)
+    /// 주어진 visual column에 해당하는 문자 인덱스를 반환
+    pub fn visual_to_char(&self, line: &str, visual_col: usize) -> usize {
+        let mut current_visual = 0;
+        for (i, c) in line.chars().enumerate() {
+            if current_visual >= visual_col {
+                return i;
+            }
+            if c == '\t' {
+                current_visual = (current_visual / self.tab_size + 1) * self.tab_size;
+            } else {
+                current_visual += 1;
+            }
+        }
+        line.chars().count()
+    }
+
+    /// 현재 커서의 visual column 반환
+    pub fn cursor_visual_col(&self) -> usize {
+        if self.cursor_line < self.lines.len() {
+            self.char_to_visual(&self.lines[self.cursor_line], self.cursor_col)
+        } else {
+            self.cursor_col
+        }
+    }
+
+    /// TAB을 visual column 기반으로 확장한 문자열 생성
+    /// 각 TAB은 현재 visual column 위치에서 다음 tab_size 배수까지 스페이스로 확장됨
+    pub fn expand_tabs_visual(&self, line: &str) -> String {
+        let mut result = String::new();
+        let mut visual_col = 0;
+        for c in line.chars() {
+            if c == '\t' {
+                let next_tab_stop = (visual_col / self.tab_size + 1) * self.tab_size;
+                let spaces = next_tab_stop - visual_col;
+                result.push_str(&" ".repeat(spaces));
+                visual_col = next_tab_stop;
+            } else {
+                result.push(c);
+                visual_col += 1;
+            }
+        }
+        result
+    }
+
+    /// 원본 문자 인덱스 -> 확장된 visual 인덱스 매핑 생성
+    /// 반환값: (확장된 문자열, 원본 인덱스 배열)
+    /// 원본 인덱스 배열: expanded_line의 각 visual 위치에 해당하는 원본 char index
+    pub fn expand_tabs_with_mapping(&self, line: &str) -> (String, Vec<usize>) {
+        let mut result = String::new();
+        let mut visual_to_orig: Vec<usize> = Vec::new();
+        let mut visual_col = 0;
+        for (char_idx, c) in line.chars().enumerate() {
+            if c == '\t' {
+                let next_tab_stop = (visual_col / self.tab_size + 1) * self.tab_size;
+                let spaces = next_tab_stop - visual_col;
+                for _ in 0..spaces {
+                    result.push(' ');
+                    visual_to_orig.push(char_idx);
+                }
+                visual_col = next_tab_stop;
+            } else {
+                result.push(c);
+                visual_to_orig.push(char_idx);
+                visual_col += 1;
+            }
+        }
+        (result, visual_to_orig)
     }
 
     /// Maximum file size for editing (50MB - more restrictive than viewer)
@@ -1020,10 +1119,11 @@ impl EditorState {
             }
         }
 
-        // 선택 영역 업데이트
+        // 선택 영역 업데이트 (블록 커서 선택: 현재 커서 위치의 문자 포함)
         if let Some(ref mut sel) = self.selection {
             sel.end_line = self.cursor_line;
-            sel.end_col = self.cursor_col;
+            let line_len = self.lines[self.cursor_line].chars().count();
+            sel.end_col = (self.cursor_col + 1).min(line_len);
         }
 
         self.update_scroll();
@@ -1040,18 +1140,25 @@ impl EditorState {
             self.selection = None;
         }
 
-        // 첫 번째 비공백 문자로 이동, 이미 거기 있으면 줄 시작으로
-        let line = &self.lines[self.cursor_line];
-        let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
-
-        if self.cursor_col == first_non_ws || self.cursor_col == 0 {
-            self.cursor_col = if self.cursor_col == 0 { first_non_ws } else { 0 };
+        if extend_selection {
+            // 선택 모드: 항상 줄 맨 처음으로
+            self.cursor_col = 0;
         } else {
-            self.cursor_col = first_non_ws;
+            // 이동 모드: 첫 번째 비공백 문자로 이동, 이미 거기 있으면 줄 시작으로
+            let line = &self.lines[self.cursor_line];
+            let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
+
+            if self.cursor_col == first_non_ws || self.cursor_col == 0 {
+                self.cursor_col = if self.cursor_col == 0 { first_non_ws } else { 0 };
+            } else {
+                self.cursor_col = first_non_ws;
+            }
         }
 
+        // 블록 커서 선택: 현재 커서 위치의 문자 포함
         if let Some(ref mut sel) = self.selection {
-            sel.end_col = self.cursor_col;
+            let line_len = self.lines[self.cursor_line].chars().count();
+            sel.end_col = (self.cursor_col + 1).min(line_len);
         }
     }
 
@@ -1080,11 +1187,12 @@ impl EditorState {
             self.scroll = self.cursor_line.saturating_sub(self.visible_height - 1);
         }
 
-        // 수평 스크롤
-        if self.cursor_col < self.horizontal_scroll {
-            self.horizontal_scroll = self.cursor_col;
-        } else if self.cursor_col >= self.horizontal_scroll + self.visible_width {
-            self.horizontal_scroll = self.cursor_col.saturating_sub(self.visible_width - 1);
+        // 수평 스크롤 (visual column 기반)
+        let cursor_visual = self.cursor_visual_col();
+        if cursor_visual < self.horizontal_scroll {
+            self.horizontal_scroll = cursor_visual;
+        } else if cursor_visual >= self.horizontal_scroll + self.visible_width {
+            self.horizontal_scroll = cursor_visual.saturating_sub(self.visible_width - 1);
         }
     }
 
@@ -1382,9 +1490,12 @@ impl EditorState {
             }
         } else {
             let mut col = self.cursor_col;
-            // 공백 건너뛰기
-            while col > 0 && !Self::is_word_char(chars[col - 1]) {
-                col -= 1;
+            // 왼쪽이 non-word_char면 건너뛰기 (단어 시작에서 이전 단어로 이동하기 위해)
+            // 선택 모드에서도 커서가 단어 시작에 있을 때 이전으로 이동 가능해야 함
+            if col > 0 && !Self::is_word_char(chars[col - 1]) {
+                while col > 0 && !Self::is_word_char(chars[col - 1]) {
+                    col -= 1;
+                }
             }
             // 단어 건너뛰기
             while col > 0 && Self::is_word_char(chars[col - 1]) {
@@ -1393,9 +1504,11 @@ impl EditorState {
             self.cursor_col = col;
         }
 
+        // 블록 커서 선택: 현재 커서 위치의 문자 포함
         if let Some(ref mut sel) = self.selection {
             sel.end_line = self.cursor_line;
-            sel.end_col = self.cursor_col;
+            let line_len = self.lines[self.cursor_line].chars().count();
+            sel.end_col = (self.cursor_col + 1).min(line_len);
         }
 
         self.update_scroll();
@@ -1421,20 +1534,54 @@ impl EditorState {
             }
         } else {
             let mut col = self.cursor_col;
+
             // 현재 단어 끝까지 이동
             while col < line_len && Self::is_word_char(chars[col]) {
                 col += 1;
             }
-            // 공백 건너뛰기
-            while col < line_len && !Self::is_word_char(chars[col]) {
-                col += 1;
+
+            // 선택 모드일 때: 마지막 word_char 위치에 멈춤 (공백 제외)
+            // 단, 한 칸만 이동한 경우 (단어 끝에 있었던 경우) 다음 단어로 계속 이동
+            if extend_selection && col > self.cursor_col {
+                if col == self.cursor_col + 1 {
+                    // 단어 끝에 있었음 - non-word_char 건너뛰고 다음 단어 끝까지
+                    while col < line_len && !Self::is_word_char(chars[col]) {
+                        col += 1;
+                    }
+                    let next_start = col;
+                    while col < line_len && Self::is_word_char(chars[col]) {
+                        col += 1;
+                    }
+                    if col > next_start {
+                        col -= 1;
+                    }
+                } else {
+                    col -= 1;
+                }
             }
+
+            // 이동하지 않았으면 (non-word_char 위에 있었으면) 건너뛰고 다음 단어로
+            if col == self.cursor_col && col < line_len {
+                while col < line_len && !Self::is_word_char(chars[col]) {
+                    col += 1;
+                }
+                let next_start = col;
+                while col < line_len && Self::is_word_char(chars[col]) {
+                    col += 1;
+                }
+                if extend_selection && col > next_start {
+                    col -= 1;
+                }
+            }
+
             self.cursor_col = col;
         }
 
+        // 블록 커서 선택: 현재 커서 위치의 문자 포함
         if let Some(ref mut sel) = self.selection {
             sel.end_line = self.cursor_line;
-            sel.end_col = self.cursor_col;
+            let line_len = self.lines[self.cursor_line].chars().count();
+            sel.end_col = (self.cursor_col + 1).min(line_len);
         }
 
         self.update_scroll();
@@ -1904,7 +2051,12 @@ impl EditorState {
         let comment_with_space = format!("{} ", comment);
 
         if let Some(sel) = &self.selection {
-            let (start_line, _, end_line, _) = sel.normalized();
+            let (start_line, _, mut end_line, end_col) = sel.normalized();
+            // 블록 커서: end_col = cursor + 1이므로 end_col <= 1이면 cursor가 라인 시작(col 0)
+            // 여러 줄 선택에서 마지막 라인에 실제 선택된 문자가 없으므로 제외
+            if end_col <= 1 && end_line > start_line {
+                end_line -= 1;
+            }
             let mut actions = Vec::new();
 
             // 모든 줄이 주석인지 확인 (라인 맨 앞 기준)
@@ -2007,7 +2159,7 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
             theme.dim_style(),
         ),
         Span::styled(
-            format!("Ln {}, Col {} ", state.cursor_line + 1, state.cursor_col + 1),
+            format!("Ln {}, Col {} ", state.cursor_line + 1, state.cursor_visual_col() + 1),
             theme.dim_style(),
         ),
         if !state.undo_stack.is_empty() {
@@ -2052,8 +2204,8 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
     }
 
     for (i, original_line) in state.lines.iter().skip(state.scroll).take(content_height).enumerate() {
-        // TAB을 4칸 스페이스로 변환 (잔상 방지)
-        let line = original_line.replace('\t', "    ");
+        // TAB을 visual column 기반으로 스페이스로 확장 (매핑 정보 포함)
+        let (expanded_line, visual_to_orig) = state.expand_tabs_with_mapping(original_line);
         let line_num = state.scroll + i;
         let is_cursor_line = line_num == state.cursor_line;
 
@@ -2074,7 +2226,9 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
         // 라인 렌더링
         let in_find_mode = state.find_mode != FindReplaceMode::None;
         let content_spans = render_editor_line(
-            &line,
+            &expanded_line,
+            original_line,
+            &visual_to_orig,
             line_num,
             state,
             &selection,
@@ -2299,8 +2453,13 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
 }
 
 /// 편집기 라인 렌더링
+/// expanded_line: TAB이 스페이스로 확장된 문자열
+/// original_line: 원본 문자열 (TAB 포함)
+/// visual_to_orig: 확장된 문자열의 각 visual 위치에 해당하는 원본 char index
 fn render_editor_line(
-    line: &str,
+    expanded_line: &str,
+    original_line: &str,
+    visual_to_orig: &[usize],
     line_num: usize,
     state: &EditorState,
     selection: &Option<(usize, usize, usize, usize)>,
@@ -2311,18 +2470,22 @@ fn render_editor_line(
     horizontal_scroll: usize,
     visible_width: usize,
 ) -> Vec<Span<'static>> {
-    let chars: Vec<char> = line.chars().collect();
+    let chars: Vec<char> = expanded_line.chars().collect();
+    let orig_chars: Vec<char> = original_line.chars().collect();
     let mut spans: Vec<Span<'static>> = Vec::new();
 
-    // 보이는 범위 계산
+    // 보이는 범위 계산 (visual column 기준)
     let view_start = horizontal_scroll;
     let view_end = (horizontal_scroll + visible_width).min(chars.len());
 
-    // 선택 영역이 이 줄에 있는지 확인
+    // 커서의 visual column 계산
+    let cursor_visual = state.char_to_visual(original_line, state.cursor_col);
+
+    // 선택 영역이 이 줄에 있는지 확인 (원본 인덱스 기준)
     let line_selection = if let Some((sl, sc, el, ec)) = selection {
         if *sl <= line_num && line_num <= *el {
             let start = if line_num == *sl { *sc } else { 0 };
-            let end = if line_num == *el { *ec } else { chars.len() };
+            let end = if line_num == *el { *ec } else { orig_chars.len() };
             Some((start, end))
         } else {
             None
@@ -2331,106 +2494,57 @@ fn render_editor_line(
         None
     };
 
-    // 문법 강조 토큰 가져오기
+    // 문법 강조 토큰 가져오기 (원본 라인에서 토큰화)
     let tokens = if let Some(ref mut hl) = highlighter {
-        hl.tokenize_line(line)
+        hl.tokenize_line(original_line)
     } else {
         vec![]
     };
 
     // 토큰이 있으면 토큰 기반 렌더링
     if !tokens.is_empty() {
+        // 원본 char index -> token style 매핑 생성
+        let mut orig_styles: Vec<ratatui::style::Style> = vec![theme.normal_style(); orig_chars.len()];
         let mut char_idx = 0;
 
-        for token in tokens {
-            let token_chars: Vec<char> = token.text.chars().collect();
-            let token_start = char_idx;
-            let token_end = char_idx + token_chars.len();
-
-            for (i, c) in token_chars.iter().enumerate() {
-                let pos = token_start + i;
-
-                // 보이는 범위 밖이면 건너뛰기
-                if pos < view_start {
-                    continue;
-                }
-                if pos >= view_end {
-                    break;
-                }
-
-                let mut style = if let Some(ref mut hl) = highlighter {
-                    hl.style_for(token.token_type)
-                } else {
-                    theme.normal_style()
-                };
-
-                // 선택 영역 하이라이트
-                if let Some((sel_start, sel_end)) = line_selection {
-                    if pos >= sel_start && pos < sel_end {
-                        style = style.bg(theme.editor.selection_bg).fg(theme.editor.selection_text);
-                    }
-                }
-
-                // 검색 매치 하이라이트
-                for (idx, (ml, ms, me)) in state.match_positions.iter().enumerate() {
-                    if *ml == line_num && pos >= *ms && pos < *me {
-                        if idx == state.current_match {
-                            style = style.bg(theme.editor.match_current_bg).fg(theme.editor.bg);
-                        } else {
-                            style = style.bg(theme.editor.match_bg).fg(theme.editor.bg);
-                        }
-                    }
-                }
-
-                // 매칭 괄호 하이라이트
-                if let Some((bl, bc)) = state.matching_bracket {
-                    if bl == line_num && bc == pos {
-                        style = style.bg(theme.editor.bracket_match).fg(Color::Black);
-                    }
-                }
-
-                // 커서 하이라이트
-                if is_cursor_line && pos == state.cursor_col && state.selection.is_none() {
-                    if in_find_mode {
-                        style = Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg);
-                    } else {
-                        style = theme.selected_style();
-                    }
-                }
-
-                spans.push(Span::styled(c.to_string(), style));
+        for token in &tokens {
+            let token_len = token.text.chars().count();
+            let style = if let Some(ref mut hl) = highlighter {
+                hl.style_for(token.token_type)
+            } else {
+                theme.normal_style()
+            };
+            for i in char_idx..(char_idx + token_len).min(orig_chars.len()) {
+                orig_styles[i] = style;
             }
-
-            char_idx = token_end;
+            char_idx += token_len;
         }
 
-        // 커서가 줄 끝에 있고 보이는 범위 내인 경우
-        if is_cursor_line && state.cursor_col >= chars.len() && state.selection.is_none() {
-            if state.cursor_col >= view_start && state.cursor_col < view_start + visible_width {
-                let cursor_style = if in_find_mode {
-                    Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg)
-                } else {
-                    theme.selected_style()
-                };
-                spans.push(Span::styled(" ", cursor_style));
-            }
-        }
-    } else {
-        // 토큰 없이 문자 단위 렌더링 (보이는 범위만)
-        for i in view_start..view_end {
-            let c = chars[i];
-            let mut style = theme.normal_style();
+        // visual position 순회
+        for visual_pos in view_start..view_end {
+            let c = chars[visual_pos];
+            let orig_idx = if visual_pos < visual_to_orig.len() {
+                visual_to_orig[visual_pos]
+            } else {
+                orig_chars.len()
+            };
 
-            // 선택 영역
+            let mut style = if orig_idx < orig_styles.len() {
+                orig_styles[orig_idx]
+            } else {
+                theme.normal_style()
+            };
+
+            // 선택 영역 하이라이트 (원본 인덱스 기준)
             if let Some((sel_start, sel_end)) = line_selection {
-                if i >= sel_start && i < sel_end {
+                if orig_idx >= sel_start && orig_idx < sel_end {
                     style = style.bg(theme.editor.selection_bg).fg(theme.editor.selection_text);
                 }
             }
 
-            // 검색 매치
+            // 검색 매치 하이라이트 (원본 인덱스 기준)
             for (idx, (ml, ms, me)) in state.match_positions.iter().enumerate() {
-                if *ml == line_num && i >= *ms && i < *me {
+                if *ml == line_num && orig_idx >= *ms && orig_idx < *me {
                     if idx == state.current_match {
                         style = style.bg(theme.editor.match_current_bg).fg(theme.editor.bg);
                     } else {
@@ -2439,15 +2553,15 @@ fn render_editor_line(
                 }
             }
 
-            // 매칭 괄호
+            // 매칭 괄호 하이라이트 (원본 인덱스 기준)
             if let Some((bl, bc)) = state.matching_bracket {
-                if bl == line_num && bc == i {
+                if bl == line_num && bc == orig_idx {
                     style = style.bg(theme.editor.bracket_match).fg(Color::Black);
                 }
             }
 
-            // 커서
-            if is_cursor_line && i == state.cursor_col && state.selection.is_none() {
+            // 커서 하이라이트 (visual position 기준)
+            if is_cursor_line && visual_pos == cursor_visual && state.selection.is_none() {
                 if in_find_mode {
                     style = Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg);
                 } else {
@@ -2459,8 +2573,67 @@ fn render_editor_line(
         }
 
         // 커서가 줄 끝에 있고 보이는 범위 내인 경우
-        if is_cursor_line && state.cursor_col >= chars.len() && state.selection.is_none() {
-            if state.cursor_col >= view_start && state.cursor_col < view_start + visible_width {
+        if is_cursor_line && state.cursor_col >= orig_chars.len() && state.selection.is_none() {
+            if cursor_visual >= view_start && cursor_visual < view_start + visible_width {
+                let cursor_style = if in_find_mode {
+                    Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg)
+                } else {
+                    theme.selected_style()
+                };
+                spans.push(Span::styled(" ", cursor_style));
+            }
+        }
+    } else {
+        // 토큰 없이 문자 단위 렌더링 (보이는 범위만)
+        for visual_pos in view_start..view_end {
+            let c = chars[visual_pos];
+            let orig_idx = if visual_pos < visual_to_orig.len() {
+                visual_to_orig[visual_pos]
+            } else {
+                orig_chars.len()
+            };
+            let mut style = theme.normal_style();
+
+            // 선택 영역 (원본 인덱스 기준)
+            if let Some((sel_start, sel_end)) = line_selection {
+                if orig_idx >= sel_start && orig_idx < sel_end {
+                    style = style.bg(theme.editor.selection_bg).fg(theme.editor.selection_text);
+                }
+            }
+
+            // 검색 매치 (원본 인덱스 기준)
+            for (idx, (ml, ms, me)) in state.match_positions.iter().enumerate() {
+                if *ml == line_num && orig_idx >= *ms && orig_idx < *me {
+                    if idx == state.current_match {
+                        style = style.bg(theme.editor.match_current_bg).fg(theme.editor.bg);
+                    } else {
+                        style = style.bg(theme.editor.match_bg).fg(theme.editor.bg);
+                    }
+                }
+            }
+
+            // 매칭 괄호 (원본 인덱스 기준)
+            if let Some((bl, bc)) = state.matching_bracket {
+                if bl == line_num && bc == orig_idx {
+                    style = style.bg(theme.editor.bracket_match).fg(Color::Black);
+                }
+            }
+
+            // 커서 (visual position 기준)
+            if is_cursor_line && visual_pos == cursor_visual && state.selection.is_none() {
+                if in_find_mode {
+                    style = Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg);
+                } else {
+                    style = theme.selected_style();
+                }
+            }
+
+            spans.push(Span::styled(c.to_string(), style));
+        }
+
+        // 커서가 줄 끝에 있고 보이는 범위 내인 경우
+        if is_cursor_line && state.cursor_col >= orig_chars.len() && state.selection.is_none() {
+            if cursor_visual >= view_start && cursor_visual < view_start + visible_width {
                 let cursor_style = if in_find_mode {
                     Style::default().fg(theme.editor.text).bg(theme.editor.footer_bg)
                 } else {
