@@ -547,7 +547,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::light()
+        Self::dark()
     }
 }
 
@@ -563,7 +563,7 @@ impl Theme {
         match name {
             "light" => Self::light(),
             "dark" => Self::dark(),
-            _ => Self::light(),
+            _ => Self::dark(),
         }
     }
 
