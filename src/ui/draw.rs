@@ -256,6 +256,7 @@ fn draw_function_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         ("i", "nfo "),
         ("e", "dit "),
         ("k", "mkdir "),
+        ("m", "kfile "),
         ("x", "del "),
         ("r", "en "),
         ("t", "ar "),
@@ -263,9 +264,17 @@ fn draw_function_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         ("f", "ind "),
         (".", "AI "),
         ("p", "roc "),
-        ("1", "home "),
+        ("Spc", "sel "),
+        ("S↑↓", "sel "),
+        (";", "ext "),
+        ("^a", "ll "),
+        ("^c", "py "),
+        ("^x", "ut "),
+        ("^v/V", "pst "),
+        ("nsdy", "sort "),
+        ("1", "hom "),
         ("2", "ref "),
-        ("'", "mark "),
+        ("'", "mrk "),
     ];
 
     // macOS only: open in Finder, open in VS Code

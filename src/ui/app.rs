@@ -175,6 +175,7 @@ pub enum DialogType {
     Move,
     Delete,
     Mkdir,
+    Mkfile,
     Rename,
     Search,
     Goto,
@@ -1680,6 +1681,13 @@ impl App {
         let is_edit_mode = !existing_handler.is_empty();
         let cursor_pos = existing_handler.chars().count();
 
+        // Edit 모드일 때 전체 선택
+        let selection = if is_edit_mode {
+            Some((0, cursor_pos))
+        } else {
+            None
+        };
+
         self.pending_binary_file = Some((path, extension.clone()));
         self.dialog = Some(Dialog {
             dialog_type: DialogType::BinaryFileHandler,
@@ -1688,7 +1696,7 @@ impl App {
             message: extension,
             completion: None,
             selected_button: if is_edit_mode { 1 } else { 0 }, // 0: Set, 1: Edit
-            selection: None,
+            selection,
         });
     }
 
@@ -2159,6 +2167,18 @@ impl App {
     pub fn show_mkdir_dialog(&mut self) {
         self.dialog = Some(Dialog {
             dialog_type: DialogType::Mkdir,
+            input: String::new(),
+            cursor_pos: 0,
+            message: String::new(),
+            completion: None,
+            selected_button: 0,
+            selection: None,
+        });
+    }
+
+    pub fn show_mkfile_dialog(&mut self) {
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::Mkfile,
             input: String::new(),
             cursor_pos: 0,
             message: String::new(),
@@ -3268,10 +3288,51 @@ impl App {
         }
 
         match file_ops::create_directory(&path) {
-            Ok(_) => self.show_message(&format!("Created directory: {}", name)),
+            Ok(_) => {
+                self.active_panel_mut().pending_focus = Some(name.to_string());
+                self.show_message(&format!("Created directory: {}", name));
+            }
             Err(e) => self.show_message(&format!("Error: {}", e)),
         }
         self.refresh_panels();
+    }
+
+    pub fn execute_mkfile(&mut self, name: &str) {
+        // Validate filename to prevent path traversal attacks
+        if let Err(e) = file_ops::is_valid_filename(name) {
+            self.show_message(&format!("Error: {}", e));
+            return;
+        }
+
+        let path = self.active_panel().path.join(name);
+
+        // Check if file already exists
+        if path.exists() {
+            self.show_message(&format!("'{}' already exists!", name));
+            return;
+        }
+
+        // Create empty file
+        match std::fs::File::create(&path) {
+            Ok(_) => {
+                self.active_panel_mut().pending_focus = Some(name.to_string());
+                self.refresh_panels();
+
+                // Open the file in editor
+                let mut editor = EditorState::new();
+                editor.set_syntax_colors(self.theme.syntax);
+                match editor.load_file(&path) {
+                    Ok(_) => {
+                        self.editor_state = Some(editor);
+                        self.current_screen = Screen::FileEditor;
+                    }
+                    Err(e) => {
+                        self.show_message(&format!("File created but cannot open: {}", e));
+                    }
+                }
+            }
+            Err(e) => self.show_message(&format!("Error: {}", e)),
+        }
     }
 
     pub fn execute_rename(&mut self, new_name: &str) {

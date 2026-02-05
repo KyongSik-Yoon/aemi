@@ -239,7 +239,7 @@ Press `u` on any file to open the handler setup dialog:
 | Key | Action |
 |-----|--------|
 | `↑`/`↓` | Navigate files |
-| `Enter` | Open directory |
+| `Enter` | Open directory / file |
 | `Esc` | Parent directory |
 | `Tab` | Switch panels |
 | `←`/`→` | Switch panels (keep position) |
@@ -270,7 +270,8 @@ Quickly navigate to frequently used directories.
 | Key | Action |
 |-----|--------|
 | `k` | Create directory |
-| `x` | Delete |
+| `m` | Create file |
+| `x`/`Del` | Delete |
 | `r` | Rename |
 | `t` | Create tar archive |
 | `f` | Find/Search files |
@@ -282,7 +283,7 @@ Quickly navigate to frequently used directories.
 |-----|--------|
 | `Ctrl+C` | Copy to clipboard |
 | `Ctrl+X` | Cut to clipboard |
-| `Ctrl+V` | Paste from clipboard |
+| `Ctrl+V`/`Shift+V` | Paste from clipboard |
 
 ### View & Tools
 
@@ -327,17 +328,40 @@ code-insiders /path/to/current/folder
 
 **Note**: VS Code CLI (`code` command) must be installed. In VS Code, press `Cmd+Shift+P` and run "Shell Command: Install 'code' command in PATH".
 
-### Selection & AI
+### Selection
 
 | Key | Action |
 |-----|--------|
-| `Space` | Select file |
-| `Ctrl+A` | Select all files |
+| `Space` | Select / Deselect file |
 | `Shift+↑/↓` | Select while moving cursor |
 | `*` | Toggle select all |
 | `;` | Select by extension |
-| `n` / `s` / `d` / `y` | Sort by name / size / date / type |
-| `.` | AI command |
+| `Ctrl+A` | Select all files |
+
+### Sorting
+
+| Key | Action |
+|-----|--------|
+| `n` | Sort by name |
+| `s` | Sort by size |
+| `d` | Sort by date |
+| `y` | Sort by type |
+
+### AI Screen
+
+| Key | Action |
+|-----|--------|
+| `.` | Open AI command |
+| `Enter` | Send message |
+| `Shift+Enter` | New line |
+| `Ctrl+↑/↓` | Scroll history |
+| `PgUp`/`PgDn` | Page scroll |
+| `Esc` | Close AI screen |
+
+### General
+
+| Key | Action |
+|-----|--------|
 | `q` | Quit |
 
 ### File Viewer

@@ -641,6 +641,7 @@ fn handle_dual_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
         KeyCode::Char('i') | KeyCode::Char('I') => app.show_file_info(),
         KeyCode::Char('e') | KeyCode::Char('E') => app.edit_file(),
         KeyCode::Char('k') | KeyCode::Char('K') => app.show_mkdir_dialog(),
+        KeyCode::Char('m') | KeyCode::Char('M') => app.show_mkfile_dialog(),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Delete | KeyCode::Backspace => app.show_delete_dialog(),
         KeyCode::Char('p') | KeyCode::Char('P') => app.show_process_manager(),
         KeyCode::Char('r') | KeyCode::Char('R') => app.show_rename_dialog(),

@@ -297,7 +297,7 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
 
             (w, h, max_h)
         }
-        DialogType::Search | DialogType::Mkdir | DialogType::Rename | DialogType::Tar => {
+        DialogType::Search | DialogType::Mkdir | DialogType::Mkfile | DialogType::Rename | DialogType::Tar => {
             (SIMPLE_DIALOG_WIDTH, SIMPLE_INPUT_HEIGHT, SIMPLE_INPUT_HEIGHT)
         }
         DialogType::Progress => {
@@ -313,7 +313,16 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
             (42, 5, 5) // Settings dialog: width=42, height=5
         }
         DialogType::BinaryFileHandler => {
-            (75, 11, 11) // Binary file handler dialog
+            // Dynamic height based on input length
+            let dialog_width = 75u16;
+            let input_width = (dialog_width - 4) as usize; // border + padding
+            let input_len = dialog.input.chars().count();
+            let input_lines = if input_len == 0 { 1 } else { (input_len + input_width - 1) / input_width };
+            let input_lines = input_lines.clamp(1, 5); // min 1, max 5 lines
+            let base_height = 11u16; // height with 1 input line + 1 blank line below
+            let height = base_height + (input_lines as u16 - 1);
+            let max_height = base_height + 4; // max 5 input lines
+            (dialog_width, height, max_height)
         }
     };
 
@@ -344,7 +353,7 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         DialogType::Goto => {
             draw_goto_dialog(frame, app, dialog, dialog_area, theme);
         }
-        DialogType::Search | DialogType::Mkdir | DialogType::Rename | DialogType::Tar => {
+        DialogType::Search | DialogType::Mkdir | DialogType::Mkfile | DialogType::Rename | DialogType::Tar => {
             draw_simple_input_dialog(frame, dialog, dialog_area, theme);
         }
         DialogType::Progress => {
@@ -433,22 +442,79 @@ fn draw_binary_file_handler_dialog(frame: &mut Frame, dialog: &Dialog, area: Rec
     );
 
     // Input field with placeholder (extension-specific examples)
-    let input_area = Rect::new(inner.x + 1, inner.y + 5, inner.width - 2, 1);
+    let input_width = (inner.width - 2) as usize;
+    let input_len = dialog.input.chars().count();
+    let input_lines = if input_len == 0 { 1 } else { (input_len + input_width - 1) / input_width };
+    let input_height = input_lines.clamp(1, 5) as u16;
+    let input_area = Rect::new(inner.x + 1, inner.y + 5, inner.width - 2, input_height);
     let placeholder = get_handler_placeholder(extension);
-    let display_text = if dialog.input.is_empty() {
-        placeholder.clone()
+
+    if dialog.input.is_empty() {
+        // Show placeholder
+        let input_style = Style::default().fg(theme.dialog.text_dim);
+        frame.render_widget(
+            Paragraph::new(placeholder).style(input_style),
+            input_area,
+        );
     } else {
-        dialog.input.clone()
-    };
-    let input_style = if dialog.input.is_empty() {
-        Style::default().fg(theme.dialog.text_dim) // placeholder uses dim text color
-    } else {
-        Style::default().fg(theme.dialog.input_text)
-    };
-    frame.render_widget(
-        Paragraph::new(display_text).style(input_style),
-        input_area,
-    );
+        // Show input with wrap and selection/cursor support
+        let input_chars: Vec<char> = dialog.input.chars().collect();
+        let selection_style = Style::default()
+            .fg(theme.dialog.input_cursor_fg)
+            .bg(theme.dialog.input_cursor_bg);
+        let cursor_style = Style::default()
+            .fg(theme.dialog.input_cursor_fg)
+            .bg(theme.dialog.input_cursor_bg)
+            .add_modifier(Modifier::SLOW_BLINK);
+        let text_style = Style::default().fg(theme.dialog.input_text);
+
+        // Build wrapped lines with styled spans
+        let mut lines: Vec<Line> = Vec::new();
+        let mut current_line_spans: Vec<Span> = Vec::new();
+        let mut current_line_len = 0usize;
+        let cursor_pos = dialog.cursor_pos.min(input_chars.len());
+
+        for (i, &ch) in input_chars.iter().enumerate() {
+            let style = if let Some((sel_start, sel_end)) = dialog.selection {
+                if i >= sel_start && i < sel_end {
+                    selection_style
+                } else {
+                    text_style
+                }
+            } else if i == cursor_pos {
+                cursor_style
+            } else {
+                text_style
+            };
+
+            current_line_spans.push(Span::styled(ch.to_string(), style));
+            current_line_len += 1;
+
+            // Wrap at input_width
+            if current_line_len >= input_width {
+                lines.push(Line::from(std::mem::take(&mut current_line_spans)));
+                current_line_len = 0;
+            }
+        }
+
+        // Add cursor at end if needed (when cursor is at the end of input)
+        if dialog.selection.is_none() && cursor_pos == input_chars.len() {
+            current_line_spans.push(Span::styled(" ", cursor_style));
+            current_line_len += 1;
+        }
+
+        // Push remaining spans
+        if !current_line_spans.is_empty() {
+            lines.push(Line::from(current_line_spans));
+        }
+
+        // If no lines, add empty line with cursor
+        if lines.is_empty() {
+            lines.push(Line::from(Span::styled(" ", cursor_style)));
+        }
+
+        frame.render_widget(Paragraph::new(lines), input_area);
+    }
 
     // Key hints (Enter: confirm, Esc: cancel)
     let button_style = Style::default()
@@ -466,10 +532,15 @@ fn draw_binary_file_handler_dialog(frame: &mut Frame, dialog: &Dialog, area: Rec
         button_area,
     );
 
-    // Always show cursor in input field
-    let cursor_x = input_area.x + dialog.cursor_pos as u16;
-    let cursor_y = input_area.y;
-    frame.set_cursor_position(ratatui::layout::Position::new(cursor_x, cursor_y));
+    // Show cursor only when not in selection mode (with wrap support)
+    if dialog.selection.is_none() {
+        let cursor_pos = dialog.cursor_pos.min(dialog.input.chars().count());
+        let cursor_row = cursor_pos / input_width;
+        let cursor_col = cursor_pos % input_width;
+        let cursor_x = input_area.x + cursor_col as u16;
+        let cursor_y = input_area.y + cursor_row as u16;
+        frame.set_cursor_position(ratatui::layout::Position::new(cursor_x, cursor_y));
+    }
 }
 
 /// Get placeholder example command for file extension
@@ -660,6 +731,7 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
     let title = match dialog.dialog_type {
         DialogType::Search => " Find File ",
         DialogType::Mkdir => " Create Directory ",
+        DialogType::Mkfile => " Create File ",
         DialogType::Rename => " Rename ",
         DialogType::Tar => " Create Archive ",
         _ => " Input ",
@@ -748,9 +820,10 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
         ])
     };
 
-    // Tar/Mkdir/Rename 다이얼로그의 경우 메시지 표시 (에러 메시지 포함)
+    // Tar/Mkdir/Mkfile/Rename 다이얼로그의 경우 메시지 표시 (에러 메시지 포함)
     if (dialog.dialog_type == DialogType::Tar
         || dialog.dialog_type == DialogType::Mkdir
+        || dialog.dialog_type == DialogType::Mkfile
         || dialog.dialog_type == DialogType::Rename)
         && !dialog.message.is_empty()
     {
@@ -1032,6 +1105,7 @@ fn draw_copy_move_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: 
 fn draw_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Theme) {
     let title = match dialog.dialog_type {
         DialogType::Mkdir => " Create Directory ",
+        DialogType::Mkfile => " Create File ",
         DialogType::Rename => " Rename File ",
         DialogType::Search => " Find File ",
         DialogType::Goto => " Go to Path ",
@@ -2157,8 +2231,10 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
                             }
                         }
 
-                        // For Mkdir dialog, check if directory already exists
-                        if dialog_type == DialogType::Mkdir && !input.trim().is_empty() {
+                        // For Mkdir/Mkfile dialog, check if already exists
+                        if (dialog_type == DialogType::Mkdir || dialog_type == DialogType::Mkfile)
+                            && !input.trim().is_empty()
+                        {
                             let current_path = app.active_panel().path.clone();
                             let new_path = current_path.join(&input);
                             if new_path.exists() {
@@ -2173,6 +2249,7 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
                         if !input.trim().is_empty() {
                             match dialog_type {
                                 DialogType::Mkdir => app.execute_mkdir(&input),
+                                DialogType::Mkfile => app.execute_mkfile(&input),
                                 DialogType::Rename => app.execute_rename(&input),
                                 DialogType::Tar => app.execute_tar(&input),
                                 DialogType::Search => app.execute_search(&input),
@@ -3178,6 +3255,48 @@ fn handle_binary_file_handler_input(app: &mut App, code: KeyCode) -> bool {
         None => return false,
     };
 
+    // Handle selection first
+    if let Some((sel_start, sel_end)) = dialog.selection {
+        match code {
+            KeyCode::Char(c) => {
+                // Replace selection with new character
+                let mut chars: Vec<char> = dialog.input.chars().collect();
+                chars.drain(sel_start..sel_end);
+                chars.insert(sel_start, c);
+                dialog.input = chars.into_iter().collect();
+                dialog.cursor_pos = sel_start + 1;
+                dialog.selection = None;
+                return false;
+            }
+            KeyCode::Backspace | KeyCode::Delete => {
+                // Delete selection
+                let mut chars: Vec<char> = dialog.input.chars().collect();
+                chars.drain(sel_start..sel_end);
+                dialog.input = chars.into_iter().collect();
+                dialog.cursor_pos = sel_start;
+                dialog.selection = None;
+                return false;
+            }
+            KeyCode::Left | KeyCode::Home => {
+                dialog.selection = None;
+                dialog.cursor_pos = sel_start;
+                return false;
+            }
+            KeyCode::Right | KeyCode::End => {
+                dialog.selection = None;
+                dialog.cursor_pos = sel_end;
+                return false;
+            }
+            KeyCode::Esc | KeyCode::Enter => {
+                // Let these fall through to normal handling
+                dialog.selection = None;
+            }
+            _ => {
+                dialog.selection = None;
+            }
+        }
+    }
+
     match code {
         KeyCode::Esc => {
             // Cancel - close dialog without saving
@@ -3208,11 +3327,9 @@ fn handle_binary_file_handler_input(app: &mut App, code: KeyCode) -> bool {
                         }
                         // In set mode with empty input, just close without action
                     } else {
-                        // Non-empty input - add or update handler
+                        // Non-empty input - set handler (replaces any existing)
                         app.settings.extension_handler
-                            .entry(ext_lower.clone())
-                            .or_insert_with(Vec::new)
-                            .insert(0, input.clone()); // Insert at front as first choice
+                            .insert(ext_lower.clone(), vec![input.clone()]);
 
                         // Save settings
                         if let Err(e) = app.settings.save() {

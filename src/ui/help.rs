@@ -222,6 +222,7 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     lines.push(key_line("E", "Edit file"));
     lines.push(key_line("I", "File info (properties)"));
     lines.push(key_line("K", "Create new directory"));
+    lines.push(key_line("M", "Create new file"));
     lines.push(key_line("R", "Rename file/directory"));
     lines.push(key_line("T", "Create tar archive"));
     lines.push(key_line("U", "Set/Edit file handler"));
@@ -354,6 +355,8 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
         Span::styled("dit ", desc_style),
         Span::styled("k", key_highlight_style),
         Span::styled("mkdir ", desc_style),
+        Span::styled("m", key_highlight_style),
+        Span::styled("kfile ", desc_style),
         Span::styled("x", key_highlight_style),
         Span::styled("del ", desc_style),
         Span::styled("r", key_highlight_style),
