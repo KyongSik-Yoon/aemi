@@ -83,13 +83,39 @@ fn default_active_panel() -> String {
 
 impl Default for Settings {
     fn default() -> Self {
+        let mut extension_handler = HashMap::new();
+        // First element: confirmation prompt with filepath - 'y' or Enter runs, anything else exits
+        // Subsequent elements: actual execution commands with fallback
+        extension_handler.insert(
+            "sh".to_string(),
+            vec![
+                "read -p 'Run \"{{FILEPATH}}\"? (Y/n) ' a && [ -n \"$a\" ] && [ \"$a\" != \"y\" ]".to_string(),
+                "/bin/bash -c \"$(cat '{{FILEPATH}}')\" && echo 'Press any key to return...' && read -n 1 -s".to_string(),
+            ],
+        );
+        extension_handler.insert(
+            "py".to_string(),
+            vec![
+                "read -p 'Run \"{{FILEPATH}}\"? (Y/n) ' a && [ -n \"$a\" ] && [ \"$a\" != \"y\" ]".to_string(),
+                "python \"{{FILEPATH}}\" && echo 'Press any key to return...' && read -n 1 -s".to_string(),
+                "python3 \"{{FILEPATH}}\" && echo 'Press any key to return...' && read -n 1 -s".to_string(),
+            ],
+        );
+        extension_handler.insert(
+            "js".to_string(),
+            vec![
+                "read -p 'Run \"{{FILEPATH}}\"? (Y/n) ' a && [ -n \"$a\" ] && [ \"$a\" != \"y\" ]".to_string(),
+                "node \"{{FILEPATH}}\" && echo 'Press any key to return...' && read -n 1 -s".to_string(),
+            ],
+        );
+
         Self {
             left_panel: PanelSettings::default(),
             right_panel: PanelSettings::default(),
             active_panel: default_active_panel(),
             theme: ThemeSettings::default(),
             tar_path: None,
-            extension_handler: HashMap::new(),
+            extension_handler,
             bookmarked_path: Vec::new(),
         }
     }

@@ -33,8 +33,25 @@ fn print_help() {
     println!("    -v, --version           Print version information");
     println!("    --prompt <TEXT>         Send prompt to AI and print rendered response");
     println!("    --design                Enable theme hot-reload (for theme development)");
+    println!("    --base64 <TEXT>         Decode base64 and print (internal use)");
     println!();
     println!("HOMEPAGE: https://cokacdir.cokac.com");
+}
+
+fn handle_base64(encoded: &str) {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    match BASE64.decode(encoded) {
+        Ok(decoded) => {
+            if let Ok(text) = String::from_utf8(decoded) {
+                print!("{}", text);
+            } else {
+                std::process::exit(1);
+            }
+        }
+        Err(_) => {
+            std::process::exit(1);
+        }
+    }
 }
 
 fn print_version() {
@@ -135,6 +152,13 @@ fn main() -> io::Result<()> {
                     return Ok(());
                 }
                 handle_prompt(&args[2]);
+                return Ok(());
+            }
+            "--base64" => {
+                if args.len() < 3 {
+                    std::process::exit(1);
+                }
+                handle_base64(&args[2]);
                 return Ok(());
             }
             "--design" => {

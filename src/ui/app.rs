@@ -14,13 +14,12 @@ use crate::ui::file_viewer::ViewerState;
 use crate::ui::file_editor::EditorState;
 use crate::ui::file_info::FileInfoState;
 
-/// Escape a string for safe use in shell commands
-/// Wraps the string in single quotes and escapes any existing single quotes
-fn shell_escape(s: &str) -> String {
-    // Use single quotes and escape any single quotes within
-    // 'path' -> for normal strings
-    // 'path'\''with'\''quotes' -> for strings containing single quotes
-    format!("'{}'", s.replace('\'', "'\\''"))
+/// Encode a command as base64 for safe shell execution
+/// This avoids all shell escaping issues by encoding the entire command
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+fn encode_command_base64(command: &str) -> String {
+    BASE64.encode(command.as_bytes())
 }
 
 /// Theme file watcher state for hot-reload
@@ -1495,9 +1494,7 @@ impl App {
         // Get the current working directory from active panel
         let cwd = self.active_panel().path.clone();
 
-        // Escape file path for shell (handle spaces and special characters)
         let file_path_str = path.to_string_lossy().to_string();
-        let escaped_path = shell_escape(&file_path_str);
         let mut last_error = String::new();
 
         // Try each handler in order (fallback mechanism)
@@ -1509,8 +1506,8 @@ impl App {
                 (false, handler_template.as_str())
             };
 
-            // Replace {{FILEPATH}} with escaped file path
-            let command = template.replace("{{FILEPATH}}", &escaped_path);
+            // Replace {{FILEPATH}} with actual file path (no escaping needed - will use base64)
+            let command = template.replace("{{FILEPATH}}", &file_path_str);
 
             if is_background_mode {
                 // Background mode: spawn and detach (@ prefix)
@@ -1569,9 +1566,16 @@ impl App {
         let _ = stdout().flush();
 
         // Execute command with inherited stdio and active panel's directory as CWD
-        let result = std::process::Command::new("sh")
+        // Use base64 encoding to avoid shell escaping issues
+        let encoded = encode_command_base64(command);
+        let exe_path = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "cokacdir".to_string());
+        let wrapped_command = format!("eval \"$('{}' --base64 '{}')\"", exe_path, encoded);
+
+        let result = std::process::Command::new("bash")
             .arg("-c")
-            .arg(command)
+            .arg(&wrapped_command)
             .current_dir(cwd)
             .stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
@@ -1593,9 +1597,16 @@ impl App {
 
     /// Execute a command in background mode (non-blocking, detached)
     fn execute_background_command(&self, command: &str, template: &str, cwd: &std::path::Path) -> Result<bool, String> {
-        let result = std::process::Command::new("sh")
+        // Use base64 encoding to avoid shell escaping issues
+        let encoded = encode_command_base64(command);
+        let exe_path = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "cokacdir".to_string());
+        let wrapped_command = format!("eval \"$('{}' --base64 '{}')\"", exe_path, encoded);
+
+        let result = std::process::Command::new("bash")
             .arg("-c")
-            .arg(command)
+            .arg(&wrapped_command)
             .current_dir(cwd)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

@@ -25,6 +25,7 @@ libc = "0.2"
 regex = "1"
 rand = "0.8"
 supports-color = "3"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
