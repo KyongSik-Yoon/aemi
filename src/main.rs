@@ -247,11 +247,13 @@ fn main() -> io::Result<()> {
     // Save settings before exit
     app.save_settings();
 
-    // Save last directory for shell cd
-    let last_dir = app.active_panel().path.display().to_string();
-    if let Some(config_dir) = config::Settings::config_dir() {
-        let lastdir_path = config_dir.join("lastdir");
-        let _ = std::fs::write(&lastdir_path, &last_dir);
+    // Save last directory for shell cd (skip remote paths)
+    if !app.active_panel().is_remote() {
+        let last_dir = app.active_panel().path.display().to_string();
+        if let Some(config_dir) = config::Settings::config_dir() {
+            let lastdir_path = config_dir.join("lastdir");
+            let _ = std::fs::write(&lastdir_path, &last_dir);
+        }
     }
 
     // Restore terminal
@@ -462,6 +464,7 @@ fn run_app<B: ratatui::backend::Backend>(
                             crate::services::file_ops::FileOperationType::Move => "Moved",
                             crate::services::file_ops::FileOperationType::Tar => "Archived",
                             crate::services::file_ops::FileOperationType::Untar => "Extracted",
+                            crate::services::file_ops::FileOperationType::Download => "Downloaded",
                         };
                         let total = result.success_count + result.failure_count;
                         if result.failure_count == 0 {
@@ -488,26 +491,85 @@ fn run_app<B: ratatui::backend::Backend>(
 
         // Handle progress completion (outside of borrow)
         if progress_message.is_some() {
-            if let Some(msg) = progress_message {
-                app.show_message(&msg);
-            }
-            // Focus on created tar archive if applicable
-            if let Some(archive_name) = app.pending_tar_archive.take() {
-                app.refresh_panels();
-                if let Some(idx) = app.active_panel().files.iter().position(|f| f.name == archive_name) {
-                    app.active_panel_mut().selected_index = idx;
-                }
-            // Focus on extracted directory if applicable
-            } else if let Some(extract_dir) = app.pending_extract_dir.take() {
-                app.refresh_panels();
-                if let Some(idx) = app.active_panel().files.iter().position(|f| f.name == extract_dir) {
-                    app.active_panel_mut().selected_index = idx;
+            // 원격 다운로드 완료 → 편집기/뷰어 열기
+            if let Some(pending) = app.pending_remote_open.take() {
+                app.file_operation_progress = None;
+                app.dialog = None;
+
+                // tmp 파일 존재 확인으로 성공/실패 판단
+                let tmp_exists = match &pending {
+                    crate::ui::app::PendingRemoteOpen::Editor { tmp_path, .. } => tmp_path.exists(),
+                    crate::ui::app::PendingRemoteOpen::ImageViewer { tmp_path } => tmp_path.exists(),
+                };
+
+                if !tmp_exists {
+                    if let Some(msg) = progress_message {
+                        app.show_message(&msg);
+                    } else {
+                        app.show_message("Download failed");
+                    }
+                } else {
+                    match pending {
+                        crate::ui::app::PendingRemoteOpen::Editor { tmp_path, panel_index, remote_path } => {
+                            let mut editor = crate::ui::file_editor::EditorState::new();
+                            editor.set_syntax_colors(app.theme.syntax);
+                            match editor.load_file(&tmp_path) {
+                                Ok(_) => {
+                                    editor.remote_origin = Some(crate::ui::file_editor::RemoteEditOrigin {
+                                        panel_index,
+                                        remote_path,
+                                    });
+                                    app.editor_state = Some(editor);
+                                    app.current_screen = Screen::FileEditor;
+                                }
+                                Err(e) => {
+                                    app.show_message(&format!("Cannot open file: {}", e));
+                                }
+                            }
+                        }
+                        crate::ui::app::PendingRemoteOpen::ImageViewer { tmp_path } => {
+                            if !crate::ui::image_viewer::supports_true_color() {
+                                app.pending_large_image = Some(tmp_path);
+                                app.dialog = Some(crate::ui::app::Dialog {
+                                    dialog_type: crate::ui::app::DialogType::TrueColorWarning,
+                                    input: String::new(),
+                                    cursor_pos: 0,
+                                    message: "Terminal doesn't support true color. Open anyway?".to_string(),
+                                    completion: None,
+                                    selected_button: 1,
+                                    selection: None,
+                                });
+                            } else {
+                                app.image_viewer_state = Some(
+                                    crate::ui::image_viewer::ImageViewerState::new(&tmp_path)
+                                );
+                                app.current_screen = Screen::ImageViewer;
+                            }
+                        }
+                    }
                 }
             } else {
-                app.refresh_panels();
+                if let Some(msg) = progress_message {
+                    app.show_message(&msg);
+                }
+                // Focus on created tar archive if applicable
+                if let Some(archive_name) = app.pending_tar_archive.take() {
+                    app.refresh_panels();
+                    if let Some(idx) = app.active_panel().files.iter().position(|f| f.name == archive_name) {
+                        app.active_panel_mut().selected_index = idx;
+                    }
+                // Focus on extracted directory if applicable
+                } else if let Some(extract_dir) = app.pending_extract_dir.take() {
+                    app.refresh_panels();
+                    if let Some(idx) = app.active_panel().files.iter().position(|f| f.name == extract_dir) {
+                        app.active_panel_mut().selected_index = idx;
+                    }
+                } else {
+                    app.refresh_panels();
+                }
+                app.file_operation_progress = None;
+                app.dialog = None;
             }
-            app.file_operation_progress = None;
-            app.dialog = None;
         }
 
         // Check for key events with timeout

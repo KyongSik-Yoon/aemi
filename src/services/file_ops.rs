@@ -13,6 +13,7 @@ pub enum FileOperationType {
     Move,
     Tar,
     Untar,
+    Download,
 }
 
 /// Progress message for file operations

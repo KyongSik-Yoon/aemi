@@ -15,7 +15,7 @@ use crate::services::file_ops::FileOperationType;
 use crate::utils::format::{safe_suffix, safe_prefix};
 
 use super::{
-    app::{App, ConflictResolution, ConflictState, Dialog, DialogType, GitLogDiffState, PathCompletion, SettingsState, fuzzy_match},
+    app::{App, ConflictResolution, ConflictState, Dialog, DialogType, GitLogDiffState, PathCompletion, RemoteConnectState, SettingsState, fuzzy_match},
     theme::Theme,
 };
 
@@ -290,8 +290,10 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
             // 북마크 모드인지 확인 (입력이 /나 ~로 시작하지 않으면 북마크 모드)
             let is_bookmark_mode = !dialog.input.starts_with('/') && !dialog.input.starts_with('~');
 
-            let h = if is_bookmark_mode && !app.settings.bookmarked_path.is_empty() {
-                // 북마크 모드이고 북마크가 있으면 최대 높이 사용
+            let has_bookmark_entries = !app.settings.bookmarked_path.is_empty()
+                || !app.settings.remote_profiles.is_empty();
+            let h = if is_bookmark_mode && has_bookmark_entries {
+                // 북마크 모드이고 북마크 또는 원격 프로필이 있으면 최대 높이 사용
                 max_h
             } else {
                 GOTO_BASE_HEIGHT + completion_height
@@ -333,6 +335,23 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         DialogType::GitLogDiff => {
             let w = area.width.saturating_sub(6).max(70).min(100);
             let h = area.height.saturating_sub(6).max(15).min(30);
+            (w, h, h)
+        }
+        DialogType::RemoteConnect => {
+            let w = area.width.saturating_sub(DIALOG_MARGIN).max(DIALOG_MIN_WIDTH).min(80);
+            // Password: 5 fields + 1 gap + 1 help + 2 border = 9
+            // KeyFile:  6 fields + 1 gap + 1 help + 2 border = 10
+            // +1 for possible error message
+            let has_error = app.remote_connect_state.as_ref().map(|s| s.error.is_some()).unwrap_or(false);
+            let is_keyfile = app.remote_connect_state.as_ref()
+                .map(|s| s.auth_type == super::app::RemoteAuthType::KeyFile)
+                .unwrap_or(false);
+            let h = if is_keyfile { 10_u16 } else { 9_u16 } + if has_error { 1 } else { 0 };
+            (w, h, h)
+        }
+        DialogType::RemoteProfileSave => {
+            let w = area.width.saturating_sub(DIALOG_MARGIN).max(DIALOG_MIN_WIDTH).min(50);
+            let h = 7_u16;
             (w, h, h)
         }
     };
@@ -400,6 +419,12 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
             if let Some(ref state) = app.git_log_diff_state {
                 draw_git_log_diff_dialog(frame, dialog, state, dialog_area, theme);
             }
+        }
+        DialogType::RemoteConnect => {
+            draw_remote_connect_dialog(frame, app, dialog_area, theme);
+        }
+        DialogType::RemoteProfileSave => {
+            draw_simple_input_dialog(frame, dialog, dialog_area, theme);
         }
     }
 }
@@ -774,6 +799,7 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
         DialogType::Mkfile => " Create File ",
         DialogType::Rename => " Rename ",
         DialogType::Tar => " Create Archive ",
+        DialogType::RemoteProfileSave => " Save Profile ",
         _ => " Input ",
     };
 
@@ -893,11 +919,12 @@ fn draw_simple_input_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, them
         ])
     };
 
-    // Tar/Mkdir/Mkfile/Rename 다이얼로그의 경우 메시지 표시 (에러 메시지 포함)
+    // Tar/Mkdir/Mkfile/Rename/RemoteProfileSave 다이얼로그의 경우 메시지 표시 (에러 메시지 포함)
     if (dialog.dialog_type == DialogType::Tar
         || dialog.dialog_type == DialogType::Mkdir
         || dialog.dialog_type == DialogType::Mkfile
-        || dialog.dialog_type == DialogType::Rename)
+        || dialog.dialog_type == DialogType::Rename
+        || dialog.dialog_type == DialogType::RemoteProfileSave)
         && !dialog.message.is_empty()
     {
         let message_y = inner.y;
@@ -1455,17 +1482,57 @@ fn draw_goto_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, t
         let help_area = Rect::new(inner.x + 1, help_y, inner.width - 2, 1);
         frame.render_widget(Paragraph::new(help_line), help_area);
     } else {
-        // === 북마크 검색 모드: 북마크만 표시 ===
+        // === 북마크 검색 모드: 북마크 + 원격 프로필 혼합 표시 ===
         let filter_lower = dialog.input.to_lowercase();
-        let filtered_bookmarks: Vec<&String> = app.settings.bookmarked_path.iter()
-            .filter(|p| {
-                if filter_lower.is_empty() {
-                    true
+
+        // Build mixed list: local bookmarks first, then remote entries grouped by (user, host, port)
+        let mut mixed_entries: Vec<String> = Vec::new();
+        let mut remote_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        let mut local_bookmarks: Vec<String> = Vec::new();
+        let mut remote_group_order: Vec<(String, String, u16)> = Vec::new();
+        let mut remote_groups: std::collections::HashMap<(String, String, u16), Vec<String>> = std::collections::HashMap::new();
+
+        for bm in &app.settings.bookmarked_path {
+            if filter_lower.is_empty() || fuzzy_match(&bm.to_lowercase(), &filter_lower) {
+                if let Some((user, host, port, _path)) = crate::services::remote::parse_remote_path(bm) {
+                    let key = (user, host, port);
+                    if !remote_groups.contains_key(&key) {
+                        remote_group_order.push(key.clone());
+                    }
+                    remote_groups.entry(key).or_default().push(bm.clone());
                 } else {
-                    fuzzy_match(&p.to_lowercase(), &filter_lower)
+                    local_bookmarks.push(bm.clone());
                 }
-            })
-            .collect();
+            }
+        }
+
+        for profile in &app.settings.remote_profiles {
+            let display = crate::services::remote::format_remote_display(&profile, &profile.default_path);
+            if filter_lower.is_empty() || fuzzy_match(&display.to_lowercase(), &filter_lower) {
+                let key = (profile.user.clone(), profile.host.clone(), profile.port);
+                if !remote_groups.contains_key(&key) {
+                    remote_group_order.push(key.clone());
+                }
+                remote_groups.entry(key).or_default().push(display);
+            }
+        }
+
+        // Local bookmarks first
+        for bm in local_bookmarks {
+            mixed_entries.push(bm);
+        }
+        // Then remote entries grouped by server
+        for key in remote_group_order {
+            if let Some(entries) = remote_groups.remove(&key) {
+                for entry in entries {
+                    remote_indices.insert(mixed_entries.len());
+                    mixed_entries.push(entry);
+                }
+            }
+        }
+
+        let filtered_bookmarks: Vec<&String> = mixed_entries.iter().collect();
 
         let has_bookmarks = !filtered_bookmarks.is_empty();
 
@@ -1485,6 +1552,7 @@ fn draw_goto_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, t
                 selected_idx,
                 Rect::new(list_x, list_y, list_width, list_height),
                 theme,
+                &remote_indices,
             );
         }
 
@@ -1495,6 +1563,8 @@ fn draw_goto_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, t
                 Span::styled(":select ", help_label_style),
                 Span::styled("Enter", help_key_style),
                 Span::styled(":go ", help_label_style),
+                Span::styled("^d", help_key_style),
+                Span::styled(":del ", help_label_style),
                 Span::styled("Esc", help_key_style),
                 Span::styled(":cancel", help_label_style),
             ])
@@ -1523,6 +1593,7 @@ fn draw_progress_dialog(frame: &mut Frame, app: &App, area: Rect, theme: &Theme)
         FileOperationType::Move => " Moving ",
         FileOperationType::Tar => " Creating Archive ",
         FileOperationType::Untar => " Extracting Archive ",
+        FileOperationType::Download => " Downloading ",
     };
 
     let block = Block::default()
@@ -1967,6 +2038,7 @@ fn draw_bookmark_list(
     selected_index: usize,
     area: Rect,
     theme: &Theme,
+    remote_indices: &std::collections::HashSet<usize>,
 ) {
     let max_visible = area.height.min(8) as usize;
     let total = bookmarks.len();
@@ -1991,13 +2063,17 @@ fn draw_bookmark_list(
         .fg(theme.dialog.autocomplete_selected_text)
         .add_modifier(Modifier::BOLD);
     let normal_style = Style::default().fg(theme.dialog.autocomplete_directory_text);
+    let remote_style = Style::default().fg(theme.dialog.remote_bookmark_text);
 
     for (i, bookmark) in visible_items.iter().enumerate() {
         let actual_index = scroll_offset + i;
         let is_selected = actual_index == selected_index;
+        let is_remote = remote_indices.contains(&actual_index);
 
         let style = if is_selected {
             selected_style
+        } else if is_remote {
+            remote_style
         } else {
             normal_style
         };
@@ -2167,6 +2243,36 @@ pub fn handle_paste(app: &mut App, text: &str) {
                 dialog.cursor_pos += paste_len;
                 update_path_suggestions(dialog);
             }
+            DialogType::RemoteConnect => {
+                // Paste into the active field of remote connect dialog
+                if let Some(ref mut state) = app.remote_connect_state {
+                    if !state.is_auth_type_field() {
+                        let field = state.active_field_mut();
+                        let mut chars: Vec<char> = field.chars().collect();
+                        let paste_chars: Vec<char> = paste_text.chars().collect();
+                        let paste_len = paste_chars.len();
+                        let pos = state.cursor_pos.min(chars.len());
+                        for (i, c) in paste_chars.into_iter().enumerate() {
+                            chars.insert(pos + i, c);
+                        }
+                        *state.active_field_mut() = chars.into_iter().collect();
+                        state.cursor_pos += paste_len;
+                    }
+                }
+            }
+            DialogType::RemoteProfileSave => {
+                // Paste into the profile name input
+                if let Some(ref mut dialog) = app.dialog {
+                    let mut chars: Vec<char> = dialog.input.chars().collect();
+                    let paste_chars: Vec<char> = paste_text.chars().collect();
+                    let paste_len = paste_chars.len();
+                    for (i, c) in paste_chars.into_iter().enumerate() {
+                        chars.insert(dialog.cursor_pos + i, c);
+                    }
+                    dialog.input = chars.into_iter().collect();
+                    dialog.cursor_pos += paste_len;
+                }
+            }
             _ => {}
         }
     }
@@ -2284,6 +2390,12 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
             }
             DialogType::GitLogDiff => {
                 return handle_git_log_diff_input(app, code);
+            }
+            DialogType::RemoteConnect => {
+                return handle_remote_connect_input(app, code);
+            }
+            DialogType::RemoteProfileSave => {
+                return handle_remote_profile_save_input(app, code);
             }
             _ => {
                 // selection 상태에서의 특수 처리
@@ -2442,7 +2554,7 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
 }
 
 /// Go to Path 대화상자 키 입력 처리
-fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> bool {
+fn handle_goto_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> bool {
     if let Some(ref mut dialog) = app.dialog {
         // ' 키는 항상 북마크 토글
         if code == KeyCode::Char('\'') {
@@ -2452,7 +2564,8 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
         }
 
         // selection 상태에서의 특수 처리 (모드 분기 이전에 처리)
-        if dialog.selection.is_some() {
+        // Ctrl+D(삭제), Ctrl+E(편집)는 북마크/프로필 조작용이므로 selection 처리를 건너뜀
+        if dialog.selection.is_some() && !(modifiers.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('d') | KeyCode::Char('e'))) {
             match code {
                 KeyCode::Char(c) => {
                     // 선택 범위 삭제 후 새 문자 입력
@@ -2613,6 +2726,13 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
                         return false;
                     }
 
+                    // Check if this is a remote path (user@host:/path) before local validation
+                    if crate::services::remote::parse_remote_path(&input).is_some() {
+                        app.dialog = None;
+                        app.execute_goto(&input);
+                        return false;
+                    }
+
                     let path = expand_path_string(&input);
 
                     if !path.exists() {
@@ -2736,19 +2856,58 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
                 _ => {}
             }
         } else {
-            // === 북마크 검색 모드 ===
+            // === 북마크 검색 모드 (로컬 + 원격 프로필 혼합) ===
             let filter_lower = dialog.input.to_lowercase();
-            let filtered_bookmarks: Vec<String> = app.settings.bookmarked_path.iter()
-                .filter(|p| {
-                    if filter_lower.is_empty() {
-                        true
+
+            // Build mixed list: local bookmarks first, then remote entries grouped by (user, host, port)
+            let mut mixed_entries: Vec<String> = Vec::new();
+            let mut remote_profile_map: Vec<Option<usize>> = Vec::new(); // index into remote_profiles
+
+            let mut local_bookmarks: Vec<String> = Vec::new();
+            let mut remote_group_order: Vec<(String, String, u16)> = Vec::new();
+            let mut remote_groups: std::collections::HashMap<(String, String, u16), Vec<(String, Option<usize>)>> = std::collections::HashMap::new();
+
+            for bm in &app.settings.bookmarked_path {
+                if filter_lower.is_empty() || fuzzy_match(&bm.to_lowercase(), &filter_lower) {
+                    if let Some((user, host, port, _path)) = crate::services::remote::parse_remote_path(bm) {
+                        let key = (user, host, port);
+                        if !remote_groups.contains_key(&key) {
+                            remote_group_order.push(key.clone());
+                        }
+                        remote_groups.entry(key).or_default().push((bm.clone(), None));
                     } else {
-                        fuzzy_match(&p.to_lowercase(), &filter_lower)
+                        local_bookmarks.push(bm.clone());
                     }
-                })
-                .cloned()
-                .collect();
-            let bookmark_count = filtered_bookmarks.len();
+                }
+            }
+
+            for (idx, profile) in app.settings.remote_profiles.iter().enumerate() {
+                let display = crate::services::remote::format_remote_display(&profile, &profile.default_path);
+                if filter_lower.is_empty() || fuzzy_match(&display.to_lowercase(), &filter_lower) {
+                    let key = (profile.user.clone(), profile.host.clone(), profile.port);
+                    if !remote_groups.contains_key(&key) {
+                        remote_group_order.push(key.clone());
+                    }
+                    remote_groups.entry(key).or_default().push((display, Some(idx)));
+                }
+            }
+
+            // Local bookmarks first
+            for bm in local_bookmarks {
+                mixed_entries.push(bm);
+                remote_profile_map.push(None);
+            }
+            // Then remote entries grouped by server
+            for key in remote_group_order {
+                if let Some(entries) = remote_groups.remove(&key) {
+                    for (entry, profile_idx) in entries {
+                        mixed_entries.push(entry);
+                        remote_profile_map.push(profile_idx);
+                    }
+                }
+            }
+
+            let bookmark_count = mixed_entries.len();
             let has_bookmarks = bookmark_count > 0;
 
             // 선택 인덱스를 필터링된 목록 크기에 맞게 조정
@@ -2759,17 +2918,44 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
             match code {
                 KeyCode::Tab | KeyCode::Enter => {
                     if has_bookmarks {
-                        // 선택된 북마크로 이동
-                        if let Some(bookmark) = filtered_bookmarks.get(selected_idx) {
-                            let path = PathBuf::from(bookmark);
-                            if path.is_dir() {
+                        let remote_idx = remote_profile_map.get(selected_idx).copied().flatten();
+                        if let Some(profile_idx) = remote_idx {
+                            // Selected a remote profile - connect
+                            if let Some(profile) = app.settings.remote_profiles.get(profile_idx).cloned() {
+                                let path = profile.default_path.clone();
                                 app.dialog = None;
-                                app.active_panel_mut().path = path;
-                                app.active_panel_mut().load_files();
-                                app.show_message(&format!("Moved to: {}", bookmark));
+                                app.connect_remote_panel(&profile, &path);
+                                return false;
+                            }
+                        } else if let Some(entry) = mixed_entries.get(selected_idx) {
+                            if crate::services::remote::parse_remote_path(entry).is_some() {
+                                // Selected a remote bookmark
+                                let entry = entry.clone();
+                                app.dialog = None;
+                                app.execute_goto(&entry);
                                 return false;
                             } else {
-                                app.show_message(&format!("Path not found: {}", bookmark));
+                                // Selected a local bookmark
+                                let path = PathBuf::from(entry);
+                                if path.is_dir() {
+                                    app.dialog = None;
+                                    app.active_panel_mut().path = path;
+                                    app.active_panel_mut().load_files();
+                                    app.show_message(&format!("Moved to: {}", entry));
+                                    return false;
+                                } else {
+                                    app.show_message(&format!("Path not found: {}", entry));
+                                }
+                            }
+                        }
+                    } else if code == KeyCode::Enter {
+                        // No matching bookmarks — check if input is a remote path (user@host:/path)
+                        let input = dialog.input.clone();
+                        if !input.trim().is_empty() {
+                            if crate::services::remote::parse_remote_path(&input).is_some() {
+                                app.dialog = None;
+                                app.execute_goto(&input);
+                                return false;
                             }
                         }
                     }
@@ -2835,9 +3021,100 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyModifie
                 KeyCode::End => {
                     dialog.cursor_pos = dialog.input.chars().count();
                 }
+                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Ctrl+D: Delete selected bookmark or profile
+                    if has_bookmarks {
+                        if let Some(Some(profile_idx)) = remote_profile_map.get(selected_idx) {
+                            // 프로필 삭제: 관련 원격 북마크가 있으면 하나를 프로필로 흡수
+                            let profile_idx = *profile_idx;
+                            if let Some(profile) = app.settings.remote_profiles.get(profile_idx) {
+                                let user = profile.user.clone();
+                                let host = profile.host.clone();
+                                let port = profile.port;
+
+                                // 같은 user@host:port를 참조하는 북마크 찾기
+                                let related_bookmark_pos = app.settings.bookmarked_path.iter().position(|bm| {
+                                    if let Some((bu, bh, bp, _)) = crate::services::remote::parse_remote_path(bm) {
+                                        bu == user && bh == host && bp == port
+                                    } else {
+                                        false
+                                    }
+                                });
+
+                                if let Some(pos) = related_bookmark_pos {
+                                    // 북마크의 경로를 프로필의 default_path로 이전
+                                    if let Some((_, _, _, path)) = crate::services::remote::parse_remote_path(&app.settings.bookmarked_path[pos]) {
+                                        app.settings.remote_profiles[profile_idx].default_path = path;
+                                    }
+                                    app.settings.bookmarked_path.remove(pos);
+                                } else {
+                                    // 관련 북마크 없음 → 프로필 삭제
+                                    app.settings.remote_profiles.remove(profile_idx);
+                                }
+                                let _ = app.settings.save();
+                            }
+                        } else if let Some(entry) = mixed_entries.get(selected_idx) {
+                            // 북마크 삭제 (로컬 또는 원격)
+                            let entry = entry.clone();
+                            if let Some(pos) = app.settings.bookmarked_path.iter().position(|p| *p == entry) {
+                                app.settings.bookmarked_path.remove(pos);
+                                let _ = app.settings.save();
+                            }
+                        }
+                        // 선택 인덱스 조정
+                        if let Some(ref mut completion) = dialog.completion {
+                            if completion.selected_index > 0 {
+                                completion.selected_index -= 1;
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char('e') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Ctrl+E: Edit selected remote entry in RemoteConnect dialog
+                    if has_bookmarks {
+                        if let Some(Some(profile_idx)) = remote_profile_map.get(selected_idx) {
+                            // Remote profile entry — use index directly
+                            if let Some(profile) = app.settings.remote_profiles.get(*profile_idx).cloned() {
+                                let state = RemoteConnectState::from_profile(&profile, *profile_idx);
+                                let msg = format!("Edit: {}@{}:{}", profile.user, profile.host, profile.port);
+                                app.remote_connect_state = Some(state);
+                                app.dialog = Some(Dialog {
+                                    dialog_type: DialogType::RemoteConnect,
+                                    input: String::new(),
+                                    cursor_pos: 0,
+                                    message: msg,
+                                    completion: None,
+                                    selected_button: 0,
+                                    selection: None,
+                                });
+                            }
+                        } else if let Some(entry) = mixed_entries.get(selected_idx) {
+                            // Remote bookmark entry — find matching profile
+                            if let Some((user, host, port, _path)) = crate::services::remote::parse_remote_path(entry) {
+                                if let Some((idx, profile)) = app.settings.remote_profiles.iter().enumerate()
+                                    .find(|(_, p)| p.user == user && p.host == host && p.port == port)
+                                {
+                                    let profile = profile.clone();
+                                    let state = RemoteConnectState::from_profile(&profile, idx);
+                                    let msg = format!("Edit: {}@{}:{}", profile.user, profile.host, profile.port);
+                                    app.remote_connect_state = Some(state);
+                                    app.dialog = Some(Dialog {
+                                        dialog_type: DialogType::RemoteConnect,
+                                        input: String::new(),
+                                        cursor_pos: 0,
+                                        message: msg,
+                                        completion: None,
+                                        selected_button: 0,
+                                        selection: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
                 KeyCode::Char(c) => {
-                    // '/' 또는 '~' 입력 시 경로 모드로 전환
-                    if c == '/' || c == '~' {
+                    // '/' 또는 '~' 입력 시 경로 모드로 전환 (입력이 비어있을 때만)
+                    if dialog.input.is_empty() && (c == '/' || c == '~') {
                         if c == '~' {
                             if let Some(home) = dirs::home_dir() {
                                 dialog.input = format!("{}/", home.display());
@@ -2938,20 +3215,31 @@ fn handle_copy_move_dialog_input(app: &mut App, code: KeyCode, _modifiers: KeyMo
                     return false;
                 }
 
-                let path = expand_path_string(&input);
+                // Check if target is a remote path (other panel is remote)
+                let target_panel_idx = 1 - app.active_panel_index;
+                let target_is_remote = app.panels.get(target_panel_idx)
+                    .map(|p| p.is_remote())
+                    .unwrap_or(false);
 
-                if !path.exists() || !path.is_dir() {
-                    if let Some(ref mut completion) = dialog.completion {
-                        completion.visible = false;
-                        completion.suggestions.clear();
+                let target_path = if target_is_remote {
+                    // For remote targets, use the remote panel's current path
+                    // (the dialog input is display-only, actual path is the panel path)
+                    app.panels[target_panel_idx].path.clone()
+                } else {
+                    let path = expand_path_string(&input);
+                    if !path.exists() || !path.is_dir() {
+                        if let Some(ref mut completion) = dialog.completion {
+                            completion.visible = false;
+                            completion.suggestions.clear();
+                        }
+                        app.show_message(&format!("Invalid directory: {}", input));
+                        return false;
                     }
-                    app.show_message(&format!("Invalid directory: {}", input));
-                    return false;
-                }
+                    path
+                };
 
                 // 복사/이동 실행 (프로그레스바 버전)
                 let dialog_type = dialog.dialog_type;
-                let target_path = path;
                 app.dialog = None;
 
                 match dialog_type {
@@ -3856,6 +4144,463 @@ fn handle_git_log_diff_input(app: &mut App, code: KeyCode) -> bool {
             app.git_log_diff_state = None;
             app.dialog = None;
             return false;
+        }
+        _ => {}
+    }
+    false
+}
+
+// ========== Remote Connect Dialog ==========
+
+/// Draw the remote connection form dialog
+fn draw_remote_connect_dialog(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let state = match &app.remote_connect_state {
+        Some(s) => s,
+        None => return,
+    };
+
+    let block = Block::default()
+        .title(" Remote Connect ")
+        .title_style(Style::default().fg(theme.dialog.title).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.dialog.border))
+        .style(Style::default().bg(theme.dialog.bg));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 5 || inner.width < 20 {
+        return;
+    }
+
+    let label_style = Style::default().fg(theme.dialog.remote_connect_field_label);
+    let value_style = Style::default().fg(theme.dialog.remote_connect_field_value);
+    let selected_style = Style::default()
+        .fg(theme.dialog.autocomplete_selected_text)
+        .bg(theme.dialog.remote_connect_field_selected_bg);
+    let cursor_style = Style::default()
+        .fg(theme.dialog.input_cursor_fg)
+        .bg(theme.dialog.input_cursor_bg)
+        .add_modifier(Modifier::SLOW_BLINK);
+    let error_style = Style::default().fg(theme.state.error);
+
+    use super::app::{RemoteField, RemoteAuthType};
+    let label_width = 10;
+    let auth_display = match state.auth_type {
+        RemoteAuthType::Password => "Password",
+        RemoteAuthType::KeyFile => "Key File",
+    };
+
+    // Available width for value display (inner width - padding - label - ": ")
+    let value_max_width = (inner.width as usize).saturating_sub(2 + label_width + 2);
+
+    // Helper closure to build value spans with cursor and horizontal scroll
+    let build_value_spans = |value: &str, is_selected: bool, cursor_pos: usize, vs: Style, is_masked: bool| -> Vec<Span<'_>> {
+        let display_value = if is_masked {
+            "*".repeat(value.len())
+        } else {
+            value.to_string()
+        };
+        let chars: Vec<char> = display_value.chars().collect();
+
+        if is_selected {
+            let pos = cursor_pos.min(chars.len());
+
+            // Scroll so cursor is always visible
+            let scroll_offset = if chars.len() + 1 <= value_max_width {
+                0 // fits entirely
+            } else if pos < value_max_width.saturating_sub(1) {
+                0 // cursor near start
+            } else {
+                pos.saturating_sub(value_max_width.saturating_sub(2))
+            };
+
+            let visible_end = (scroll_offset + value_max_width).min(chars.len());
+            let visible: Vec<char> = chars[scroll_offset..visible_end].to_vec();
+            let adj_pos = pos - scroll_offset;
+
+            let prefix = if scroll_offset > 0 { "…" } else { "" };
+            let suffix = if visible_end < chars.len() { "…" } else { "" };
+
+            let before: String = visible[..adj_pos.min(visible.len())].iter().collect();
+            let cursor_ch = if adj_pos < visible.len() {
+                visible[adj_pos].to_string()
+            } else {
+                " ".to_string()
+            };
+            let after: String = if adj_pos < visible.len() {
+                visible[adj_pos + 1..].iter().collect()
+            } else {
+                String::new()
+            };
+
+            let mut spans = Vec::new();
+            if !prefix.is_empty() {
+                spans.push(Span::styled(prefix.to_string(), vs));
+            }
+            spans.push(Span::styled(before, vs));
+            spans.push(Span::styled(cursor_ch, cursor_style));
+            spans.push(Span::styled(after, vs));
+            if !suffix.is_empty() {
+                spans.push(Span::styled(suffix.to_string(), vs));
+            }
+            spans
+        } else {
+            // Not selected: truncate with ellipsis if too long
+            if chars.len() > value_max_width {
+                let truncated: String = chars[..value_max_width.saturating_sub(1)].iter().collect();
+                vec![Span::styled(format!("{}…", truncated), vs)]
+            } else {
+                vec![Span::styled(display_value, vs)]
+            }
+        }
+    };
+
+    let fields: Vec<(&str, &str, bool, RemoteField)> = vec![
+        ("Host", &state.host, false, RemoteField::Host),
+        ("Port", &state.port, false, RemoteField::Port),
+        ("User", &state.user, false, RemoteField::User),
+    ];
+
+    let mut y = inner.y;
+
+    for (label, value, is_masked, field) in &fields {
+        let is_selected = state.selected_field == *field;
+        let ls = if is_selected { selected_style } else { label_style };
+        let vs = if is_selected { selected_style } else { value_style };
+
+        let mut spans = vec![Span::styled(format!("{:>width$}: ", label, width = label_width), ls)];
+        spans.extend(build_value_spans(value, is_selected, state.cursor_pos, vs, *is_masked));
+
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+        y += 1;
+    }
+
+    // Auth type field - toggle only, no text cursor
+    {
+        let is_selected = state.selected_field == RemoteField::AuthType;
+        let ls = if is_selected { selected_style } else { label_style };
+        let vs = if is_selected { selected_style } else { value_style };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{:>width$}: ", "Auth", width = label_width), ls),
+                Span::styled(format!("{} (Tab to toggle)", auth_display), vs),
+            ])),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+        y += 1;
+    }
+
+    // Auth-specific fields
+    if state.auth_type == RemoteAuthType::Password {
+        // Password
+        let is_selected = state.selected_field == RemoteField::Credential;
+        let ls = if is_selected { selected_style } else { label_style };
+        let vs = if is_selected { selected_style } else { value_style };
+        let mut spans = vec![Span::styled(format!("{:>width$}: ", "Password", width = label_width), ls)];
+        spans.extend(build_value_spans(&state.password, is_selected, state.cursor_pos, vs, true));
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+    } else {
+        // Key file
+        let is_selected = state.selected_field == RemoteField::Credential;
+        let ls = if is_selected { selected_style } else { label_style };
+        let vs = if is_selected { selected_style } else { value_style };
+        let mut spans = vec![Span::styled(format!("{:>width$}: ", "Key File", width = label_width), ls)];
+        spans.extend(build_value_spans(&state.key_path, is_selected, state.cursor_pos, vs, false));
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+        y += 1;
+
+        // Passphrase
+        let is_selected = state.selected_field == RemoteField::Passphrase;
+        let ls = if is_selected { selected_style } else { label_style };
+        let vs = if is_selected { selected_style } else { value_style };
+        let display = if state.passphrase.is_empty() && !is_selected { "(none)".to_string() } else { state.passphrase.clone() };
+        let mut spans = vec![Span::styled(format!("{:>width$}: ", "Passphrase", width = label_width), ls)];
+        spans.extend(build_value_spans(&display, is_selected, state.cursor_pos, vs, !state.passphrase.is_empty() || is_selected));
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+    }
+    y += 1;
+
+    // Error message
+    if let Some(ref error) = state.error {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(error.clone(), error_style))),
+            Rect::new(inner.x + 1, y, inner.width - 2, 1),
+        );
+        y += 1;
+    }
+
+    // Help
+    let help_key_style = Style::default().fg(theme.dialog.help_key_text);
+    let help_label_style = Style::default().fg(theme.dialog.help_label_text);
+    if y < inner.y + inner.height {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("Tab/↑↓", help_key_style),
+                Span::styled(":navigate ", help_label_style),
+                Span::styled("Enter", help_key_style),
+                Span::styled(":connect ", help_label_style),
+                Span::styled("Esc", help_key_style),
+                Span::styled(":cancel", help_label_style),
+            ])),
+            Rect::new(inner.x + 1, inner.y + inner.height - 1, inner.width - 2, 1),
+        );
+    }
+}
+
+/// Handle input for the remote connect dialog
+fn handle_remote_connect_input(app: &mut App, code: KeyCode) -> bool {
+    use super::app::{RemoteField, RemoteAuthType};
+
+    if app.remote_connect_state.is_none() {
+        app.dialog = None;
+        return false;
+    }
+
+    match code {
+        KeyCode::Esc => {
+            app.dialog = None;
+            app.remote_connect_state = None;
+        }
+        KeyCode::Tab => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                if state.is_auth_type_field() {
+                    state.toggle_auth_type();
+                    state.cursor_pos = 0;
+                } else {
+                    state.selected_field = state.next_field();
+                    state.cursor_pos = state.active_field_value().len();
+                }
+            }
+        }
+        KeyCode::Down => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                state.selected_field = state.next_field();
+                state.cursor_pos = state.active_field_value().len();
+            }
+        }
+        KeyCode::BackTab => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                state.selected_field = state.prev_field();
+                if state.is_auth_type_field() {
+                    state.toggle_auth_type();
+                } else {
+                    state.cursor_pos = state.active_field_value().len();
+                }
+            }
+        }
+        KeyCode::Up => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                state.selected_field = state.prev_field();
+                state.cursor_pos = state.active_field_value().len();
+            }
+        }
+        KeyCode::Enter => {
+            // Attempt connection
+            if let Some(ref state) = app.remote_connect_state {
+                if state.host.is_empty() || state.user.is_empty() {
+                    if let Some(ref mut s) = app.remote_connect_state {
+                        s.error = Some("Host and User are required".to_string());
+                    }
+                    return false;
+                }
+
+                let profile = state.to_profile();
+                let path = state.remote_path.clone();
+                let editing_idx = state.editing_profile_index;
+                app.dialog = None;
+                app.remote_connect_state = None;
+                app.connect_remote_panel(&profile, &path);
+
+                if let Some(idx) = editing_idx {
+                    // Editing existing profile — auto-update and skip Save Profile dialog
+                    if idx < app.settings.remote_profiles.len() {
+                        app.settings.remote_profiles[idx] = profile;
+                        let _ = app.settings.save();
+                    }
+                } else {
+                    // New connection — auto-save profile
+                    if app.active_panel().is_remote() {
+                        let existing = app.settings.remote_profiles.iter()
+                            .position(|p| p.host == profile.host && p.user == profile.user && p.port == profile.port);
+                        if let Some(idx) = existing {
+                            app.settings.remote_profiles[idx] = profile;
+                        } else {
+                            app.settings.remote_profiles.push(profile);
+                        }
+                        let _ = app.settings.save();
+                    }
+                }
+            }
+            return false;
+        }
+        KeyCode::Char(c) => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                if state.is_auth_type_field() {
+                    return false;
+                }
+                state.error = None;
+                let field = state.active_field_mut();
+                let mut chars: Vec<char> = field.chars().collect();
+                let pos = state.cursor_pos.min(chars.len());
+                chars.insert(pos, c);
+                *state.active_field_mut() = chars.into_iter().collect();
+                state.cursor_pos += 1;
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                if state.is_auth_type_field() {
+                    return false;
+                }
+                if state.cursor_pos > 0 {
+                    let field = state.active_field_mut();
+                    let mut chars: Vec<char> = field.chars().collect();
+                    chars.remove(state.cursor_pos - 1);
+                    *state.active_field_mut() = chars.into_iter().collect();
+                    state.cursor_pos -= 1;
+                }
+            }
+        }
+        KeyCode::Delete => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                if state.is_auth_type_field() {
+                    return false;
+                }
+                let len = state.active_field_value().len();
+                if state.cursor_pos < len {
+                    let field = state.active_field_mut();
+                    let mut chars: Vec<char> = field.chars().collect();
+                    chars.remove(state.cursor_pos);
+                    *state.active_field_mut() = chars.into_iter().collect();
+                }
+            }
+        }
+        KeyCode::Left => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                if state.cursor_pos > 0 {
+                    state.cursor_pos -= 1;
+                }
+            }
+        }
+        KeyCode::Right => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                let len = state.active_field_value().len();
+                if state.cursor_pos < len {
+                    state.cursor_pos += 1;
+                }
+            }
+        }
+        KeyCode::Home => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                state.cursor_pos = 0;
+            }
+        }
+        KeyCode::End => {
+            if let Some(ref mut state) = app.remote_connect_state {
+                state.cursor_pos = state.active_field_value().len();
+            }
+        }
+        _ => {}
+    }
+
+    false
+}
+
+/// Handle input for the remote profile save dialog
+fn handle_remote_profile_save_input(app: &mut App, code: KeyCode) -> bool {
+    match code {
+        KeyCode::Enter => {
+            // Save the profile
+            if let Some(ref state) = app.remote_connect_state {
+                let mut profile = state.to_profile();
+                if let Some(ref dialog) = app.dialog {
+                    if !dialog.input.is_empty() {
+                        profile.name = dialog.input.clone();
+                    }
+                }
+                // Check for duplicate
+                let existing = app.settings.remote_profiles.iter()
+                    .position(|p| p.host == profile.host && p.user == profile.user && p.port == profile.port);
+                if let Some(idx) = existing {
+                    app.settings.remote_profiles[idx] = profile;
+                } else {
+                    app.settings.remote_profiles.push(profile);
+                }
+                let _ = app.settings.save();
+                app.show_message("Remote profile saved");
+            }
+            app.dialog = None;
+            app.remote_connect_state = None;
+        }
+        KeyCode::Esc => {
+            // Don't save, just close
+            app.dialog = None;
+            app.remote_connect_state = None;
+        }
+        KeyCode::Char(c) => {
+            if let Some(ref mut dialog) = app.dialog {
+                let mut chars: Vec<char> = dialog.input.chars().collect();
+                chars.insert(dialog.cursor_pos, c);
+                dialog.input = chars.into_iter().collect();
+                dialog.cursor_pos += 1;
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(ref mut dialog) = app.dialog {
+                if dialog.cursor_pos > 0 {
+                    let mut chars: Vec<char> = dialog.input.chars().collect();
+                    chars.remove(dialog.cursor_pos - 1);
+                    dialog.input = chars.into_iter().collect();
+                    dialog.cursor_pos -= 1;
+                }
+            }
+        }
+        KeyCode::Delete => {
+            if let Some(ref mut dialog) = app.dialog {
+                let char_count = dialog.input.chars().count();
+                if dialog.cursor_pos < char_count {
+                    let mut chars: Vec<char> = dialog.input.chars().collect();
+                    chars.remove(dialog.cursor_pos);
+                    dialog.input = chars.into_iter().collect();
+                }
+            }
+        }
+        KeyCode::Left => {
+            if let Some(ref mut dialog) = app.dialog {
+                if dialog.cursor_pos > 0 {
+                    dialog.cursor_pos -= 1;
+                }
+            }
+        }
+        KeyCode::Right => {
+            if let Some(ref mut dialog) = app.dialog {
+                if dialog.cursor_pos < dialog.input.chars().count() {
+                    dialog.cursor_pos += 1;
+                }
+            }
+        }
+        KeyCode::Home => {
+            if let Some(ref mut dialog) = app.dialog {
+                dialog.cursor_pos = 0;
+            }
+        }
+        KeyCode::End => {
+            if let Some(ref mut dialog) = app.dialog {
+                dialog.cursor_pos = dialog.input.chars().count();
+            }
         }
         _ => {}
     }

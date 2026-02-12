@@ -84,6 +84,7 @@ pub struct PanelColors {
     pub marked_text: Color,
     pub size_text: Color,
     pub date_text: Color,
+    pub remote_indicator: Color,    // [SSH] 인디케이터 색상
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -206,6 +207,12 @@ pub struct DialogColors {
     pub git_log_diff_button_selected_bg: Color,    // 선택 버튼 배경
     pub git_log_diff_button_disabled_text: Color,  // 비활성 버튼 텍스트
     pub git_log_diff_scroll_info: Color,         // 스크롤 정보
+
+    // === 원격 연결 다이얼로그 ===
+    pub remote_bookmark_text: Color,             // 북마크 목록 내 원격 항목 텍스트
+    pub remote_connect_field_label: Color,       // 원격 연결 다이얼로그 필드 레이블
+    pub remote_connect_field_value: Color,       // 원격 연결 다이얼로그 필드 값
+    pub remote_connect_field_selected_bg: Color, // 선택된 필드 배경
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -267,6 +274,7 @@ pub struct EditorColors {
     pub find_option: Color,
     pub find_option_active: Color,
     pub wrap_indicator: Color,
+    pub remote_path_text: Color,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -757,6 +765,7 @@ impl Theme {
             marked_text: Color::Indexed(198),
             size_text: Color::Indexed(251),
             date_text: Color::Indexed(251),
+            remote_indicator: Color::Indexed(67),
         };
 
         // 앱 헤더
@@ -859,6 +868,10 @@ impl Theme {
             git_log_diff_button_selected_bg: Color::Indexed(67),
             git_log_diff_button_disabled_text: Color::Indexed(251),
             git_log_diff_scroll_info: Color::Indexed(251),
+            remote_bookmark_text: Color::Indexed(67),
+            remote_connect_field_label: Color::Indexed(243),
+            remote_connect_field_value: Color::Indexed(238),
+            remote_connect_field_selected_bg: Color::Indexed(67),
         };
 
         // 확인 다이얼로그 (Large File/Image Confirm)
@@ -908,6 +921,7 @@ impl Theme {
             find_option: Color::Indexed(251),
             find_option_active: Color::Indexed(74),
             wrap_indicator: Color::Indexed(248),
+            remote_path_text: Color::Indexed(214),
         };
 
         // 코드 하이라이팅 (라이트 테마)
@@ -1297,6 +1311,7 @@ impl Theme {
             marked_text: Color::Indexed(204),
             size_text: Color::Indexed(245),
             date_text: Color::Indexed(245),
+            remote_indicator: Color::Indexed(117),
         };
 
         let header = HeaderColors {
@@ -1379,6 +1394,10 @@ impl Theme {
             git_log_diff_button_selected_bg: Color::Indexed(117),
             git_log_diff_button_disabled_text: Color::Indexed(242),
             git_log_diff_scroll_info: Color::Indexed(245),
+            remote_bookmark_text: Color::Indexed(117),
+            remote_connect_field_label: Color::Indexed(252),
+            remote_connect_field_value: Color::Indexed(255),
+            remote_connect_field_selected_bg: Color::Indexed(117),
         };
 
         // 확인 다이얼로그 (Large File/Image Confirm)
@@ -1426,6 +1445,7 @@ impl Theme {
             find_option: Color::Indexed(245),
             find_option_active: Color::Indexed(117),
             wrap_indicator: Color::Indexed(240),
+            remote_path_text: Color::Indexed(214),
         };
 
         // 코드 하이라이팅 (다크 테마)
@@ -1764,6 +1784,7 @@ impl Theme {
             marked_text: Color::Indexed(174),
             size_text: Color::Indexed(102),
             date_text: Color::Indexed(102),
+            remote_indicator: Color::Indexed(108),
         };
 
         let header = HeaderColors {
@@ -1844,6 +1865,10 @@ impl Theme {
             git_log_diff_button_selected_bg: Color::Indexed(60),
             git_log_diff_button_disabled_text: Color::Indexed(239),
             git_log_diff_scroll_info: Color::Indexed(102),
+            remote_bookmark_text: Color::Indexed(108),
+            remote_connect_field_label: Color::Indexed(145),
+            remote_connect_field_value: Color::Indexed(188),
+            remote_connect_field_selected_bg: Color::Indexed(60),
         };
 
         let confirm_dialog = ConfirmDialogColors {
@@ -1890,6 +1915,7 @@ impl Theme {
             find_option: Color::Indexed(102),
             find_option_active: Color::Indexed(110),
             wrap_indicator: Color::Indexed(239),
+            remote_path_text: Color::Indexed(214),
         };
 
         let syntax = SyntaxColors {
@@ -2361,7 +2387,9 @@ impl Theme {
     "__size_text__": "파일 크기 컬럼의 텍스트 색상. bg 위에 표시됨. file_text보다 낮은 시각적 우선순위. 보조 정보로서 읽을 수 있지만 파일명보다 덜 눈에 띄어야 함. palette.fg_dim 참조",
     "size_text": {},
     "__date_text__": "수정일 컬럼의 텍스트 색상. bg 위에 표시됨. size_text와 유사한 시각적 우선순위. 보조 정보로서 파일명보다 덜 강조됨. palette.fg_dim 참조",
-    "date_text": {}
+    "date_text": {},
+    "__remote_indicator__": "원격 패널 [SSH] 인디케이터 색상. 패널 헤더에서 원격 연결 상태를 나타내는 텍스트 색상",
+    "remote_indicator": {}
   }},
 
   "__header__": "=== 앱 헤더: 화면 최상단의 앱 제목 및 브랜딩 영역. 항상 표시되는 고정 요소 ===",
@@ -2507,7 +2535,15 @@ impl Theme {
     "__git_log_diff_button_disabled_text__": "Git Log Diff 다이얼로그의 비활성(2개 미선택) 버튼 텍스트",
     "git_log_diff_button_disabled_text": {},
     "__git_log_diff_scroll_info__": "Git Log Diff 다이얼로그의 스크롤 정보. git_log_diff_bg 위에 표시됨",
-    "git_log_diff_scroll_info": {}
+    "git_log_diff_scroll_info": {},
+    "__remote_bookmark_text__": "북마크 목록 내 원격 프로필 텍스트 색상. 로컬 북마크와 시각적으로 구분하기 위한 색상",
+    "remote_bookmark_text": {},
+    "__remote_connect_field_label__": "원격 연결 다이얼로그의 필드 레이블 (Host:, Port:, User: 등)",
+    "remote_connect_field_label": {},
+    "__remote_connect_field_value__": "원격 연결 다이얼로그의 필드 값 텍스트",
+    "remote_connect_field_value": {},
+    "__remote_connect_field_selected_bg__": "원격 연결 다이얼로그에서 선택된 필드의 배경색",
+    "remote_connect_field_selected_bg": {}
   }},
 
   "__confirm_dialog__": "=== 확인 다이얼로그: 파일 삭제, 덮어쓰기, 대용량 파일 열기 등 사용자 확인이 필요한 작업의 모달 ===",
@@ -2593,7 +2629,9 @@ impl Theme {
     "__find_option_active__": "찾기 옵션의 활성 상태 색상. footer_bg 위에 표시됨. find_option보다 높은 시각적 강조. 현재 켜진 옵션임을 명확히 표시",
     "find_option_active": {},
     "__wrap_indicator__": "줄 바꿈 표시자 색상. footer_bg 위에 표시됨. Word wrap 모드 활성화 시 하단바에 'Wrap' 텍스트로 표시",
-    "wrap_indicator": {}
+    "wrap_indicator": {},
+    "__remote_path_text__": "원격 파일 편집 시 헤더에 표시되는 [Remote: path] 텍스트 색상. header_bg 위에 표시됨",
+    "remote_path_text": {}
   }},
 
   "__syntax__": "=== 코드 하이라이팅: 에디터/뷰어에서 프로그래밍 언어 문법을 색상으로 구분. 모두 editor.bg 또는 viewer.bg 위에 표시됨. 서로 구분되면서도 조화로운 색상 팔레트 필요 ===",
@@ -3119,6 +3157,7 @@ impl Theme {
             ci(self.panel.file_text), ci(self.panel.directory_text), ci(self.panel.symlink_text),
             ci(self.panel.selected_bg), ci(self.panel.selected_text), ci(self.panel.marked_text),
             ci(self.panel.size_text), ci(self.panel.date_text),
+            ci(self.panel.remote_indicator),
             // header
             ci(self.header.bg), ci(self.header.text), ci(self.header.title),
             // status_bar
@@ -3153,6 +3192,10 @@ impl Theme {
             ci(self.dialog.git_log_diff_button_text), ci(self.dialog.git_log_diff_button_selected_text),
             ci(self.dialog.git_log_diff_button_selected_bg), ci(self.dialog.git_log_diff_button_disabled_text),
             ci(self.dialog.git_log_diff_scroll_info),
+            ci(self.dialog.remote_bookmark_text),
+            ci(self.dialog.remote_connect_field_label),
+            ci(self.dialog.remote_connect_field_value),
+            ci(self.dialog.remote_connect_field_selected_bg),
             // confirm_dialog
             ci(self.confirm_dialog.bg), ci(self.confirm_dialog.border), ci(self.confirm_dialog.title),
             ci(self.confirm_dialog.message_text), ci(self.confirm_dialog.button_text),
@@ -3171,6 +3214,7 @@ impl Theme {
             ci(self.editor.footer_text), ci(self.editor.find_input_text),
             ci(self.editor.find_option), ci(self.editor.find_option_active),
             ci(self.editor.wrap_indicator),
+            ci(self.editor.remote_path_text),
             // syntax
             ci(self.syntax.keyword), ci(self.syntax.type_name), ci(self.syntax.string), ci(self.syntax.number),
             ci(self.syntax.comment), ci(self.syntax.operator), ci(self.syntax.function), ci(self.syntax.macro_name),

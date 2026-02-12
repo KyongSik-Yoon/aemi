@@ -7,6 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use crate::services::remote;
 use super::{
     app::{App, Screen},
     dialogs,
@@ -176,7 +177,16 @@ fn draw_panels(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
             }
         } else {
             let path_str = app.panels[i].path.display().to_string();
-            let bookmarked = app.settings.bookmarked_path.contains(&path_str);
+            let bookmarked = if app.panels[i].is_remote() {
+                if let Some(ref ctx) = app.panels[i].remote_ctx {
+                    let remote_str = remote::format_remote_display(&ctx.profile, &path_str);
+                    app.settings.bookmarked_path.contains(&remote_str)
+                } else {
+                    false
+                }
+            } else {
+                app.settings.bookmarked_path.contains(&path_str)
+            };
             let focused = active_idx == i && !has_dialog && (!is_ai_mode || ai_panel_index != Some(i));
             let diff_selected = diff_first_panel == Some(i);
             panel::draw(

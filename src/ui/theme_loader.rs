@@ -130,6 +130,8 @@ pub struct PanelColorsJson {
     pub size_text: u8,
     #[serde(default = "default_251")]
     pub date_text: u8,
+    #[serde(default = "default_67")]
+    pub remote_indicator: u8,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -276,6 +278,14 @@ pub struct DialogColorsJson {
     pub git_log_diff_button_disabled_text: u8,
     #[serde(default = "default_251")]
     pub git_log_diff_scroll_info: u8,
+    #[serde(default = "default_67")]
+    pub remote_bookmark_text: u8,
+    #[serde(default = "default_243")]
+    pub remote_connect_field_label: u8,
+    #[serde(default = "default_238")]
+    pub remote_connect_field_value: u8,
+    #[serde(default = "default_67")]
+    pub remote_connect_field_selected_bg: u8,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -378,6 +388,8 @@ pub struct EditorColorsJson {
     pub find_option_active: u8,
     #[serde(default = "default_248")]
     pub wrap_indicator: u8,
+    #[serde(default = "default_214")]
+    pub remote_path_text: u8,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -941,6 +953,7 @@ fn default_180() -> u8 { 180 }
 fn default_188() -> u8 { 188 }
 fn default_195() -> u8 { 195 }
 fn default_146() -> u8 { 146 }
+fn default_214() -> u8 { 214 }
 fn default_234() -> u8 { 234 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1049,6 +1062,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         marked_text: idx(json.panel.marked_text),
         size_text: idx(json.panel.size_text),
         date_text: idx(json.panel.date_text),
+        remote_indicator: idx(json.panel.remote_indicator),
     };
 
     let header = HeaderColors {
@@ -1127,6 +1141,10 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         git_log_diff_button_selected_bg: idx(json.dialog.git_log_diff_button_selected_bg),
         git_log_diff_button_disabled_text: idx(json.dialog.git_log_diff_button_disabled_text),
         git_log_diff_scroll_info: idx(json.dialog.git_log_diff_scroll_info),
+        remote_bookmark_text: idx(json.dialog.remote_bookmark_text),
+        remote_connect_field_label: idx(json.dialog.remote_connect_field_label),
+        remote_connect_field_value: idx(json.dialog.remote_connect_field_value),
+        remote_connect_field_selected_bg: idx(json.dialog.remote_connect_field_selected_bg),
     };
 
     let confirm_dialog = ConfirmDialogColors {
@@ -1173,6 +1191,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         find_option: idx(json.editor.find_option),
         find_option_active: idx(json.editor.find_option_active),
         wrap_indicator: idx(json.editor.wrap_indicator),
+        remote_path_text: idx(json.editor.remote_path_text),
     };
 
     let syntax = SyntaxColors {

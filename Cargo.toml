@@ -13,7 +13,7 @@ categories = ["command-line-utilities", "filesystem"]
 [dependencies]
 ratatui = { version = "0.28", features = ["unstable-rendered-line-info"] }
 crossterm = "0.28"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
@@ -26,6 +26,10 @@ regex = "1"
 rand = "0.8"
 supports-color = "3"
 base64 = "0.22"
+russh = "0.46"
+russh-sftp = "2.0"
+russh-keys = "0.46"
+async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

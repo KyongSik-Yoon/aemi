@@ -14,12 +14,13 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
     let inner_width = area.width.saturating_sub(2) as usize;
 
     // Build path display (truncate if too long, using display width)
-    let path_str = panel.path.display().to_string();
+    let path_str = panel.display_path();
     let bookmark_marker = if is_bookmarked { "✻" } else { "" };
+    let prefix = bookmark_marker.to_string();
     let path_display_width = path_str.width();
-    let display_path = if inner_width > 4 && path_display_width > inner_width.saturating_sub(4) {
+    let display_path = if inner_width > 4 && path_display_width + prefix.width() > inner_width.saturating_sub(4) {
         // Calculate how many characters to show from the end (by display width)
-        let target_width = inner_width.saturating_sub(7); // "..." prefix + marker
+        let target_width = inner_width.saturating_sub(prefix.width() + 4); // prefix + "..."
         let mut suffix_width = 0;
         let mut start_char_idx = path_str.chars().count();
         for (i, c) in path_str.chars().rev().enumerate() {
@@ -31,17 +32,23 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
             start_char_idx = path_str.chars().count() - i - 1;
         }
         let suffix: String = path_str.chars().skip(start_char_idx).collect();
-        format!("{}...{}", bookmark_marker, suffix)
+        format!("{}...{}", prefix, suffix)
     } else {
-        format!("{}{}", bookmark_marker, path_str)
+        format!("{}{}", prefix, path_str)
     };
 
     let block = Block::default()
         .title(format!(" {} ", display_path))
-        .title_style(if is_active {
+        .title_style(if panel.is_remote() && is_active {
+            Style::default()
+                .fg(theme.panel.remote_indicator)
+                .add_modifier(Modifier::BOLD)
+        } else if is_active {
             Style::default()
                 .fg(theme.panel.border_active)
                 .add_modifier(Modifier::BOLD)
+        } else if panel.is_remote() {
+            Style::default().fg(theme.panel.remote_indicator)
         } else {
             Style::default().fg(theme.panel.file_text)
         })
@@ -229,7 +236,17 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
         spans.push(Span::styled(format_size(selected_size), selected_style));
     }
 
-    if panel.disk_total > 0 {
+    if panel.is_remote() {
+        // Show remote connection info instead of disk info
+        if let Some(ref ctx) = panel.remote_ctx {
+            let remote_style = Style::default().fg(theme.panel.remote_indicator);
+            spans.push(Span::styled(" | ", label_style));
+            spans.push(Span::styled(
+                format!("{}@{}", ctx.profile.user, ctx.profile.host),
+                remote_style,
+            ));
+        }
+    } else if panel.disk_total > 0 {
         let disk_free = format_size(panel.disk_available);
         let disk_total = format_size(panel.disk_total);
         spans.push(Span::styled(" | ", label_style));

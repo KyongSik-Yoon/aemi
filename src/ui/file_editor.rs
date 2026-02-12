@@ -70,6 +70,12 @@ pub struct Selection {
     pub end_col: usize,
 }
 
+#[derive(Debug)]
+pub struct RemoteEditOrigin {
+    pub panel_index: usize,
+    pub remote_path: String,
+}
+
 impl Selection {
     /// 블록 커서 선택: 현재 커서 위치의 문자를 포함하기 위해 end_col = col + 1
     pub fn new(line: usize, col: usize) -> Self {
@@ -201,6 +207,9 @@ pub struct EditorState {
     // 상태 메시지 (일시적으로 표시)
     pub message: Option<String>,
     pub message_timer: u8,
+
+    // 원격 파일 편집 원본 정보
+    pub remote_origin: Option<RemoteEditOrigin>,
 }
 
 impl EditorState {
@@ -270,6 +279,7 @@ impl EditorState {
             visible_width: 80,   // 기본값, 렌더링 시 업데이트됨
             message: None,
             message_timer: 0,
+            remote_origin: None,
         }
     }
 
@@ -2222,6 +2232,15 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "New File".to_string());
 
+    let remote_span = if let Some(ref origin) = state.remote_origin {
+        Span::styled(
+            format!("[Remote: {}] ", origin.remote_path),
+            Style::default().fg(theme.editor.remote_path_text),
+        )
+    } else {
+        Span::raw("")
+    };
+
     let header = Line::from(vec![
         Span::raw(" "),
         if state.modified {
@@ -2233,6 +2252,7 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
             format!("{} ", file_name),
             theme.header_style(),
         ),
+        remote_span,
         Span::styled(
             format!("[{}] ", state.language.name()),
             theme.dim_style(),
@@ -3014,6 +3034,10 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             KeyCode::Char('s') => {
                 let save_result = state.save_file();
                 let is_settings = App::is_settings_file(&state.file_path);
+                let remote_info = state.remote_origin.as_ref().map(|o| {
+                    (o.panel_index, o.remote_path.clone())
+                });
+                let local_path = state.file_path.display().to_string();
                 match save_result {
                     Ok(_) => {
                         state.pending_exit = false;
@@ -3028,7 +3052,33 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                         return;
                     }
                 }
-                // Now we can call app methods (state borrow ends here due to NLL)
+                // state borrow ends here due to NLL — now access app freely
+                if let Some((panel_idx, remote_path)) = remote_info {
+                    let upload_msg = if let Some(panel) = app.panels.get(panel_idx) {
+                        if let Some(ref ctx) = panel.remote_ctx {
+                            match ctx.status {
+                                crate::services::remote::ConnectionStatus::Connected => {
+                                    match ctx.session.upload_file(&local_path, &remote_path) {
+                                        Ok(_) => Some(("Saved & uploaded to remote!".to_string(), 30)),
+                                        Err(e) => Some((format!("Saved locally, upload failed: {}", e), 50)),
+                                    }
+                                }
+                                crate::services::remote::ConnectionStatus::Disconnected(_) => {
+                                    Some(("Saved locally, remote connection lost".to_string(), 50))
+                                }
+                            }
+                        } else {
+                            Some(("Saved locally, remote connection was disconnected".to_string(), 50))
+                        }
+                    } else {
+                        Some(("Saved locally, remote panel no longer available".to_string(), 50))
+                    };
+                    if let Some((msg, duration)) = upload_msg {
+                        if let Some(ref mut editor) = app.editor_state {
+                            editor.set_message(msg, duration);
+                        }
+                    }
+                }
                 if is_settings {
                     app.reload_settings();
                 }

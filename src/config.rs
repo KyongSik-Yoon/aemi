@@ -4,6 +4,7 @@ use std::io;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use crate::ui::theme::{Theme, DEFAULT_THEME_NAME};
+use crate::services::remote::RemoteProfile;
 
 /// Panel-specific settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +83,9 @@ pub struct Settings {
     /// DIFF compare method: "content", "modified_time", "content_and_time"
     #[serde(default = "default_diff_compare_method")]
     pub diff_compare_method: String,
+    /// Remote server profiles for SSH/SFTP connections
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remote_profiles: Vec<RemoteProfile>,
 }
 
 impl Default for Settings {
@@ -120,6 +124,7 @@ impl Default for Settings {
             panels: vec![PanelSettings::default(), PanelSettings::default()],
             active_panel_index: 0,
             diff_compare_method: default_diff_compare_method(),
+            remote_profiles: Vec::new(),
         }
     }
 }

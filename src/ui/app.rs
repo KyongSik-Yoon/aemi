@@ -10,6 +10,8 @@ use chrono::{DateTime, Local};
 
 use crate::config::Settings;
 use crate::services::file_ops::{self, FileOperationType, ProgressMessage, FileOperationResult};
+use crate::services::remote::{self, RemoteContext, ConnectionStatus};
+use crate::services::remote_transfer;
 use crate::ui::file_viewer::ViewerState;
 use crate::ui::file_editor::EditorState;
 use crate::ui::file_info::FileInfoState;
@@ -188,6 +190,10 @@ pub enum DialogType {
     ExtensionHandlerError,
     BinaryFileHandler,
     GitLogDiff,
+    /// Remote connection dialog - enter auth info for new server
+    RemoteConnect,
+    /// Remote profile save prompt - ask to save after successful connect
+    RemoteProfileSave,
 }
 
 /// Settings dialog state
@@ -293,6 +299,207 @@ impl SettingsState {
     }
 }
 
+/// State for remote connection dialog
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RemoteField {
+    Host,
+    Port,
+    User,
+    AuthType,
+    Credential,  // password or key_path depending on auth_type
+    Passphrase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RemoteAuthType {
+    Password,
+    KeyFile,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteConnectState {
+    pub selected_field: RemoteField,
+    pub host: String,
+    pub port: String,
+    pub user: String,
+    pub auth_type: RemoteAuthType,
+    pub password: String,
+    pub key_path: String,
+    pub passphrase: String,
+    pub remote_path: String,
+    pub profile_name: String,
+    pub error: Option<String>,
+    pub cursor_pos: usize,
+    /// Some(idx) when editing an existing profile via Ctrl+E
+    pub editing_profile_index: Option<usize>,
+}
+
+impl RemoteConnectState {
+    pub fn new() -> Self {
+        Self {
+            selected_field: RemoteField::Host,
+            host: String::new(),
+            port: "22".to_string(),
+            user: String::new(),
+            auth_type: RemoteAuthType::Password,
+            password: String::new(),
+            key_path: "~/.ssh/id_rsa".to_string(),
+            passphrase: String::new(),
+            remote_path: "/".to_string(),
+            profile_name: String::new(),
+            error: None,
+            cursor_pos: 0,
+            editing_profile_index: None,
+        }
+    }
+
+    pub fn from_profile(profile: &remote::RemoteProfile, profile_index: usize) -> Self {
+        let (auth_type, password, key_path, passphrase) = match &profile.auth {
+            remote::RemoteAuth::Password { password } => {
+                (RemoteAuthType::Password, password.clone(), "~/.ssh/id_rsa".to_string(), String::new())
+            }
+            remote::RemoteAuth::KeyFile { path, passphrase } => {
+                (RemoteAuthType::KeyFile, String::new(), path.clone(), passphrase.clone().unwrap_or_default())
+            }
+        };
+        Self {
+            selected_field: RemoteField::Host,
+            host: profile.host.clone(),
+            port: profile.port.to_string(),
+            user: profile.user.clone(),
+            auth_type,
+            password,
+            key_path,
+            passphrase,
+            remote_path: profile.default_path.clone(),
+            profile_name: profile.name.clone(),
+            error: None,
+            cursor_pos: 0,
+            editing_profile_index: Some(profile_index),
+        }
+    }
+
+    pub fn from_parsed(user: &str, host: &str, port: u16, path: &str) -> Self {
+        Self {
+            selected_field: if user.is_empty() { RemoteField::User } else { RemoteField::AuthType },
+            host: host.to_string(),
+            port: port.to_string(),
+            user: user.to_string(),
+            auth_type: RemoteAuthType::Password,
+            password: String::new(),
+            key_path: "~/.ssh/id_rsa".to_string(),
+            passphrase: String::new(),
+            remote_path: path.to_string(),
+            profile_name: String::new(),
+            error: None,
+            cursor_pos: 0,
+            editing_profile_index: None,
+        }
+    }
+
+    pub fn is_auth_type_field(&self) -> bool {
+        self.selected_field == RemoteField::AuthType
+    }
+
+    pub fn toggle_auth_type(&mut self) {
+        self.auth_type = match self.auth_type {
+            RemoteAuthType::Password => RemoteAuthType::KeyFile,
+            RemoteAuthType::KeyFile => RemoteAuthType::Password,
+        };
+    }
+
+    pub fn next_field(&self) -> RemoteField {
+        match self.selected_field {
+            RemoteField::Host => RemoteField::Port,
+            RemoteField::Port => RemoteField::User,
+            RemoteField::User => RemoteField::AuthType,
+            RemoteField::AuthType => RemoteField::Credential,
+            RemoteField::Credential => match self.auth_type {
+                RemoteAuthType::Password => RemoteField::Host,  // wrap around
+                RemoteAuthType::KeyFile => RemoteField::Passphrase,
+            },
+            RemoteField::Passphrase => RemoteField::Host,  // wrap around
+        }
+    }
+
+    pub fn prev_field(&self) -> RemoteField {
+        match self.selected_field {
+            RemoteField::Host => match self.auth_type {
+                RemoteAuthType::Password => RemoteField::Credential,  // wrap around
+                RemoteAuthType::KeyFile => RemoteField::Passphrase,
+            },
+            RemoteField::Port => RemoteField::Host,
+            RemoteField::User => RemoteField::Port,
+            RemoteField::AuthType => RemoteField::User,
+            RemoteField::Credential => RemoteField::AuthType,
+            RemoteField::Passphrase => RemoteField::Credential,
+        }
+    }
+
+    pub fn active_field_mut(&mut self) -> &mut String {
+        match self.selected_field {
+            RemoteField::Host => &mut self.host,
+            RemoteField::Port => &mut self.port,
+            RemoteField::User => &mut self.user,
+            RemoteField::AuthType => &mut self.password, // placeholder - handled by toggle
+            RemoteField::Credential => match self.auth_type {
+                RemoteAuthType::Password => &mut self.password,
+                RemoteAuthType::KeyFile => &mut self.key_path,
+            },
+            RemoteField::Passphrase => &mut self.passphrase,
+        }
+    }
+
+    pub fn active_field_value(&self) -> &str {
+        match self.selected_field {
+            RemoteField::Host => &self.host,
+            RemoteField::Port => &self.port,
+            RemoteField::User => &self.user,
+            RemoteField::AuthType => match self.auth_type {
+                RemoteAuthType::Password => "Password",
+                RemoteAuthType::KeyFile => "Key File",
+            },
+            RemoteField::Credential => match self.auth_type {
+                RemoteAuthType::Password => &self.password,
+                RemoteAuthType::KeyFile => &self.key_path,
+            },
+            RemoteField::Passphrase => &self.passphrase,
+        }
+    }
+
+    pub fn to_profile(&self) -> remote::RemoteProfile {
+        let port: u16 = self.port.parse().unwrap_or(22);
+        let auth = match self.auth_type {
+            RemoteAuthType::Password => remote::RemoteAuth::Password {
+                password: self.password.clone(),
+            },
+            RemoteAuthType::KeyFile => remote::RemoteAuth::KeyFile {
+                path: self.key_path.clone(),
+                passphrase: if self.passphrase.is_empty() {
+                    None
+                } else {
+                    Some(self.passphrase.clone())
+                },
+            },
+        };
+
+        let name = if self.profile_name.is_empty() {
+            format!("{}@{}", self.user, self.host)
+        } else {
+            self.profile_name.clone()
+        };
+
+        remote::RemoteProfile {
+            name,
+            host: self.host.clone(),
+            port,
+            user: self.user.clone(),
+            auth,
+            default_path: self.remote_path.clone(),
+        }
+    }
+}
+
 /// Fuzzy match: check if all characters in pattern appear in text in order
 /// e.g., "thse" matches "/path/to/base" (t-h-s-e appear in sequence)
 pub fn fuzzy_match(text: &str, pattern: &str) -> bool {
@@ -388,6 +595,8 @@ pub struct Clipboard {
     pub files: Vec<String>,
     pub source_path: PathBuf,
     pub operation: ClipboardOperation,
+    /// Remote profile of the source panel (None if local)
+    pub source_remote_profile: Option<remote::RemoteProfile>,
 }
 
 /// File operation progress state for progress dialog
@@ -519,6 +728,20 @@ impl FileOperationProgress {
     }
 }
 
+/// What to do after a remote file download completes
+pub enum PendingRemoteOpen {
+    /// Open in editor (with remote upload on save)
+    Editor {
+        tmp_path: PathBuf,
+        panel_index: usize,
+        remote_path: String,
+    },
+    /// Open in image viewer
+    ImageViewer {
+        tmp_path: PathBuf,
+    },
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PathCompletion {
     pub suggestions: Vec<String>,  // 자동완성 후보 목록
@@ -596,6 +819,8 @@ pub struct PanelState {
     pub pending_focus: Option<String>,
     pub disk_total: u64,
     pub disk_available: u64,
+    /// Remote context — None means local panel
+    pub remote_ctx: Option<Box<RemoteContext>>,
 }
 
 impl PanelState {
@@ -615,6 +840,7 @@ impl PanelState {
             pending_focus: None,
             disk_total: 0,
             disk_available: 0,
+            remote_ctx: None,
         };
         state.load_files();
         state
@@ -640,12 +866,35 @@ impl PanelState {
             pending_focus: None,
             disk_total: 0,
             disk_available: 0,
+            remote_ctx: None,
         };
         state.load_files();
         state
     }
 
+    /// Check if this panel is connected to a remote server
+    pub fn is_remote(&self) -> bool {
+        self.remote_ctx.is_some()
+    }
+
+    /// Get the remote display path (user@host:/path) or local path string
+    pub fn display_path(&self) -> String {
+        if let Some(ref ctx) = self.remote_ctx {
+            remote::format_remote_display(&ctx.profile, &self.path.display().to_string())
+        } else {
+            self.path.display().to_string()
+        }
+    }
+
     pub fn load_files(&mut self) {
+        if self.is_remote() {
+            self.load_files_remote();
+        } else {
+            self.load_files_local();
+        }
+    }
+
+    fn load_files_local(&mut self) {
         self.files.clear();
 
         // Add parent directory entry if not at root
@@ -705,45 +954,113 @@ impl PanelState {
                     })
                 }));
 
-            // Sort files
-            items.sort_by(|a, b| {
-                // Directories always first
-                if a.is_directory && !b.is_directory {
-                    return std::cmp::Ordering::Less;
-                }
-                if !a.is_directory && b.is_directory {
-                    return std::cmp::Ordering::Greater;
-                }
-
-                let cmp = match self.sort_by {
-                    SortBy::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                    SortBy::Type => {
-                        let ext_a = std::path::Path::new(&a.name)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        let ext_b = std::path::Path::new(&b.name)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        ext_a.cmp(&ext_b)
-                    }
-                    SortBy::Size => a.size.cmp(&b.size),
-                    SortBy::Modified => a.modified.cmp(&b.modified),
-                };
-
-                match self.sort_order {
-                    SortOrder::Asc => cmp,
-                    SortOrder::Desc => cmp.reverse(),
-                }
-            });
-
+            self.sort_items(&mut items);
             self.files.reserve(items.len());
             self.files.extend(items);
         }
 
+        self.finalize_load();
+        self.update_disk_info();
+    }
+
+    fn load_files_remote(&mut self) {
+        self.files.clear();
+
+        let remote_path = self.path.display().to_string();
+
+        // Always add parent directory entry for remote paths
+        if remote_path != "/" {
+            self.files.push(FileItem {
+                name: "..".to_string(),
+                is_directory: true,
+                is_symlink: false,
+                size: 0,
+                modified: Local::now(),
+                permissions: String::new(),
+            });
+        }
+
+        let entries = if let Some(ref ctx) = self.remote_ctx {
+            ctx.session.list_dir(&remote_path)
+        } else {
+            return;
+        };
+
+        match entries {
+            Ok(sftp_entries) => {
+                let mut items: Vec<FileItem> = sftp_entries
+                    .into_iter()
+                    .map(|entry| FileItem {
+                        name: entry.name,
+                        is_directory: entry.is_directory,
+                        is_symlink: entry.is_symlink,
+                        size: if entry.is_directory { 0 } else { entry.size },
+                        modified: entry.modified,
+                        permissions: entry.permissions,
+                    })
+                    .collect();
+
+                self.sort_items(&mut items);
+                self.files.reserve(items.len());
+                self.files.extend(items);
+
+                // Update connection status
+                if let Some(ref mut ctx) = self.remote_ctx {
+                    ctx.status = ConnectionStatus::Connected;
+                }
+            }
+            Err(e) => {
+                if let Some(ref mut ctx) = self.remote_ctx {
+                    ctx.status = ConnectionStatus::Disconnected(e);
+                }
+            }
+        }
+
+        self.finalize_load();
+        // No disk info for remote panels
+        self.disk_total = 0;
+        self.disk_available = 0;
+    }
+
+    /// Sort file items (shared between local and remote)
+    fn sort_items(&self, items: &mut Vec<FileItem>) {
+        items.sort_by(|a, b| {
+            // Directories always first
+            if a.is_directory && !b.is_directory {
+                return std::cmp::Ordering::Less;
+            }
+            if !a.is_directory && b.is_directory {
+                return std::cmp::Ordering::Greater;
+            }
+
+            let cmp = match self.sort_by {
+                SortBy::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                SortBy::Type => {
+                    let ext_a = std::path::Path::new(&a.name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let ext_b = std::path::Path::new(&b.name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    ext_a.cmp(&ext_b)
+                }
+                SortBy::Size => a.size.cmp(&b.size),
+                SortBy::Modified => a.modified.cmp(&b.modified),
+            };
+
+            match self.sort_order {
+                SortOrder::Asc => cmp,
+                SortOrder::Desc => cmp.reverse(),
+            }
+        });
+    }
+
+    /// Finalize file loading (handle focus and bounds)
+    fn finalize_load(&mut self) {
         // Handle pending focus (when going to parent directory)
         if let Some(focus_name) = self.pending_focus.take() {
             if let Some(idx) = self.files.iter().position(|f| f.name == focus_name) {
@@ -755,12 +1072,15 @@ impl PanelState {
         if self.selected_index >= self.files.len() && !self.files.is_empty() {
             self.selected_index = self.files.len() - 1;
         }
-
-        // Update disk info
-        self.update_disk_info();
     }
 
     fn update_disk_info(&mut self) {
+        if self.is_remote() {
+            self.disk_total = 0;
+            self.disk_available = 0;
+            return;
+        }
+
         #[cfg(unix)]
         {
             use std::ffi::CString;
@@ -931,6 +1251,9 @@ pub struct App {
     // Settings dialog state
     pub settings_state: Option<SettingsState>,
 
+    // Remote connection dialog state
+    pub remote_connect_state: Option<RemoteConnectState>,
+
     // Diff screen state
     pub diff_first_panel: Option<usize>,
     pub diff_state: Option<crate::ui::diff_screen::DiffState>,
@@ -941,6 +1264,9 @@ pub struct App {
 
     // Git log diff state
     pub git_log_diff_state: Option<GitLogDiffState>,
+
+    // Pending remote download → open action
+    pub pending_remote_open: Option<PendingRemoteOpen>,
 }
 
 impl App {
@@ -1008,11 +1334,13 @@ impl App {
             copy_exclude_state: None,
             help_state: HelpState::default(),
             settings_state: None,
+            remote_connect_state: None,
             diff_first_panel: None,
             diff_state: None,
             diff_file_view_state: None,
             git_screen_state: None,
             git_log_diff_state: None,
+            pending_remote_open: None,
         }
     }
 
@@ -1101,11 +1429,13 @@ impl App {
             copy_exclude_state: None,
             help_state: HelpState::default(),
             settings_state: None,
+            remote_connect_state: None,
             diff_first_panel: None,
             diff_state: None,
             diff_file_view_state: None,
             git_screen_state: None,
             git_log_diff_state: None,
+            pending_remote_open: None,
         }
     }
 
@@ -1120,9 +1450,16 @@ impl App {
         }
 
         // Update settings from current state - save panels array
+        let home_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         self.settings.panels = self.panels.iter().map(|p| {
+            // Remote panel paths should not be saved — use home directory instead
+            let path = if p.is_remote() {
+                home_path.display().to_string()
+            } else {
+                p.path.display().to_string()
+            };
             PanelSettings {
-                start_path: Some(p.path.display().to_string()),
+                start_path: Some(path),
                 sort_by: sort_by_to_string(p.sort_by),
                 sort_order: sort_order_to_string(p.sort_order),
             }
@@ -1429,6 +1766,27 @@ impl App {
                     panel.load_files();
                 }
             } else {
+                // 원격 파일: 이미지는 뷰어, 나머지는 편집기 (프로그레스 표시)
+                if panel.is_remote() {
+                    let is_image = {
+                        let p = std::path::Path::new(&file.name);
+                        crate::ui::image_viewer::is_image_file(p)
+                    };
+
+                    if is_image {
+                        let tmp_path = match self.remote_tmp_path(&file.name) {
+                            Some(p) => p,
+                            None => return,
+                        };
+                        self.download_for_remote_open(&file.name, file.size, PendingRemoteOpen::ImageViewer {
+                            tmp_path,
+                        });
+                    } else {
+                        self.edit_file();
+                    }
+                    return;
+                }
+
                 // It's a file - check for extension handler first
                 let path = panel.path.join(&file.name);
 
@@ -1787,6 +2145,10 @@ impl App {
 
     /// Show handler setup dialog for current file (u key)
     pub fn show_handler_dialog(&mut self) {
+        if self.active_panel().is_remote() {
+            self.show_message("Extension handlers are not available for remote files");
+            return;
+        }
         let panel = self.active_panel();
         if panel.files.is_empty() {
             return;
@@ -1851,6 +2213,10 @@ impl App {
     /// 홈 디렉토리로 이동
     pub fn goto_home(&mut self) {
         if let Some(home) = dirs::home_dir() {
+            // Disconnect remote if active panel is remote
+            if self.active_panel().is_remote() {
+                self.disconnect_remote_panel();
+            }
             let panel = self.active_panel_mut();
             panel.path = home;
             panel.selected_index = 0;
@@ -2006,19 +2372,27 @@ impl App {
 
     /// Toggle bookmark for the current panel's path
     pub fn toggle_bookmark(&mut self) {
-        let current_path = self.active_panel().path.display().to_string();
+        let current_path = if self.active_panel().is_remote() {
+            if let Some(ref ctx) = self.active_panel().remote_ctx {
+                remote::format_remote_display(
+                    &ctx.profile,
+                    &self.active_panel().path.display().to_string(),
+                )
+            } else {
+                return;
+            }
+        } else {
+            self.active_panel().path.display().to_string()
+        };
 
         if let Some(pos) = self.settings.bookmarked_path.iter().position(|p| p == &current_path) {
-            // Already bookmarked - remove it
             self.settings.bookmarked_path.remove(pos);
             self.show_message(&format!("Bookmark removed: {}", current_path));
         } else {
-            // Not bookmarked - add it
             self.settings.bookmarked_path.push(current_path.clone());
             self.show_message(&format!("Bookmark added: {}", current_path));
         }
 
-        // Save settings immediately
         let _ = self.settings.save();
     }
 
@@ -2033,6 +2407,10 @@ impl App {
     /// With 2 panels: immediately enter diff screen
     /// With 3+ panels: first call selects first panel, second call selects second panel
     pub fn start_diff(&mut self) {
+        if self.panels.iter().any(|p| p.is_remote()) {
+            self.show_message("Diff is not supported for remote panels");
+            return;
+        }
         if self.panels.len() < 2 {
             self.show_message("Need at least 2 panels for diff");
             return;
@@ -2148,6 +2526,10 @@ impl App {
     }
 
     pub fn show_file_info(&mut self) {
+        if self.active_panel().is_remote() {
+            self.show_message("File info is not available for remote files");
+            return;
+        }
         // Clone necessary data first to avoid borrow issues
         let (file_path, is_directory, is_dotdot) = {
             let panel = self.active_panel();
@@ -2182,6 +2564,10 @@ impl App {
     }
 
     pub fn view_file(&mut self) {
+        if self.active_panel().is_remote() {
+            self.show_message("Cannot view remote files directly. Use copy to download first.");
+            return;
+        }
         let panel = self.active_panel();
         if let Some(file) = panel.current_file() {
             if !file.is_directory {
@@ -2251,26 +2637,155 @@ impl App {
         }
     }
 
-    pub fn edit_file(&mut self) {
+    /// 원격 파일의 로컬 tmp 경로 생성
+    fn remote_tmp_path(&self, file_name: &str) -> Option<PathBuf> {
         let panel = self.active_panel();
-        if let Some(file) = panel.current_file() {
-            if !file.is_directory {
-                let path = panel.path.join(&file.name);
+        let remote_path = format!("{}/{}", panel.path.display(), file_name);
+        if let Some(ref ctx) = panel.remote_ctx {
+            let tmp_base = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join(".cokacdir").join("tmp")
+                .join(format!("{}@{}", ctx.profile.user, ctx.profile.host));
+            Some(tmp_base.join(remote_path.trim_start_matches('/')))
+        } else {
+            None
+        }
+    }
 
-                // 새로운 고급 편집기 사용
-                let mut editor = EditorState::new();
-                editor.set_syntax_colors(self.theme.syntax);
-                match editor.load_file(&path) {
-                    Ok(_) => {
-                        self.editor_state = Some(editor);
-                        self.current_screen = Screen::FileEditor;
-                    }
-                    Err(e) => {
-                        self.show_message(&format!("Cannot open file: {}", e));
-                    }
+    /// 원격 파일을 tmp로 다운로드 (프로그레스 표시) 후 편집기/뷰어로 열기
+    fn download_for_remote_open(&mut self, file_name: &str, file_size: u64, open_action: PendingRemoteOpen) {
+        let panel_index = self.active_panel_index;
+        let panel = &self.panels[panel_index];
+        let remote_path = format!("{}/{}", panel.path.display(), file_name);
+
+        let (profile, tmp_path) = if let Some(ref ctx) = panel.remote_ctx {
+            let tmp_base = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join(".cokacdir").join("tmp")
+                .join(format!("{}@{}", ctx.profile.user, ctx.profile.host));
+            let tmp_path = tmp_base.join(remote_path.trim_start_matches('/'));
+            (ctx.profile.clone(), tmp_path)
+        } else { return; };
+
+        // 디렉토리 생성
+        if let Some(parent) = tmp_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                self.show_message(&format!("Cannot create tmp dir: {}", e));
+                return;
+            }
+        }
+
+        // 프로그레스 설정
+        let mut progress = FileOperationProgress::new(file_ops::FileOperationType::Download);
+        progress.is_active = true;
+        let cancel_flag = progress.cancel_flag.clone();
+        let (tx, rx) = mpsc::channel();
+        progress.receiver = Some(rx);
+
+        let tmp_path_clone = tmp_path.clone();
+        let remote_path_clone = remote_path.clone();
+        let file_name_owned = file_name.to_string();
+
+        thread::spawn(move || {
+            let _ = tx.send(file_ops::ProgressMessage::Preparing(
+                format!("Connecting to {}...", profile.host),
+            ));
+
+            // 새 SFTP 세션 연결
+            let session = match remote::SftpSession::connect(&profile) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(file_ops::ProgressMessage::Error(
+                        file_name_owned.clone(), format!("Connection failed: {}", e),
+                    ));
+                    let _ = tx.send(file_ops::ProgressMessage::Completed(0, 1));
+                    return;
                 }
-            } else {
-                self.show_message("Select a file to edit");
+            };
+
+            let _ = tx.send(file_ops::ProgressMessage::PrepareComplete);
+            let _ = tx.send(file_ops::ProgressMessage::FileStarted(file_name_owned.clone()));
+            let _ = tx.send(file_ops::ProgressMessage::TotalProgress(0, 1, 0, file_size));
+
+            // 프로그레스 콜백과 함께 다운로드
+            let local_path_str = tmp_path_clone.display().to_string();
+            match session.download_file_with_progress(
+                &remote_path_clone,
+                &local_path_str,
+                file_size,
+                &cancel_flag,
+                |downloaded, total| {
+                    let _ = tx.send(file_ops::ProgressMessage::FileProgress(downloaded, total));
+                },
+            ) {
+                Ok(_) => {
+                    let _ = tx.send(file_ops::ProgressMessage::FileCompleted(file_name_owned));
+                    let _ = tx.send(file_ops::ProgressMessage::TotalProgress(1, 1, file_size, file_size));
+                    let _ = tx.send(file_ops::ProgressMessage::Completed(1, 0));
+                }
+                Err(e) => {
+                    let _ = tx.send(file_ops::ProgressMessage::Error(
+                        file_name_owned, e,
+                    ));
+                    let _ = tx.send(file_ops::ProgressMessage::Completed(0, 1));
+                }
+            }
+        });
+
+        self.pending_remote_open = Some(open_action);
+        self.file_operation_progress = Some(progress);
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::Progress,
+            input: String::new(),
+            cursor_pos: 0,
+            message: String::new(),
+            completion: None,
+            selected_button: 0,
+            selection: None,
+        });
+    }
+
+    pub fn edit_file(&mut self) {
+        if self.active_panel().is_remote() {
+            let panel = self.active_panel();
+            let file = match panel.current_file() {
+                Some(f) if !f.is_directory => f.clone(),
+                Some(_) => { self.show_message("Select a file to edit"); return; }
+                None => return,
+            };
+            let remote_path = format!("{}/{}", panel.path.display(), file.name);
+            let panel_index = self.active_panel_index;
+            let tmp_path = self.remote_tmp_path(&file.name);
+            let tmp_path = match tmp_path {
+                Some(p) => p,
+                None => return,
+            };
+            self.download_for_remote_open(&file.name, file.size, PendingRemoteOpen::Editor {
+                tmp_path,
+                panel_index,
+                remote_path,
+            });
+        } else {
+            // 로컬 파일: 기존 로직
+            let panel = self.active_panel();
+            if let Some(file) = panel.current_file() {
+                if !file.is_directory {
+                    let path = panel.path.join(&file.name);
+
+                    let mut editor = EditorState::new();
+                    editor.set_syntax_colors(self.theme.syntax);
+                    match editor.load_file(&path) {
+                        Ok(_) => {
+                            self.editor_state = Some(editor);
+                            self.current_screen = Screen::FileEditor;
+                        }
+                        Err(e) => {
+                            self.show_message(&format!("Cannot open file: {}", e));
+                        }
+                    }
+                } else {
+                    self.show_message("Select a file to edit");
+                }
             }
         }
     }
@@ -2286,11 +2801,13 @@ impl App {
         } else {
             format!("{} and {} more", files[..2].join(", "), files.len() - 2)
         };
-        let path_str = self.target_panel().path.display().to_string();
-        let target = if path_str.ends_with('/') {
-            path_str
+        // For remote target panels, show user@host:/path format
+        let target = if self.target_panel().is_remote() {
+            let display = self.target_panel().display_path();
+            if display.ends_with('/') { display } else { format!("{}/", display) }
         } else {
-            format!("{}/", path_str)
+            let path_str = self.target_panel().path.display().to_string();
+            if path_str.ends_with('/') { path_str } else { format!("{}/", path_str) }
         };
         let cursor_pos = target.chars().count();
         self.dialog = Some(Dialog {
@@ -2315,11 +2832,13 @@ impl App {
         } else {
             format!("{} and {} more", files[..2].join(", "), files.len() - 2)
         };
-        let path_str = self.target_panel().path.display().to_string();
-        let target = if path_str.ends_with('/') {
-            path_str
+        // For remote target panels, show user@host:/path format
+        let target = if self.target_panel().is_remote() {
+            let display = self.target_panel().display_path();
+            if display.ends_with('/') { display } else { format!("{}/", display) }
         } else {
-            format!("{}/", path_str)
+            let path_str = self.target_panel().path.display().to_string();
+            if path_str.ends_with('/') { path_str } else { format!("{}/", path_str) }
         };
         let cursor_pos = target.chars().count();
         self.dialog = Some(Dialog {
@@ -2460,7 +2979,7 @@ impl App {
     }
 
     pub fn show_goto_dialog(&mut self) {
-        let current_path = self.active_panel().path.display().to_string();
+        let current_path = self.active_panel().display_path();
         let len = current_path.chars().count();
         self.dialog = Some(Dialog {
             dialog_type: DialogType::Goto,
@@ -2727,8 +3246,12 @@ impl App {
 
         let source_path = self.active_panel().path.clone();
 
-        // Check for sensitive symlinks
-        let sensitive_symlinks = file_ops::filter_sensitive_symlinks_for_copy(&source_path, &files);
+        // Skip sensitive symlink check for remote sources (local filesystem check is invalid)
+        let sensitive_symlinks = if self.active_panel().is_remote() {
+            Vec::new()
+        } else {
+            file_ops::filter_sensitive_symlinks_for_copy(&source_path, &files)
+        };
 
         if !sensitive_symlinks.is_empty() {
             // Show confirmation dialog
@@ -2750,30 +3273,39 @@ impl App {
             return;
         }
 
-        // Detect conflicts (files that already exist at destination)
-        let conflicts = self.detect_operation_conflicts(&source_path, target_path, &files);
+        // Detect conflicts (skip for remote targets — local exists() check is invalid)
+        let source_remote = self.active_panel().is_remote();
+        let target_panel_idx = 1 - self.active_panel_index;
+        let target_remote = self.panels.get(target_panel_idx)
+            .map(|p| p.is_remote())
+            .unwrap_or(false);
 
-        if !conflicts.is_empty() {
-            // Create temporary clipboard for conflict resolution
-            let clipboard = Clipboard {
-                files: files.clone(),
-                source_path: source_path.clone(),
-                operation: ClipboardOperation::Copy,
-            };
-            self.conflict_state = Some(ConflictState {
-                conflicts,
-                current_index: 0,
-                files_to_overwrite: Vec::new(),
-                files_to_skip: Vec::new(),
-                clipboard_backup: Some(clipboard),
-                is_move_operation: false,
-                target_path: target_path.to_path_buf(),
-            });
-            self.show_duplicate_conflict_dialog();
-            return;
+        if !source_remote && !target_remote {
+            let conflicts = self.detect_operation_conflicts(&source_path, target_path, &files);
+
+            if !conflicts.is_empty() {
+                // Create temporary clipboard for conflict resolution
+                let clipboard = Clipboard {
+                    files: files.clone(),
+                    source_path: source_path.clone(),
+                    operation: ClipboardOperation::Copy,
+                    source_remote_profile: None,
+                };
+                self.conflict_state = Some(ConflictState {
+                    conflicts,
+                    current_index: 0,
+                    files_to_overwrite: Vec::new(),
+                    files_to_skip: Vec::new(),
+                    clipboard_backup: Some(clipboard),
+                    is_move_operation: false,
+                    target_path: target_path.to_path_buf(),
+                });
+                self.show_duplicate_conflict_dialog();
+                return;
+            }
         }
 
-        // No conflicts - proceed directly
+        // No conflicts or remote transfer - proceed directly
         self.execute_copy_to_with_progress_internal(target_path);
     }
 
@@ -2788,6 +3320,13 @@ impl App {
         let source_path = self.active_panel().path.clone();
         let target_path = target_path.to_path_buf();
 
+        let source_remote = self.active_panel().is_remote();
+        // Detect if target is on a remote panel by checking the other panel
+        let target_panel_idx = 1 - self.active_panel_index;
+        let target_remote = self.panels.get(target_panel_idx)
+            .map(|p| p.is_remote())
+            .unwrap_or(false);
+
         // Create progress state
         let mut progress = FileOperationProgress::new(FileOperationType::Copy);
         progress.is_active = true;
@@ -2800,18 +3339,55 @@ impl App {
         // Convert files to PathBuf
         let file_paths: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
 
-        // Start copy in background thread (empty overwrite/skip sets for F5 dialog copy)
-        thread::spawn(move || {
-            file_ops::copy_files_with_progress(
-                file_paths,
-                &source_path,
-                &target_path,
-                HashSet::new(),
-                HashSet::new(),
-                cancel_flag,
-                tx,
-            );
-        });
+        if source_remote || target_remote {
+            // Remote transfer: use rsync/scp
+            let profile = if source_remote {
+                self.active_panel().remote_ctx.as_ref().map(|c| c.profile.clone())
+            } else {
+                // Use the other panel's remote profile
+                self.panels.get(target_panel_idx)
+                    .and_then(|p| p.remote_ctx.as_ref().map(|c| c.profile.clone()))
+            };
+
+            if let Some(profile) = profile {
+                let direction = if source_remote {
+                    remote_transfer::TransferDirection::RemoteToLocal
+                } else {
+                    remote_transfer::TransferDirection::LocalToRemote
+                };
+
+                let source_base = source_path.display().to_string();
+                let target = target_path.display().to_string();
+
+                let config = remote_transfer::TransferConfig {
+                    direction,
+                    profile,
+                    source_files: file_paths,
+                    source_base,
+                    target_path: target,
+                };
+
+                thread::spawn(move || {
+                    remote_transfer::transfer_files_with_progress(config, cancel_flag, tx);
+                });
+            } else {
+                self.show_message("Error: Remote profile not found");
+                return;
+            }
+        } else {
+            // Local copy
+            thread::spawn(move || {
+                file_ops::copy_files_with_progress(
+                    file_paths,
+                    &source_path,
+                    &target_path,
+                    HashSet::new(),
+                    HashSet::new(),
+                    cancel_flag,
+                    tx,
+                );
+            });
+        }
 
         // Store progress state and show dialog
         self.file_operation_progress = Some(progress);
@@ -2858,6 +3434,10 @@ impl App {
 
     /// Execute move with progress dialog (with sensitive symlink check)
     pub fn execute_move_to_with_progress(&mut self, target_path: &Path) {
+        if self.active_panel().is_remote() {
+            self.show_message("Move is not supported on remote panels. Use copy instead.");
+            return;
+        }
         let files = self.get_operation_files();
         if files.is_empty() {
             self.show_message("No files selected");
@@ -2898,6 +3478,7 @@ impl App {
                 files: files.clone(),
                 source_path: source_path.clone(),
                 operation: ClipboardOperation::Cut,
+                source_remote_profile: None,
             };
             self.conflict_state = Some(ConflictState {
                 conflicts,
@@ -2988,15 +3569,39 @@ impl App {
 
         let files = self.get_operation_files();
         let source_path = self.active_panel().path.clone();
+        let is_remote = self.active_panel().is_remote();
 
         let mut success_count = 0;
         let mut last_error = String::new();
 
-        for file_name in &files {
-            let path = source_path.join(file_name);
-            match file_ops::delete_file(&path) {
-                Ok(_) => success_count += 1,
-                Err(e) => last_error = e.to_string(),
+        if is_remote {
+            // Remote delete via SFTP
+            let remote_base = source_path.display().to_string();
+            for file_name in &files {
+                let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), file_name);
+                let is_dir = self.active_panel().files.iter()
+                    .find(|f| f.name == *file_name)
+                    .map(|f| f.is_directory)
+                    .unwrap_or(false);
+
+                let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
+                    ctx.session.remove(&remote_path, is_dir)
+                } else {
+                    Err("Not connected".to_string())
+                };
+
+                match result {
+                    Ok(_) => success_count += 1,
+                    Err(e) => last_error = e,
+                }
+            }
+        } else {
+            for file_name in &files {
+                let path = source_path.join(file_name);
+                match file_ops::delete_file(&path) {
+                    Ok(_) => success_count += 1,
+                    Err(e) => last_error = e.to_string(),
+                }
             }
         }
 
@@ -3019,12 +3624,14 @@ impl App {
         }
 
         let source_path = self.active_panel().path.clone();
+        let source_remote_profile = self.active_panel().remote_ctx.as_ref().map(|c| c.profile.clone());
         let count = files.len();
 
         self.clipboard = Some(Clipboard {
             files,
             source_path,
             operation: ClipboardOperation::Copy,
+            source_remote_profile,
         });
 
         self.show_message(&format!("{} file(s) copied to clipboard", count));
@@ -3039,12 +3646,14 @@ impl App {
         }
 
         let source_path = self.active_panel().path.clone();
+        let source_remote_profile = self.active_panel().remote_ctx.as_ref().map(|c| c.profile.clone());
         let count = files.len();
 
         self.clipboard = Some(Clipboard {
             files,
             source_path,
             operation: ClipboardOperation::Cut,
+            source_remote_profile,
         });
 
         self.show_message(&format!("{} file(s) cut to clipboard", count));
@@ -3060,6 +3669,77 @@ impl App {
             }
         };
 
+        let source_is_remote = clipboard.source_remote_profile.is_some();
+        let target_is_remote = self.active_panel().is_remote();
+        let target_remote_profile = self.active_panel().remote_ctx.as_ref().map(|c| c.profile.clone());
+
+        // Remote involved — use remote transfer path (no conflict detection for remote)
+        if source_is_remote || target_is_remote {
+            if clipboard.operation == ClipboardOperation::Cut {
+                self.clipboard = Some(clipboard);
+                self.show_message("Move (cut) is not supported for remote transfers");
+                return;
+            }
+
+            let profile = if source_is_remote {
+                clipboard.source_remote_profile.clone()
+            } else {
+                target_remote_profile
+            };
+
+            let Some(profile) = profile else {
+                self.clipboard = Some(clipboard);
+                self.show_message("Remote profile not found");
+                return;
+            };
+
+            let direction = if source_is_remote {
+                remote_transfer::TransferDirection::RemoteToLocal
+            } else {
+                remote_transfer::TransferDirection::LocalToRemote
+            };
+
+            let target_path = self.active_panel().path.clone();
+            let valid_files: Vec<String> = clipboard.files.clone();
+            let file_paths: Vec<PathBuf> = valid_files.iter().map(PathBuf::from).collect();
+            let source_base = clipboard.source_path.display().to_string();
+            let target = target_path.display().to_string();
+
+            let mut progress = FileOperationProgress::new(FileOperationType::Copy);
+            progress.is_active = true;
+            let cancel_flag = progress.cancel_flag.clone();
+            let (tx, rx) = mpsc::channel();
+            progress.receiver = Some(rx);
+
+            let config = remote_transfer::TransferConfig {
+                direction,
+                profile,
+                source_files: file_paths,
+                source_base,
+                target_path: target,
+            };
+
+            thread::spawn(move || {
+                remote_transfer::transfer_files_with_progress(config, cancel_flag, tx);
+            });
+
+            self.file_operation_progress = Some(progress);
+            self.dialog = Some(Dialog {
+                dialog_type: DialogType::Progress,
+                input: String::new(),
+                cursor_pos: 0,
+                message: String::new(),
+                completion: None,
+                selected_button: 0,
+                selection: None,
+            });
+
+            // Keep clipboard for copy operations
+            self.clipboard = Some(clipboard);
+            return;
+        }
+
+        // Both local — existing local paste logic
         let target_path = self.active_panel().path.clone();
 
         // Check if source and target are the same (use canonical paths for robustness)
@@ -3586,6 +4266,27 @@ impl App {
             return;
         }
 
+        if self.active_panel().is_remote() {
+            // Remote mkdir via SFTP
+            let remote_base = self.active_panel().path.display().to_string();
+            let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), name);
+            let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
+                ctx.session.mkdir(&remote_path)
+            } else {
+                Err("Not connected".to_string())
+            };
+
+            match result {
+                Ok(_) => {
+                    self.active_panel_mut().pending_focus = Some(name.to_string());
+                    self.show_message(&format!("Created directory: {}", name));
+                }
+                Err(e) => self.show_message(&format!("Error: {}", e)),
+            }
+            self.refresh_panels();
+            return;
+        }
+
         let path = self.active_panel().path.join(name);
 
         // Additional check: ensure the resulting path is within the current directory
@@ -3618,6 +4319,27 @@ impl App {
         // Validate filename to prevent path traversal attacks
         if let Err(e) = file_ops::is_valid_filename(name) {
             self.show_message(&format!("Error: {}", e));
+            return;
+        }
+
+        if self.active_panel().is_remote() {
+            // Remote file creation via SFTP
+            let remote_base = self.active_panel().path.display().to_string();
+            let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), name);
+            let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
+                ctx.session.create_file(&remote_path)
+            } else {
+                Err("Not connected".to_string())
+            };
+
+            match result {
+                Ok(_) => {
+                    self.active_panel_mut().pending_focus = Some(name.to_string());
+                    self.show_message(&format!("Created file: {}", name));
+                }
+                Err(e) => self.show_message(&format!("Error: {}", e)),
+            }
+            self.refresh_panels();
             return;
         }
 
@@ -3660,7 +4382,31 @@ impl App {
         }
 
         if let Some(file) = self.active_panel().current_file() {
-            let old_path = self.active_panel().path.join(&file.name);
+            let old_name = file.name.clone();
+
+            if self.active_panel().is_remote() {
+                // Remote rename via SFTP
+                let remote_base = self.active_panel().path.display().to_string();
+                let old_remote = format!("{}/{}", remote_base.trim_end_matches('/'), old_name);
+                let new_remote = format!("{}/{}", remote_base.trim_end_matches('/'), new_name);
+                let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
+                    ctx.session.rename(&old_remote, &new_remote)
+                } else {
+                    Err("Not connected".to_string())
+                };
+
+                match result {
+                    Ok(_) => {
+                        self.active_panel_mut().pending_focus = Some(new_name.to_string());
+                        self.show_message(&format!("Renamed to: {}", new_name));
+                    }
+                    Err(e) => self.show_message(&format!("Error: {}", e)),
+                }
+                self.refresh_panels();
+                return;
+            }
+
+            let old_path = self.active_panel().path.join(&old_name);
             let new_path = self.active_panel().path.join(new_name);
 
             // Additional check: ensure the new path stays within the current directory
@@ -3688,6 +4434,10 @@ impl App {
     }
 
     pub fn execute_tar(&mut self, archive_name: &str) {
+        if self.active_panel().is_remote() {
+            self.show_message("Archive creation is not supported on remote panels");
+            return;
+        }
         // Fast validations only (no I/O or external processes)
         if let Err(e) = file_ops::is_valid_filename(archive_name) {
             self.show_message(&format!("Error: {}", e));
@@ -4080,6 +4830,10 @@ impl App {
 
     /// Execute archive extraction with progress display
     pub fn execute_untar(&mut self, archive_path: &std::path::Path) {
+        if self.active_panel().is_remote() {
+            self.show_message("Archive extraction is not supported on remote panels");
+            return;
+        }
         use std::process::{Command, Stdio};
         use std::io::BufReader;
 
@@ -4390,6 +5144,10 @@ impl App {
     }
 
     pub fn execute_search(&mut self, term: &str) {
+        if self.active_panel().is_remote() {
+            self.show_message("Search is not supported on remote panels");
+            return;
+        }
         if term.trim().is_empty() {
             self.show_message("Please enter a search term");
             return;
@@ -4421,6 +5179,31 @@ impl App {
     }
 
     pub fn execute_goto(&mut self, path_str: &str) {
+        // Check if this is a remote path (user@host:/path)
+        if let Some((user, host, port, remote_path)) = remote::parse_remote_path(path_str) {
+            self.execute_goto_remote(&user, &host, port, &remote_path);
+            return;
+        }
+
+        // If the current panel is remote:
+        // - ~ should disconnect and go local home
+        // - / or absolute paths are remote navigation
+        // - Relative paths are remote navigation
+        if self.active_panel().is_remote() {
+            if path_str == "~" {
+                // Just go to local home - disconnect handles navigation
+                self.disconnect_remote_panel();
+                return;
+            } else if path_str.starts_with("~/") {
+                // Disconnect and fall through to local goto for ~/subdir
+                self.disconnect_remote_panel();
+            } else {
+                // Navigate within remote (absolute or relative)
+                self.execute_goto_remote_relative(path_str);
+                return;
+            }
+        }
+
         // Security: Check for path traversal attempts
         if path_str.contains("..") {
             // Normalize the path to resolve .. components
@@ -4493,6 +5276,99 @@ impl App {
         } else {
             self.show_message("Error: Path not found or not accessible");
         }
+    }
+
+    /// Handle goto for remote path (user@host:/path)
+    fn execute_goto_remote(&mut self, user: &str, host: &str, port: u16, remote_path: &str) {
+        // Check if we have a matching saved profile
+        if let Some(profile) = remote::find_matching_profile(&self.settings.remote_profiles, user, host, port) {
+            // Use saved profile credentials to connect
+            let profile = profile.clone();
+            let path = if remote_path == "/" && !profile.default_path.is_empty() {
+                profile.default_path.clone()
+            } else {
+                remote_path.to_string()
+            };
+            self.connect_remote_panel(&profile, &path);
+        } else {
+            // No saved profile — show remote connect dialog for auth
+            let state = RemoteConnectState::from_parsed(user, host, port, remote_path);
+            self.remote_connect_state = Some(state);
+            self.dialog = Some(Dialog {
+                dialog_type: DialogType::RemoteConnect,
+                input: String::new(),
+                cursor_pos: 0,
+                message: format!("Connect to {}@{}:{}", user, host, port),
+                completion: None,
+                selected_button: 0,
+                selection: None,
+            });
+        }
+    }
+
+    /// Handle goto for relative path on a remote panel
+    fn execute_goto_remote_relative(&mut self, path_str: &str) {
+        let current = self.active_panel().path.display().to_string();
+        let new_path = if path_str == ".." {
+            // Go to parent directory
+            if current == "/" {
+                return;
+            }
+            let parent = std::path::Path::new(&current)
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "/".to_string());
+            parent
+        } else if path_str.starts_with('/') {
+            path_str.to_string()
+        } else {
+            format!("{}/{}", current.trim_end_matches('/'), path_str)
+        };
+
+        let panel = self.active_panel_mut();
+        panel.path = PathBuf::from(&new_path);
+        panel.selected_index = 0;
+        panel.selected_files.clear();
+        panel.load_files();
+    }
+
+    /// Connect a panel to a remote server
+    pub fn connect_remote_panel(&mut self, profile: &remote::RemoteProfile, path: &str) {
+        self.show_message(&format!("Connecting to {}@{}...", profile.user, profile.host));
+
+        match remote::SftpSession::connect(profile) {
+            Ok(session) => {
+                let ctx = RemoteContext {
+                    profile: profile.clone(),
+                    session,
+                    status: ConnectionStatus::Connected,
+                };
+                let panel = self.active_panel_mut();
+                panel.remote_ctx = Some(Box::new(ctx));
+                panel.path = PathBuf::from(path);
+                panel.selected_index = 0;
+                panel.selected_files.clear();
+                panel.load_files();
+                self.show_message(&format!("Connected to {}@{}", profile.user, profile.host));
+            }
+            Err(e) => {
+                self.show_message(&format!("Connection failed: {}", e));
+            }
+        }
+    }
+
+    /// Disconnect remote panel and switch back to local
+    pub fn disconnect_remote_panel(&mut self) {
+        let panel = self.active_panel_mut();
+        if let Some(mut ctx) = panel.remote_ctx.take() {
+            ctx.session.disconnect();
+        }
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        panel.path = home;
+        panel.selected_index = 0;
+        panel.selected_files.clear();
+        panel.load_files();
+        self.show_message("Disconnected from remote server");
     }
 
     /// 디렉토리로 이동하고 특정 파일에 커서를 위치시킴
