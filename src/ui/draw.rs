@@ -186,6 +186,13 @@ fn draw_panels(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
                 if let Some(ref ctx) = app.panels[i].remote_ctx {
                     let remote_str = remote::format_remote_display(&ctx.profile, &path_str);
                     app.settings.bookmarked_path.contains(&remote_str)
+                } else if let Some((ref user, ref host, port)) = app.panels[i].remote_display {
+                    let remote_str = if port != 22 {
+                        format!("{}@{}:{}:{}", user, host, port, path_str)
+                    } else {
+                        format!("{}@{}:{}", user, host, path_str)
+                    };
+                    app.settings.bookmarked_path.contains(&remote_str)
                 } else {
                     false
                 }

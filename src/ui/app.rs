@@ -832,6 +832,21 @@ pub enum RemoteSpinnerResult {
         result: Result<ConnectSuccess, String>,
         panel_idx: usize,
     },
+    /// Local background operation completed (no remote ctx)
+    LocalOp {
+        message: Result<String, String>,
+        reload: bool,
+    },
+    /// Search completed
+    SearchComplete {
+        results: Vec<crate::ui::search_result::SearchResultItem>,
+        search_term: String,
+        base_path: PathBuf,
+    },
+    /// Git log diff preparation completed
+    GitDiffComplete {
+        result: Result<(PathBuf, PathBuf), String>,
+    },
 }
 
 /// Outcome variants for panel operations
@@ -846,6 +861,8 @@ pub enum PanelOpOutcome {
     ListDir {
         entries: Result<Vec<SftpFileEntry>, String>,
         path: PathBuf,
+        /// Previous path for rollback on failure (None = refresh, no rollback needed)
+        old_path: Option<PathBuf>,
     },
     /// dir_exists result
     DirExists {
@@ -877,6 +894,8 @@ pub struct PanelState {
     pub disk_available: u64,
     /// Remote context — None means local panel
     pub remote_ctx: Option<Box<RemoteContext>>,
+    /// Cached remote display info (user, host, port) — survives while remote_ctx is temporarily taken
+    pub remote_display: Option<(String, String, u16)>,
 }
 
 impl PanelState {
@@ -897,6 +916,7 @@ impl PanelState {
             disk_total: 0,
             disk_available: 0,
             remote_ctx: None,
+            remote_display: None,
         };
         state.load_files();
         state
@@ -923,6 +943,7 @@ impl PanelState {
             disk_total: 0,
             disk_available: 0,
             remote_ctx: None,
+            remote_display: None,
         };
         state.load_files();
         state
@@ -930,13 +951,20 @@ impl PanelState {
 
     /// Check if this panel is connected to a remote server
     pub fn is_remote(&self) -> bool {
-        self.remote_ctx.is_some()
+        self.remote_ctx.is_some() || self.remote_display.is_some()
     }
 
     /// Get the remote display path (user@host:/path) or local path string
     pub fn display_path(&self) -> String {
         if let Some(ref ctx) = self.remote_ctx {
             remote::format_remote_display(&ctx.profile, &self.path.display().to_string())
+        } else if let Some((ref user, ref host, port)) = self.remote_display {
+            let path = self.path.display().to_string();
+            if port != 22 {
+                format!("{}@{}:{}:{}", user, host, port, path)
+            } else {
+                format!("{}@{}:{}", user, host, path)
+            }
         } else {
             self.path.display().to_string()
         }
@@ -2383,6 +2411,7 @@ impl App {
         if let Some(home) = dirs::home_dir() {
             // Disconnect remote if active panel is remote
             if self.active_panel().is_remote() {
+                if self.remote_spinner.is_some() { return; }
                 self.disconnect_remote_panel();
             }
             let panel = self.active_panel_mut();
@@ -2541,11 +2570,15 @@ impl App {
     /// Toggle bookmark for the current panel's path
     pub fn toggle_bookmark(&mut self) {
         let current_path = if self.active_panel().is_remote() {
+            let path = self.active_panel().path.display().to_string();
             if let Some(ref ctx) = self.active_panel().remote_ctx {
-                remote::format_remote_display(
-                    &ctx.profile,
-                    &self.active_panel().path.display().to_string(),
-                )
+                remote::format_remote_display(&ctx.profile, &path)
+            } else if let Some((ref user, ref host, port)) = self.active_panel().remote_display {
+                if port != 22 {
+                    format!("{}@{}:{}:{}", user, host, port, path)
+                } else {
+                    format!("{}@{}:{}", user, host, path)
+                }
             } else {
                 return;
             }
@@ -2569,9 +2602,12 @@ impl App {
         let mut remote_panel_idx = None;
         for (i, panel) in self.panels.iter_mut().enumerate() {
             panel.selected_files.clear();
-            if panel.is_remote() && panel.remote_ctx.is_some() {
-                // Don't call load_files on remote panels — use spinner instead
-                remote_panel_idx = Some(i);
+            if panel.is_remote() {
+                if panel.remote_ctx.is_some() {
+                    // Don't call load_files on remote panels — use spinner instead
+                    remote_panel_idx = Some(i);
+                }
+                // If remote_ctx is temporarily taken by background thread, skip
             } else {
                 panel.load_files();
             }
@@ -3303,53 +3339,71 @@ impl App {
             return;
         }
 
-        let diff_base = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(".cokacdir")
-            .join("diff");
+        if self.remote_spinner.is_some() { return; }
 
-        // Remove existing diff directory and recreate
-        let _ = std::fs::remove_dir_all(&diff_base);
-        if std::fs::create_dir_all(&diff_base).is_err() {
-            self.show_message("Failed to create diff directory");
-            return;
-        }
+        let project_name = state.project_name.clone();
+        let repo_path = state.repo_path.clone();
+        let (tx, rx) = mpsc::channel();
 
-        let dir1 = diff_base.join(format!("{}_{}", state.project_name, hash1));
-        let dir2 = diff_base.join(format!("{}_{}", state.project_name, hash2));
+        thread::spawn(move || {
+            let diff_base = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join(".cokacdir")
+                .join("diff");
 
-        // Copy repo to dir1 and dir2
-        for (dir, hash) in [(&dir1, &hash1), (&dir2, &hash2)] {
-            let repo_str = state.repo_path.display().to_string();
-            let dir_str = dir.display().to_string();
-            let status = std::process::Command::new("cp")
-                .args(["-a", &repo_str, &dir_str])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            if status.map(|s| !s.success()).unwrap_or(true) {
-                self.show_message("Failed to copy repository");
-                let _ = std::fs::remove_dir_all(&diff_base);
+            let _ = std::fs::remove_dir_all(&diff_base);
+            if std::fs::create_dir_all(&diff_base).is_err() {
+                let _ = tx.send(RemoteSpinnerResult::GitDiffComplete {
+                    result: Err("Failed to create diff directory".to_string()),
+                });
                 return;
             }
 
-            // git checkout the commit
-            let checkout_status = crate::ui::git_screen::git_cmd_public(dir)
-                .args(["checkout", hash.as_str()])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            if checkout_status.map(|s| !s.success()).unwrap_or(true) {
-                self.show_message(&format!("Failed to checkout {}", hash));
-                let _ = std::fs::remove_dir_all(&diff_base);
-                return;
+            let dir1 = diff_base.join(format!("{}_{}", project_name, hash1));
+            let dir2 = diff_base.join(format!("{}_{}", project_name, hash2));
+
+            for (dir, hash) in [(&dir1, &hash1), (&dir2, &hash2)] {
+                let repo_str = repo_path.display().to_string();
+                let dir_str = dir.display().to_string();
+                let status = std::process::Command::new("cp")
+                    .args(["-a", &repo_str, &dir_str])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                if status.map(|s| !s.success()).unwrap_or(true) {
+                    let _ = std::fs::remove_dir_all(&diff_base);
+                    let _ = tx.send(RemoteSpinnerResult::GitDiffComplete {
+                        result: Err("Failed to copy repository".to_string()),
+                    });
+                    return;
+                }
+
+                let checkout_status = crate::ui::git_screen::git_cmd_public(dir)
+                    .args(["checkout", hash.as_str()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                if checkout_status.map(|s| !s.success()).unwrap_or(true) {
+                    let _ = std::fs::remove_dir_all(&diff_base);
+                    let _ = tx.send(RemoteSpinnerResult::GitDiffComplete {
+                        result: Err(format!("Failed to checkout {}", hash)),
+                    });
+                    return;
+                }
+
+                let _ = std::fs::remove_dir_all(dir.join(".git"));
             }
 
-            // Remove .git directory
-            let _ = std::fs::remove_dir_all(dir.join(".git"));
-        }
+            let _ = tx.send(RemoteSpinnerResult::GitDiffComplete {
+                result: Ok((dir1, dir2)),
+            });
+        });
 
-        self.enter_diff_screen(dir1, dir2);
+        self.remote_spinner = Some(RemoteSpinner {
+            message: "Preparing diff...".to_string(),
+            started_at: Instant::now(),
+            receiver: rx,
+        });
     }
 
     #[allow(dead_code)]
@@ -3934,21 +3988,40 @@ impl App {
             });
             return;
         } else {
-            for file_name in &files {
-                let path = source_path.join(file_name);
-                match file_ops::delete_file(&path) {
-                    Ok(_) => success_count += 1,
-                    Err(e) => last_error = e.to_string(),
-                }
-            }
-        }
+            // Local delete in background thread with spinner
+            if self.remote_spinner.is_some() { return; }
+            let files_to_delete: Vec<PathBuf> = files.iter()
+                .map(|f| source_path.join(f))
+                .collect();
+            let total = files_to_delete.len();
+            let (tx, rx) = mpsc::channel();
 
-        if success_count == files.len() {
-            self.show_message(&format!("Deleted {} file(s)", success_count));
-        } else {
-            self.show_message(&format!("Deleted {}/{}. Error: {}", success_count, files.len(), last_error));
+            thread::spawn(move || {
+                let mut success_count = 0;
+                let mut last_error = String::new();
+                for path in &files_to_delete {
+                    match file_ops::delete_file(path) {
+                        Ok(_) => success_count += 1,
+                        Err(e) => last_error = e.to_string(),
+                    }
+                }
+                let msg = if success_count == total {
+                    Ok(format!("Deleted {} file(s)", success_count))
+                } else {
+                    Err(format!("Deleted {}/{}. Error: {}", success_count, total, last_error))
+                };
+                let _ = tx.send(RemoteSpinnerResult::LocalOp {
+                    message: msg,
+                    reload: true,
+                });
+            });
+
+            self.remote_spinner = Some(RemoteSpinner {
+                message: "Deleting...".to_string(),
+                started_at: Instant::now(),
+                receiver: rx,
+            });
         }
-        self.refresh_panels();
     }
 
     // ========== Clipboard operations (Ctrl+C/X/V) ==========
@@ -5614,30 +5687,32 @@ impl App {
             self.show_message("Please enter a search term");
             return;
         }
+        if self.remote_spinner.is_some() { return; }
 
-        // 재귀 검색 수행
         let base_path = self.active_panel().path.clone();
-        let results = crate::ui::search_result::execute_recursive_search(
-            &base_path,
-            term,
-            1000,  // 최대 결과 수
-        );
+        let search_term = term.to_string();
+        let base_path_clone = base_path.clone();
+        let term_clone = search_term.clone();
+        let (tx, rx) = mpsc::channel();
 
-        if results.is_empty() {
-            self.show_message(&format!("No files found matching \"{}\"", term));
-            return;
-        }
+        thread::spawn(move || {
+            let results = crate::ui::search_result::execute_recursive_search(
+                &base_path_clone,
+                &term_clone,
+                1000,
+            );
+            let _ = tx.send(RemoteSpinnerResult::SearchComplete {
+                results,
+                search_term: term_clone,
+                base_path: base_path_clone,
+            });
+        });
 
-        // 검색 결과 상태 설정
-        self.search_result_state.results = results;
-        self.search_result_state.selected_index = 0;
-        self.search_result_state.scroll_offset = 0;
-        self.search_result_state.search_term = term.to_string();
-        self.search_result_state.base_path = base_path;
-        self.search_result_state.active = true;
-
-        // 검색 결과 화면으로 전환
-        self.current_screen = Screen::SearchResult;
+        self.remote_spinner = Some(RemoteSpinner {
+            message: "Searching...".to_string(),
+            started_at: Instant::now(),
+            receiver: rx,
+        });
     }
 
     pub fn execute_goto(&mut self, path_str: &str) {
@@ -5653,6 +5728,10 @@ impl App {
         // - /absolute/path: if exists locally → disconnect and go local, otherwise remote navigation
         // - Relative paths are remote navigation
         if self.active_panel().is_remote() {
+            if self.remote_spinner.is_some() {
+                // Don't disconnect while a background operation is using remote_ctx
+                return;
+            }
             if path_str == "~" {
                 // Just go to local home - disconnect handles navigation
                 self.disconnect_remote_panel();
@@ -5864,6 +5943,7 @@ impl App {
         if let Some(mut ctx) = panel.remote_ctx.take() {
             ctx.session.disconnect();
         }
+        panel.remote_display = None;
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         panel.path = home;
         panel.selected_index = 0;
@@ -5880,6 +5960,10 @@ impl App {
             Some(ctx) => ctx,
             None => return,
         };
+        // Save old path for rollback on failure
+        let old_path = self.panels[panel_idx].path.clone();
+        // Update panel path now so header shows the new remote path during loading
+        self.panels[panel_idx].path = PathBuf::from(new_path);
         let path = new_path.to_string();
         let path_for_result = PathBuf::from(new_path);
         let (tx, rx) = mpsc::channel();
@@ -5892,6 +5976,7 @@ impl App {
                 outcome: PanelOpOutcome::ListDir {
                     entries,
                     path: path_for_result,
+                    old_path: Some(old_path),
                 },
             });
         });
@@ -5922,6 +6007,7 @@ impl App {
                 outcome: PanelOpOutcome::ListDir {
                     entries,
                     path: path_for_result,
+                    old_path: None,
                 },
             });
         });
@@ -5964,6 +6050,11 @@ impl App {
                 match result {
                     Ok(success) => {
                         let panel = &mut self.panels[panel_idx];
+                        panel.remote_display = Some((
+                            success.ctx.profile.user.clone(),
+                            success.ctx.profile.host.clone(),
+                            success.ctx.profile.port,
+                        ));
                         panel.remote_ctx = Some(success.ctx);
                         panel.selected_index = 0;
                         panel.selected_files.clear();
@@ -6021,7 +6112,7 @@ impl App {
                             }
                         }
                     }
-                    PanelOpOutcome::ListDir { entries, path } => {
+                    PanelOpOutcome::ListDir { entries, path, old_path } => {
                         match entries {
                             Ok(sftp_entries) => {
                                 let panel = &mut self.panels[panel_idx];
@@ -6033,6 +6124,10 @@ impl App {
                                 panel.apply_remote_entries(sftp_entries, &path);
                             }
                             Err(e) => {
+                                // Rollback path on failure
+                                if let Some(prev) = old_path {
+                                    self.panels[panel_idx].path = prev;
+                                }
                                 if let Some(ref mut ctx) = self.panels[panel_idx].remote_ctx {
                                     ctx.status = ConnectionStatus::Disconnected(e.clone());
                                 }
@@ -6046,6 +6141,38 @@ impl App {
                         } else {
                             self.show_extension_handler_error(&format!("Path not found: {}", target_entry));
                         }
+                    }
+                }
+            }
+            RemoteSpinnerResult::LocalOp { message, reload } => {
+                match &message {
+                    Ok(msg) => self.show_message(msg),
+                    Err(e) => self.show_message(e),
+                }
+                if reload {
+                    self.refresh_panels();
+                }
+            }
+            RemoteSpinnerResult::SearchComplete { results, search_term, base_path } => {
+                if results.is_empty() {
+                    self.show_message(&format!("No files found matching \"{}\"", search_term));
+                } else {
+                    self.search_result_state.results = results;
+                    self.search_result_state.selected_index = 0;
+                    self.search_result_state.scroll_offset = 0;
+                    self.search_result_state.search_term = search_term;
+                    self.search_result_state.base_path = base_path;
+                    self.search_result_state.active = true;
+                    self.current_screen = Screen::SearchResult;
+                }
+            }
+            RemoteSpinnerResult::GitDiffComplete { result } => {
+                match result {
+                    Ok((dir1, dir2)) => {
+                        self.enter_diff_screen(dir1, dir2);
+                    }
+                    Err(e) => {
+                        self.show_message(&e);
                     }
                 }
             }

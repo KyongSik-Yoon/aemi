@@ -238,11 +238,18 @@ pub fn draw(frame: &mut Frame, panel: &mut PanelState, area: Rect, is_active: bo
 
     if panel.is_remote() {
         // Show remote connection info instead of disk info
-        if let Some(ref ctx) = panel.remote_ctx {
+        let remote_info = if let Some(ref ctx) = panel.remote_ctx {
+            Some((ctx.profile.user.as_str(), ctx.profile.host.as_str()))
+        } else if let Some((ref user, ref host, _)) = panel.remote_display {
+            Some((user.as_str(), host.as_str()))
+        } else {
+            None
+        };
+        if let Some((user, host)) = remote_info {
             let remote_style = Style::default().fg(theme.panel.remote_indicator);
             spans.push(Span::styled(" | ", label_style));
             spans.push(Span::styled(
-                format!("{}@{}", ctx.profile.user, ctx.profile.host),
+                format!("{}@{}", user, host),
                 remote_style,
             ));
         }
