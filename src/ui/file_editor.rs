@@ -3054,28 +3054,61 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                 }
                 // state borrow ends here due to NLL — now access app freely
                 if let Some((panel_idx, remote_path)) = remote_info {
-                    let upload_msg = if let Some(panel) = app.panels.get(panel_idx) {
-                        if let Some(ref ctx) = panel.remote_ctx {
-                            match ctx.status {
-                                crate::services::remote::ConnectionStatus::Connected => {
-                                    match ctx.session.upload_file(&local_path, &remote_path) {
-                                        Ok(_) => Some(("Saved & uploaded to remote!".to_string(), 30)),
-                                        Err(e) => Some((format!("Saved locally, upload failed: {}", e), 50)),
-                                    }
-                                }
-                                crate::services::remote::ConnectionStatus::Disconnected(_) => {
-                                    Some(("Saved locally, remote connection lost".to_string(), 50))
-                                }
-                            }
-                        } else {
-                            Some(("Saved locally, remote connection was disconnected".to_string(), 50))
+                    if app.remote_spinner.is_some() {
+                        // Spinner already active — skip upload
+                        if let Some(ref mut editor) = app.editor_state {
+                            editor.set_message("Saved locally, remote upload busy".to_string(), 50);
                         }
                     } else {
-                        Some(("Saved locally, remote panel no longer available".to_string(), 50))
-                    };
-                    if let Some((msg, duration)) = upload_msg {
-                        if let Some(ref mut editor) = app.editor_state {
-                            editor.set_message(msg, duration);
+                        let is_connected = app.panels.get(panel_idx)
+                            .and_then(|p| p.remote_ctx.as_ref())
+                            .map(|ctx| matches!(ctx.status, crate::services::remote::ConnectionStatus::Connected))
+                            .unwrap_or(false);
+
+                        if is_connected {
+                            let mut ctx = match app.panels[panel_idx].remote_ctx.take() {
+                                Some(ctx) => ctx,
+                                None => {
+                                    if let Some(ref mut editor) = app.editor_state {
+                                        editor.set_message("Saved locally, remote connection was disconnected".to_string(), 50);
+                                    }
+                                    if is_settings { app.reload_settings(); }
+                                    app.refresh_panels();
+                                    return;
+                                }
+                            };
+                            let (tx, rx) = std::sync::mpsc::channel();
+
+                            std::thread::spawn(move || {
+                                let msg = match ctx.session.upload_file(&local_path, &remote_path) {
+                                    Ok(_) => Ok("Saved & uploaded to remote!".to_string()),
+                                    Err(e) => Err(format!("Saved locally, upload failed: {}", e)),
+                                };
+                                let _ = tx.send(crate::ui::app::RemoteSpinnerResult::PanelOp {
+                                    ctx,
+                                    panel_idx,
+                                    outcome: crate::ui::app::PanelOpOutcome::Simple {
+                                        message: msg,
+                                        pending_focus: None,
+                                        reload: true,
+                                    },
+                                });
+                            });
+
+                            app.remote_spinner = Some(crate::ui::app::RemoteSpinner {
+                                message: "Uploading...".to_string(),
+                                started_at: std::time::Instant::now(),
+                                receiver: rx,
+                            });
+                        } else {
+                            let msg = if app.panels.get(panel_idx).and_then(|p| p.remote_ctx.as_ref()).is_some() {
+                                "Saved locally, remote connection lost".to_string()
+                            } else {
+                                "Saved locally, remote connection was disconnected".to_string()
+                            };
+                            if let Some(ref mut editor) = app.editor_state {
+                                editor.set_message(msg, 50);
+                            }
                         }
                     }
                 }

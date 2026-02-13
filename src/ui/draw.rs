@@ -131,6 +131,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         }
     }
 
+    // Draw remote spinner overlay on top of everything
+    if let Some(ref spinner) = app.remote_spinner {
+        dialogs::draw_remote_spinner(frame, &spinner.message, area, &theme);
+    }
+
     // Update message timer
     if app.message_timer > 0 {
         app.message_timer -= 1;

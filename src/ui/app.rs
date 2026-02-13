@@ -10,7 +10,7 @@ use chrono::{DateTime, Local};
 
 use crate::config::Settings;
 use crate::services::file_ops::{self, FileOperationType, ProgressMessage, FileOperationResult};
-use crate::services::remote::{self, RemoteContext, ConnectionStatus};
+use crate::services::remote::{self, RemoteContext, RemoteProfile, ConnectionStatus, SftpFileEntry};
 use crate::services::remote_transfer;
 use crate::ui::file_viewer::ViewerState;
 use crate::ui::file_editor::EditorState;
@@ -812,6 +812,57 @@ pub fn sort_order_to_string(sort_order: SortOrder) -> String {
     }
 }
 
+/// Remote operation spinner — shows a spinning indicator while a remote operation runs in background
+pub struct RemoteSpinner {
+    pub message: String,
+    pub started_at: Instant,
+    pub receiver: Receiver<RemoteSpinnerResult>,
+}
+
+/// Result from a background remote operation
+pub enum RemoteSpinnerResult {
+    /// Operation on an existing connection (ctx returned)
+    PanelOp {
+        ctx: Box<RemoteContext>,
+        panel_idx: usize,
+        outcome: PanelOpOutcome,
+    },
+    /// New connection completed
+    Connected {
+        result: Result<ConnectSuccess, String>,
+        panel_idx: usize,
+    },
+}
+
+/// Outcome variants for panel operations
+pub enum PanelOpOutcome {
+    /// mkdir, mkfile, rename, remove, upload → reload needed
+    Simple {
+        message: Result<String, String>,
+        pending_focus: Option<String>,
+        reload: bool,
+    },
+    /// list_dir result
+    ListDir {
+        entries: Result<Vec<SftpFileEntry>, String>,
+        path: PathBuf,
+    },
+    /// dir_exists result
+    DirExists {
+        exists: bool,
+        target_entry: String,
+    },
+}
+
+/// Successful connection data
+pub struct ConnectSuccess {
+    pub ctx: Box<RemoteContext>,
+    pub entries: Vec<SftpFileEntry>,
+    pub path: String,
+    pub fallback_msg: Option<String>,
+    pub profile: RemoteProfile,
+}
+
 #[derive(Debug)]
 pub struct PanelState {
     pub path: PathBuf,
@@ -1027,6 +1078,45 @@ impl PanelState {
         self.disk_available = 0;
     }
 
+    /// Apply remote directory listing results (no network call)
+    pub fn apply_remote_entries(&mut self, entries: Vec<SftpFileEntry>, path: &Path) {
+        self.files.clear();
+        self.path = path.to_path_buf();
+
+        let remote_path = path.display().to_string();
+        // Always add parent directory entry for remote paths
+        if remote_path != "/" {
+            self.files.push(FileItem {
+                name: "..".to_string(),
+                is_directory: true,
+                is_symlink: false,
+                size: 0,
+                modified: Local::now(),
+                permissions: String::new(),
+            });
+        }
+
+        let mut items: Vec<FileItem> = entries
+            .into_iter()
+            .map(|entry| FileItem {
+                name: entry.name,
+                is_directory: entry.is_directory,
+                is_symlink: entry.is_symlink,
+                size: if entry.is_directory { 0 } else { entry.size },
+                modified: entry.modified,
+                permissions: entry.permissions,
+            })
+            .collect();
+
+        self.sort_items(&mut items);
+        self.files.reserve(items.len());
+        self.files.extend(items);
+
+        self.finalize_load();
+        self.disk_total = 0;
+        self.disk_available = 0;
+    }
+
     /// Sort file items (shared between local and remote)
     fn sort_items(&self, items: &mut Vec<FileItem>) {
         items.sort_by(|a, b| {
@@ -1125,7 +1215,30 @@ impl PanelState {
             self.sort_order = SortOrder::Asc;
         }
         self.selected_index = 0;
-        self.load_files();
+        if self.is_remote() {
+            // Re-sort existing items locally (no network call)
+            let mut items: Vec<FileItem> = self.files.drain(..)
+                .filter(|f| f.name != "..")
+                .collect();
+            // Re-add ".." entry
+            let remote_path = self.path.display().to_string();
+            if remote_path != "/" {
+                self.files.push(FileItem {
+                    name: "..".to_string(),
+                    is_directory: true,
+                    is_symlink: false,
+                    size: 0,
+                    modified: Local::now(),
+                    permissions: String::new(),
+                });
+            }
+            self.sort_items(&mut items);
+            self.files.reserve(items.len());
+            self.files.extend(items);
+            self.finalize_load();
+        } else {
+            self.load_files();
+        }
     }
 }
 
@@ -1272,6 +1385,9 @@ pub struct App {
 
     // Pending remote download → open action
     pub pending_remote_open: Option<PendingRemoteOpen>,
+
+    // Remote operation spinner (SSH/SFTP background task)
+    pub remote_spinner: Option<RemoteSpinner>,
 }
 
 impl App {
@@ -1346,6 +1462,7 @@ impl App {
             git_screen_state: None,
             git_log_diff_state: None,
             pending_remote_open: None,
+            remote_spinner: None,
         }
     }
 
@@ -1441,6 +1558,7 @@ impl App {
             git_screen_state: None,
             git_log_diff_state: None,
             pending_remote_open: None,
+            remote_spinner: None,
         }
     }
 
@@ -1750,6 +1868,38 @@ impl App {
     }
 
     pub fn enter_selected(&mut self) {
+        // Check for remote directory navigation first (to avoid borrow conflicts)
+        let remote_nav = {
+            let panel = &self.panels[self.active_panel_index];
+            if let Some(file) = panel.current_file().cloned() {
+                if file.is_directory && panel.is_remote() {
+                    let (new_path, focus) = if file.name == ".." {
+                        let focus = panel.path.file_name()
+                            .map(|n| n.to_string_lossy().to_string());
+                        let parent = panel.path.parent()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "/".to_string());
+                        (parent, focus)
+                    } else {
+                        (panel.path.join(&file.name).display().to_string(), None)
+                    };
+                    Some((new_path, focus))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some((new_path, focus)) = remote_nav {
+            if let Some(focus_name) = focus {
+                self.active_panel_mut().pending_focus = Some(focus_name);
+            }
+            self.spawn_remote_list_dir(&new_path);
+            return;
+        }
+
         let panel = self.active_panel_mut();
         if let Some(file) = panel.current_file().cloned() {
             if file.is_directory {
@@ -2203,6 +2353,19 @@ impl App {
     }
 
     pub fn go_to_parent(&mut self) {
+        if self.active_panel().is_remote() {
+            // Remote parent navigation — use spinner
+            let focus = self.active_panel().path.file_name()
+                .map(|n| n.to_string_lossy().to_string());
+            let parent = self.active_panel().path.parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "/".to_string());
+            if let Some(focus_name) = focus {
+                self.active_panel_mut().pending_focus = Some(focus_name);
+            }
+            self.spawn_remote_list_dir(&parent);
+            return;
+        }
         let panel = self.active_panel_mut();
         if let Some(current_name) = panel.path.file_name() {
             panel.pending_focus = Some(current_name.to_string_lossy().to_string());
@@ -2402,9 +2565,22 @@ impl App {
     }
 
     pub fn refresh_panels(&mut self) {
-        for panel in &mut self.panels {
+        // Check if any panel is remote and needs async refresh
+        let mut remote_panel_idx = None;
+        for (i, panel) in self.panels.iter_mut().enumerate() {
             panel.selected_files.clear();
-            panel.load_files();
+            if panel.is_remote() && panel.remote_ctx.is_some() {
+                // Don't call load_files on remote panels — use spinner instead
+                remote_panel_idx = Some(i);
+            } else {
+                panel.load_files();
+            }
+        }
+        // Spawn async refresh for the first remote panel found
+        if let Some(idx) = remote_panel_idx {
+            if self.remote_spinner.is_none() {
+                self.spawn_remote_refresh(idx);
+            }
         }
     }
 
@@ -3706,26 +3882,57 @@ impl App {
         let mut last_error = String::new();
 
         if is_remote {
-            // Remote delete via SFTP
+            // Remote delete via SFTP (async with spinner)
+            if self.remote_spinner.is_some() { return; }
+            let panel_idx = self.active_panel_index;
+            let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+                Some(ctx) => ctx,
+                None => return,
+            };
             let remote_base = source_path.display().to_string();
-            for file_name in &files {
-                let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), file_name);
+            // Collect file info before spawning thread
+            let file_infos: Vec<(String, bool)> = files.iter().map(|file_name| {
                 let is_dir = self.active_panel().files.iter()
                     .find(|f| f.name == *file_name)
                     .map(|f| f.is_directory)
                     .unwrap_or(false);
+                (file_name.clone(), is_dir)
+            }).collect();
+            let total = file_infos.len();
+            let (tx, rx) = mpsc::channel();
 
-                let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
-                    ctx.session.remove(&remote_path, is_dir)
-                } else {
-                    Err("Not connected".to_string())
-                };
-
-                match result {
-                    Ok(_) => success_count += 1,
-                    Err(e) => last_error = e,
+            thread::spawn(move || {
+                let mut success_count = 0;
+                let mut last_error = String::new();
+                for (file_name, is_dir) in &file_infos {
+                    let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), file_name);
+                    match ctx.session.remove(&remote_path, *is_dir) {
+                        Ok(_) => success_count += 1,
+                        Err(e) => last_error = e,
+                    }
                 }
-            }
+                let msg = if success_count == total {
+                    Ok(format!("Deleted {} file(s)", success_count))
+                } else {
+                    Err(format!("Deleted {}/{}. Error: {}", success_count, total, last_error))
+                };
+                let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                    ctx,
+                    panel_idx,
+                    outcome: PanelOpOutcome::Simple {
+                        message: msg,
+                        pending_focus: None,
+                        reload: true,
+                    },
+                });
+            });
+
+            self.remote_spinner = Some(RemoteSpinner {
+                message: "Deleting...".to_string(),
+                started_at: Instant::now(),
+                receiver: rx,
+            });
+            return;
         } else {
             for file_name in &files {
                 let path = source_path.join(file_name);
@@ -4471,23 +4678,40 @@ impl App {
         }
 
         if self.active_panel().is_remote() {
-            // Remote mkdir via SFTP
+            // Remote mkdir via SFTP (async with spinner)
+            if self.remote_spinner.is_some() { return; }
+            let panel_idx = self.active_panel_index;
+            let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+                Some(ctx) => ctx,
+                None => return,
+            };
             let remote_base = self.active_panel().path.display().to_string();
             let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), name);
-            let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
-                ctx.session.mkdir(&remote_path)
-            } else {
-                Err("Not connected".to_string())
-            };
+            let focus_name = name.to_string();
+            let display_name = name.to_string();
+            let (tx, rx) = mpsc::channel();
 
-            match result {
-                Ok(_) => {
-                    self.active_panel_mut().pending_focus = Some(name.to_string());
-                    self.show_message(&format!("Created directory: {}", name));
-                }
-                Err(e) => self.show_message(&format!("Error: {}", e)),
-            }
-            self.refresh_panels();
+            thread::spawn(move || {
+                let msg = match ctx.session.mkdir(&remote_path) {
+                    Ok(_) => Ok(format!("Created directory: {}", display_name)),
+                    Err(e) => Err(e),
+                };
+                let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                    ctx,
+                    panel_idx,
+                    outcome: PanelOpOutcome::Simple {
+                        message: msg,
+                        pending_focus: Some(focus_name),
+                        reload: true,
+                    },
+                });
+            });
+
+            self.remote_spinner = Some(RemoteSpinner {
+                message: "Creating directory...".to_string(),
+                started_at: Instant::now(),
+                receiver: rx,
+            });
             return;
         }
 
@@ -4527,23 +4751,40 @@ impl App {
         }
 
         if self.active_panel().is_remote() {
-            // Remote file creation via SFTP
+            // Remote file creation via SFTP (async with spinner)
+            if self.remote_spinner.is_some() { return; }
+            let panel_idx = self.active_panel_index;
+            let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+                Some(ctx) => ctx,
+                None => return,
+            };
             let remote_base = self.active_panel().path.display().to_string();
             let remote_path = format!("{}/{}", remote_base.trim_end_matches('/'), name);
-            let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
-                ctx.session.create_file(&remote_path)
-            } else {
-                Err("Not connected".to_string())
-            };
+            let focus_name = name.to_string();
+            let display_name = name.to_string();
+            let (tx, rx) = mpsc::channel();
 
-            match result {
-                Ok(_) => {
-                    self.active_panel_mut().pending_focus = Some(name.to_string());
-                    self.show_message(&format!("Created file: {}", name));
-                }
-                Err(e) => self.show_message(&format!("Error: {}", e)),
-            }
-            self.refresh_panels();
+            thread::spawn(move || {
+                let msg = match ctx.session.create_file(&remote_path) {
+                    Ok(_) => Ok(format!("Created file: {}", display_name)),
+                    Err(e) => Err(e),
+                };
+                let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                    ctx,
+                    panel_idx,
+                    outcome: PanelOpOutcome::Simple {
+                        message: msg,
+                        pending_focus: Some(focus_name),
+                        reload: true,
+                    },
+                });
+            });
+
+            self.remote_spinner = Some(RemoteSpinner {
+                message: "Creating file...".to_string(),
+                started_at: Instant::now(),
+                receiver: rx,
+            });
             return;
         }
 
@@ -4589,24 +4830,41 @@ impl App {
             let old_name = file.name.clone();
 
             if self.active_panel().is_remote() {
-                // Remote rename via SFTP
+                // Remote rename via SFTP (async with spinner)
+                if self.remote_spinner.is_some() { return; }
+                let panel_idx = self.active_panel_index;
+                let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+                    Some(ctx) => ctx,
+                    None => return,
+                };
                 let remote_base = self.active_panel().path.display().to_string();
                 let old_remote = format!("{}/{}", remote_base.trim_end_matches('/'), old_name);
                 let new_remote = format!("{}/{}", remote_base.trim_end_matches('/'), new_name);
-                let result = if let Some(ref ctx) = self.active_panel().remote_ctx {
-                    ctx.session.rename(&old_remote, &new_remote)
-                } else {
-                    Err("Not connected".to_string())
-                };
+                let focus_name = new_name.to_string();
+                let display_name = new_name.to_string();
+                let (tx, rx) = mpsc::channel();
 
-                match result {
-                    Ok(_) => {
-                        self.active_panel_mut().pending_focus = Some(new_name.to_string());
-                        self.show_message(&format!("Renamed to: {}", new_name));
-                    }
-                    Err(e) => self.show_message(&format!("Error: {}", e)),
-                }
-                self.refresh_panels();
+                thread::spawn(move || {
+                    let msg = match ctx.session.rename(&old_remote, &new_remote) {
+                        Ok(_) => Ok(format!("Renamed to: {}", display_name)),
+                        Err(e) => Err(e),
+                    };
+                    let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                        ctx,
+                        panel_idx,
+                        outcome: PanelOpOutcome::Simple {
+                            message: msg,
+                            pending_focus: Some(focus_name),
+                            reload: true,
+                        },
+                    });
+                });
+
+                self.remote_spinner = Some(RemoteSpinner {
+                    message: "Renaming...".to_string(),
+                    started_at: Instant::now(),
+                    receiver: rx,
+                });
                 return;
             }
 
@@ -5523,8 +5781,10 @@ impl App {
         }
     }
 
-    /// Handle goto for relative path on a remote panel
+    /// Handle goto for relative path on a remote panel (async with spinner)
     fn execute_goto_remote_relative(&mut self, path_str: &str) {
+        if self.remote_spinner.is_some() { return; }
+
         let current = self.active_panel().path.display().to_string();
         let new_path = if path_str == ".." {
             // Go to parent directory
@@ -5542,52 +5802,60 @@ impl App {
             format!("{}/{}", current.trim_end_matches('/'), path_str)
         };
 
-        let panel = self.active_panel_mut();
-        panel.path = PathBuf::from(&new_path);
-        panel.selected_index = 0;
-        panel.selected_files.clear();
-        panel.load_files();
+        self.spawn_remote_list_dir(&new_path);
     }
 
-    /// Connect a panel to a remote server
+    /// Connect a panel to a remote server (async with spinner)
     pub fn connect_remote_panel(&mut self, profile: &remote::RemoteProfile, path: &str) {
-        self.show_message(&format!("Connecting to {}@{}...", profile.user, profile.host));
+        if self.remote_spinner.is_some() { return; }
 
-        match remote::SftpSession::connect(profile) {
-            Ok(session) => {
-                let ctx = RemoteContext {
-                    profile: profile.clone(),
-                    session,
-                    status: ConnectionStatus::Connected,
-                };
-                let panel = self.active_panel_mut();
-                panel.remote_ctx = Some(Box::new(ctx));
-                panel.path = PathBuf::from(path);
-                panel.selected_index = 0;
-                panel.selected_files.clear();
-                panel.load_files();
+        let (tx, rx) = mpsc::channel();
+        let profile_clone = profile.clone();
+        let path_clone = path.to_string();
+        let panel_idx = self.active_panel_index;
 
-                // Check if the requested path was valid
-                let path_failed = panel.remote_ctx.as_ref()
-                    .map(|ctx| matches!(ctx.status, ConnectionStatus::Disconnected(_)))
-                    .unwrap_or(false);
-
-                if path_failed {
-                    // Path doesn't exist — fallback to /
-                    let original_path = path.to_string();
-                    let panel = self.active_panel_mut();
-                    panel.path = PathBuf::from("/");
-                    panel.selected_index = 0;
-                    panel.load_files();
-                    self.show_extension_handler_error(&format!("Path not found: {} — moved to /", original_path));
-                } else {
-                    self.show_message(&format!("Connected to {}@{}", profile.user, profile.host));
+        thread::spawn(move || {
+            let result = match remote::SftpSession::connect(&profile_clone) {
+                Ok(session) => {
+                    let mut ctx = RemoteContext {
+                        profile: profile_clone.clone(),
+                        session,
+                        status: ConnectionStatus::Connected,
+                    };
+                    // Try listing the requested path
+                    match ctx.session.list_dir(&path_clone) {
+                        Ok(entries) => Ok(ConnectSuccess {
+                            ctx: Box::new(ctx),
+                            entries,
+                            path: path_clone,
+                            fallback_msg: None,
+                            profile: profile_clone,
+                        }),
+                        Err(_) => {
+                            // Fallback to /
+                            match ctx.session.list_dir("/") {
+                                Ok(entries) => Ok(ConnectSuccess {
+                                    ctx: Box::new(ctx),
+                                    entries,
+                                    path: "/".to_string(),
+                                    fallback_msg: Some(format!("Path not found: {} — moved to /", path_clone)),
+                                    profile: profile_clone,
+                                }),
+                                Err(e2) => Err(format!("Connection failed: {}", e2)),
+                            }
+                        }
+                    }
                 }
-            }
-            Err(e) => {
-                self.show_message(&format!("Connection failed: {}", e));
-            }
-        }
+                Err(e) => Err(format!("Connection failed: {}", e)),
+            };
+            let _ = tx.send(RemoteSpinnerResult::Connected { result, panel_idx });
+        });
+
+        self.remote_spinner = Some(RemoteSpinner {
+            message: format!("Connecting to {}@{}...", profile.user, profile.host),
+            started_at: Instant::now(),
+            receiver: rx,
+        });
     }
 
     /// Disconnect remote panel and switch back to local
@@ -5602,6 +5870,186 @@ impl App {
         panel.selected_files.clear();
         panel.load_files();
         self.show_message("Disconnected from remote server");
+    }
+
+    /// Spawn a background thread for remote list_dir operation
+    fn spawn_remote_list_dir(&mut self, new_path: &str) {
+        if self.remote_spinner.is_some() { return; }
+        let panel_idx = self.active_panel_index;
+        let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+            Some(ctx) => ctx,
+            None => return,
+        };
+        let path = new_path.to_string();
+        let path_for_result = PathBuf::from(new_path);
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let entries = ctx.session.list_dir(&path);
+            let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                ctx,
+                panel_idx,
+                outcome: PanelOpOutcome::ListDir {
+                    entries,
+                    path: path_for_result,
+                },
+            });
+        });
+
+        self.remote_spinner = Some(RemoteSpinner {
+            message: "Loading...".to_string(),
+            started_at: Instant::now(),
+            receiver: rx,
+        });
+    }
+
+    /// Spawn a background thread for remote list_dir (for panel refresh)
+    pub fn spawn_remote_refresh(&mut self, panel_idx: usize) {
+        if self.remote_spinner.is_some() { return; }
+        let mut ctx = match self.panels[panel_idx].remote_ctx.take() {
+            Some(ctx) => ctx,
+            None => return,
+        };
+        let path = self.panels[panel_idx].path.display().to_string();
+        let path_for_result = self.panels[panel_idx].path.clone();
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let entries = ctx.session.list_dir(&path);
+            let _ = tx.send(RemoteSpinnerResult::PanelOp {
+                ctx,
+                panel_idx,
+                outcome: PanelOpOutcome::ListDir {
+                    entries,
+                    path: path_for_result,
+                },
+            });
+        });
+
+        self.remote_spinner = Some(RemoteSpinner {
+            message: "Loading...".to_string(),
+            started_at: Instant::now(),
+            receiver: rx,
+        });
+    }
+
+    /// Poll the remote spinner for completion
+    pub fn poll_remote_spinner(&mut self) {
+        let result = if let Some(ref spinner) = self.remote_spinner {
+            match spinner.receiver.try_recv() {
+                Ok(result) => Some(Ok(result)),
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err(())),
+            }
+        } else {
+            return;
+        };
+
+        let result = match result {
+            Some(Ok(r)) => r,
+            Some(Err(())) => {
+                // Thread panicked or sender dropped — cancel spinner
+                self.remote_spinner = None;
+                self.show_message("Remote operation failed unexpectedly");
+                return;
+            }
+            None => return,
+        };
+
+        // Spinner completed — remove it
+        self.remote_spinner = None;
+
+        match result {
+            RemoteSpinnerResult::Connected { result, panel_idx } => {
+                match result {
+                    Ok(success) => {
+                        let panel = &mut self.panels[panel_idx];
+                        panel.remote_ctx = Some(success.ctx);
+                        panel.selected_index = 0;
+                        panel.selected_files.clear();
+                        // Update connection status
+                        if let Some(ref mut ctx) = panel.remote_ctx {
+                            ctx.status = ConnectionStatus::Connected;
+                        }
+                        panel.apply_remote_entries(success.entries, &PathBuf::from(&success.path));
+                        if let Some(msg) = success.fallback_msg {
+                            self.show_extension_handler_error(&msg);
+                        } else {
+                            self.show_message(&format!("Connected to {}@{}", success.profile.user, success.profile.host));
+                        }
+                    }
+                    Err(e) => {
+                        self.show_message(&e);
+                    }
+                }
+            }
+            RemoteSpinnerResult::PanelOp { ctx, panel_idx, outcome } => {
+                // Return ctx to panel
+                self.panels[panel_idx].remote_ctx = Some(ctx);
+
+                match outcome {
+                    PanelOpOutcome::Simple { message, pending_focus, reload } => {
+                        let (msg_text, is_err) = match &message {
+                            Ok(msg) => (msg.clone(), false),
+                            Err(e) => (format!("Error: {}", e), true),
+                        };
+                        if !is_err {
+                            if let Some(focus) = pending_focus {
+                                self.panels[panel_idx].pending_focus = Some(focus);
+                            }
+                        }
+                        // If in editor, set editor message; otherwise show app message
+                        if self.current_screen == Screen::FileEditor {
+                            if let Some(ref mut editor) = self.editor_state {
+                                let duration = if is_err { 50 } else { 30 };
+                                editor.set_message(msg_text, duration);
+                            }
+                        } else {
+                            self.show_message(&msg_text);
+                        }
+                        if reload {
+                            // Refresh local panels synchronously
+                            for i in 0..self.panels.len() {
+                                if !self.panels[i].is_remote() {
+                                    self.panels[i].selected_files.clear();
+                                    self.panels[i].load_files();
+                                }
+                            }
+                            // For the remote panel, spawn another list_dir
+                            if self.panels[panel_idx].is_remote() {
+                                self.spawn_remote_refresh(panel_idx);
+                            }
+                        }
+                    }
+                    PanelOpOutcome::ListDir { entries, path } => {
+                        match entries {
+                            Ok(sftp_entries) => {
+                                let panel = &mut self.panels[panel_idx];
+                                panel.selected_index = 0;
+                                panel.selected_files.clear();
+                                if let Some(ref mut ctx) = panel.remote_ctx {
+                                    ctx.status = ConnectionStatus::Connected;
+                                }
+                                panel.apply_remote_entries(sftp_entries, &path);
+                            }
+                            Err(e) => {
+                                if let Some(ref mut ctx) = self.panels[panel_idx].remote_ctx {
+                                    ctx.status = ConnectionStatus::Disconnected(e.clone());
+                                }
+                                self.show_message(&format!("Error: {}", e));
+                            }
+                        }
+                    }
+                    PanelOpOutcome::DirExists { exists, target_entry } => {
+                        if exists {
+                            self.execute_goto(&target_entry);
+                        } else {
+                            self.show_extension_handler_error(&format!("Path not found: {}", target_entry));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// 디렉토리로 이동하고 특정 파일에 커서를 위치시킴

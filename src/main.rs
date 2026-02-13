@@ -376,7 +376,7 @@ fn run_app<B: ratatui::backend::Backend>(
 
         terminal.draw(|f| ui::draw::draw(f, app))?;
 
-        // For AI screen, FileInfo with calculation, ImageViewer loading, diff comparing, or file operation progress, use fast polling
+        // For AI screen, FileInfo with calculation, ImageViewer loading, diff comparing, file operation progress, or remote spinner, use fast polling
         let is_file_info_calculating = app.current_screen == Screen::FileInfo
             && app.file_info_state.as_ref().map(|s| s.is_calculating).unwrap_or(false);
         let is_image_loading = app.current_screen == Screen::ImageViewer
@@ -387,9 +387,12 @@ fn run_app<B: ratatui::backend::Backend>(
             .as_ref()
             .map(|p| p.is_active)
             .unwrap_or(false);
+        let is_remote_spinner = app.remote_spinner.is_some();
 
         let poll_timeout = if is_progress_active {
             Duration::from_millis(16) // ~60fps for smooth progress bar updates
+        } else if is_remote_spinner {
+            Duration::from_millis(100) // Fast polling for spinner animation
         } else if app.current_screen == Screen::AIScreen || app.is_ai_mode() || is_file_info_calculating || is_image_loading || is_diff_comparing {
             Duration::from_millis(100) // Fast polling for spinner animation
         } else {
@@ -427,6 +430,9 @@ fn run_app<B: ratatui::backend::Backend>(
                 state.poll();
             }
         }
+
+        // Poll for remote spinner completion
+        app.poll_remote_spinner();
 
         // Check for theme file changes (hot-reload, only in design mode)
         if app.design_mode && app.theme_watch_state.check_for_changes() {
@@ -576,6 +582,11 @@ fn run_app<B: ratatui::backend::Backend>(
 
         // Check for key events with timeout
         if event::poll(poll_timeout)? {
+            // Block all input while remote spinner is active
+            if app.remote_spinner.is_some() {
+                let _ = event::read()?;
+                continue;
+            }
             match event::read()? {
                 Event::Key(key) => {
                     match app.current_screen {

@@ -2947,18 +2947,36 @@ fn handle_goto_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifier
                                     ctx.profile.user == user && ctx.profile.host == host && ctx.profile.port == port
                                 });
                                 if same_server {
-                                    // Already connected to same server — validate path
-                                    let exists = app.active_panel().remote_ctx.as_ref()
-                                        .map_or(false, |ctx| ctx.session.dir_exists(&path));
-                                    if exists {
-                                        let entry = entry.clone();
-                                        app.dialog = None;
-                                        app.execute_goto(&entry);
-                                        return false;
-                                    } else {
-                                        app.dialog = None;
-                                        app.show_extension_handler_error(&format!("Path not found: {}", entry));
-                                    }
+                                    // Already connected to same server — validate path (async with spinner)
+                                    if app.remote_spinner.is_some() { return false; }
+                                    let panel_idx = app.active_panel_index;
+                                    let mut ctx = match app.panels[panel_idx].remote_ctx.take() {
+                                        Some(ctx) => ctx,
+                                        None => return false,
+                                    };
+                                    let check_path = path.clone();
+                                    let target_entry = entry.clone();
+                                    let (tx, rx) = std::sync::mpsc::channel();
+
+                                    std::thread::spawn(move || {
+                                        let exists = ctx.session.dir_exists(&check_path);
+                                        let _ = tx.send(super::app::RemoteSpinnerResult::PanelOp {
+                                            ctx,
+                                            panel_idx,
+                                            outcome: super::app::PanelOpOutcome::DirExists {
+                                                exists,
+                                                target_entry,
+                                            },
+                                        });
+                                    });
+
+                                    app.dialog = None;
+                                    app.remote_spinner = Some(super::app::RemoteSpinner {
+                                        message: "Checking path...".to_string(),
+                                        started_at: std::time::Instant::now(),
+                                        receiver: rx,
+                                    });
+                                    return false;
                                 } else {
                                     // Different server or not connected — proceed with goto
                                     let entry = entry.clone();
@@ -4936,4 +4954,45 @@ mod tests {
 
         cleanup_temp_test_dir(&temp_dir);
     }
+}
+
+/// Draw a small centered spinner overlay for remote operations
+pub fn draw_remote_spinner(frame: &mut Frame, message: &str, area: Rect, theme: &Theme) {
+    let spinner_chars = ['|', '/', '-', '\\'];
+    let spinner_idx = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() / 100) as usize % spinner_chars.len();
+    let spinner = spinner_chars[spinner_idx];
+
+    let display = format!(" {} {} ", spinner, message);
+    let width = (display.len() as u16 + 4).min(40).max(20);
+    let height = 3u16;
+
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+
+    let spinner_area = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, spinner_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.dialog.border))
+        .style(Style::default().bg(theme.dialog.bg));
+
+    let inner = block.inner(spinner_area);
+    frame.render_widget(block, spinner_area);
+
+    let line = Line::from(vec![
+        Span::styled(
+            format!("{} ", spinner),
+            Style::default().fg(theme.dialog.progress_bar_fill),
+        ),
+        Span::styled(
+            message,
+            Style::default().fg(theme.dialog.text),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(line), inner);
 }
