@@ -43,7 +43,7 @@ export default function PowerStrip() {
     <section className="py-12 px-4">
       <div
         ref={ref}
-        className="max-w-4xl mx-auto bg-bg-card/30 border border-accent-cyan/10 rounded-2xl py-10 px-6"
+        className="max-w-6xl mx-auto bg-bg-card/30 border border-accent-cyan/10 rounded-2xl py-10 px-6"
       >
         <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16">
           {stats.map((stat, i) => (

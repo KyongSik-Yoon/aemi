@@ -198,7 +198,7 @@ export default function TerminalPreview() {
   const ActiveScene = scenarios[active]
 
   return (
-    <div className="relative max-w-4xl mx-auto">
+    <div className="relative max-w-6xl mx-auto">
       {/* Glow effect */}
       <div className="absolute -inset-1 bg-gradient-to-r from-primary via-accent-cyan to-accent-purple rounded-xl blur-lg opacity-30" />
 

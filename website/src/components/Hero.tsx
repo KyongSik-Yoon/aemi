@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion'
-import { Github, BookOpen, Apple, Monitor } from 'lucide-react'
+import { BookOpen, Apple, Monitor } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Button from './ui/Button'
 import CodeBlock from './ui/CodeBlock'
 import TerminalPreview from './TerminalPreview'
 
@@ -74,7 +73,7 @@ export default function Hero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className="max-w-3xl mx-auto mb-8"
+          className="max-w-6xl mx-auto mb-8"
           id="install"
         >
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
@@ -127,10 +126,6 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.5 }}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
         >
-          <Button variant="secondary" href="https://github.com/kstost/cokacdir">
-            <Github className="w-5 h-5" />
-            View on GitHub
-          </Button>
           <Link
             to="/tutorial"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan font-semibold hover:bg-accent-cyan/20 hover:border-accent-cyan/50 transition-all duration-200"
