@@ -379,7 +379,7 @@ impl DiffFileViewState {
 // Drawing
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub fn draw(frame: &mut Frame, state: &mut DiffFileViewState, area: Rect, theme: &Theme) {
+pub fn draw(frame: &mut Frame, state: &mut DiffFileViewState, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
     if area.height < 4 {
         return;
     }
@@ -609,57 +609,26 @@ pub fn draw(frame: &mut Frame, state: &mut DiffFileViewState, area: Rect, theme:
         .style(Style::default().bg(theme.diff_file_view.status_bar_bg));
     frame.render_widget(status_paragraph, status_area);
 
-    // ─── FunctionBar ────────────────────────────────────────────────────────
-    let fn_spans = vec![
-        Span::styled(
-            " \u{2191}\u{2193}",
-            Style::default()
-                .fg(theme.diff_file_view.footer_key)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            ":scroll ",
-            Style::default()
-                .fg(theme.diff_file_view.footer_text)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            "PgUp/Dn",
-            Style::default()
-                .fg(theme.diff_file_view.footer_key)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            ":page ",
-            Style::default()
-                .fg(theme.diff_file_view.footer_text)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            "n/p",
-            Style::default()
-                .fg(theme.diff_file_view.footer_key)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            ":next/prev change ",
-            Style::default()
-                .fg(theme.diff_file_view.footer_text)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            "Esc",
-            Style::default()
-                .fg(theme.diff_file_view.footer_key)
-                .bg(theme.diff_file_view.bg),
-        ),
-        Span::styled(
-            ":back",
-            Style::default()
-                .fg(theme.diff_file_view.footer_text)
-                .bg(theme.diff_file_view.bg),
-        ),
+    // ─── FunctionBar (keybindings에서 동적으로) ────────────────────────────
+    use crate::keybindings::DiffFileViewAction;
+    let key_style = Style::default()
+        .fg(theme.diff_file_view.footer_key)
+        .bg(theme.diff_file_view.bg);
+    let text_style = Style::default()
+        .fg(theme.diff_file_view.footer_text)
+        .bg(theme.diff_file_view.bg);
+    let shortcuts: Vec<(String, &str)> = vec![
+        (kb.diff_file_view_first_key(DiffFileViewAction::MoveUp).to_string(), " scroll "),
+        (kb.diff_file_view_first_key(DiffFileViewAction::PageUp).to_string(), " page "),
+        (kb.diff_file_view_first_key(DiffFileViewAction::NextChange).to_string(), " next "),
+        (kb.diff_file_view_first_key(DiffFileViewAction::PrevChange).to_string(), " prev "),
+        (kb.diff_file_view_first_key(DiffFileViewAction::Close).to_string(), " back"),
     ];
+    let mut fn_spans = Vec::new();
+    for (key, label) in &shortcuts {
+        fn_spans.push(Span::styled(format!(" {}", key), key_style));
+        fn_spans.push(Span::styled(*label, text_style));
+    }
     let fn_line = Line::from(fn_spans);
     let fn_paragraph = Paragraph::new(fn_line)
         .style(Style::default().bg(theme.diff_file_view.bg));
@@ -1079,7 +1048,9 @@ fn build_inline_wrapped_lines<'a>(
 // Input handling
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub fn handle_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
+pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::keybindings::DiffFileViewAction;
+
     let state = match app.diff_file_view_state.as_mut() {
         Some(s) => s,
         None => return,
@@ -1088,57 +1059,55 @@ pub fn handle_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
     let visible = state.visible_height;
     let max_scroll = state.max_scroll;
 
-    match code {
-        KeyCode::Up => {
-            state.scroll = state.scroll.saturating_sub(1);
-        }
-        KeyCode::Down => {
-            if state.scroll < max_scroll {
-                state.scroll += 1;
+    if let Some(action) = app.keybindings.diff_file_view_action(code, modifiers) {
+        match action {
+            DiffFileViewAction::MoveUp => {
+                state.scroll = state.scroll.saturating_sub(1);
             }
-        }
-        KeyCode::PageUp => {
-            state.scroll = state.scroll.saturating_sub(visible);
-        }
-        KeyCode::PageDown => {
-            state.scroll = (state.scroll + visible).min(max_scroll);
-        }
-        KeyCode::Home => {
-            state.scroll = 0;
-        }
-        KeyCode::End => {
-            state.scroll = max_scroll;
-        }
-        KeyCode::Char('n') => {
-            // Jump to next change position using visual row offsets
-            if !state.change_positions.is_empty() {
-                if state.current_change + 1 < state.change_positions.len() {
-                    state.current_change += 1;
-                }
-                if state.current_change < state.change_visual_offsets.len() {
-                    let target = state.change_visual_offsets[state.current_change];
-                    state.scroll = target.saturating_sub(visible / 4).min(max_scroll);
+            DiffFileViewAction::MoveDown => {
+                if state.scroll < max_scroll {
+                    state.scroll += 1;
                 }
             }
-        }
-        KeyCode::Char('N') | KeyCode::Char('p') | KeyCode::Char('P') => {
-            // Jump to previous change position using visual row offsets
-            if !state.change_positions.is_empty() {
-                if state.current_change > 0 {
-                    state.current_change -= 1;
-                }
-                if state.current_change < state.change_visual_offsets.len() {
-                    let target = state.change_visual_offsets[state.current_change];
-                    state.scroll = target.saturating_sub(visible / 4).min(max_scroll);
+            DiffFileViewAction::PageUp => {
+                state.scroll = state.scroll.saturating_sub(visible);
+            }
+            DiffFileViewAction::PageDown => {
+                state.scroll = (state.scroll + visible).min(max_scroll);
+            }
+            DiffFileViewAction::GoHome => {
+                state.scroll = 0;
+            }
+            DiffFileViewAction::GoEnd => {
+                state.scroll = max_scroll;
+            }
+            DiffFileViewAction::NextChange => {
+                if !state.change_positions.is_empty() {
+                    if state.current_change + 1 < state.change_positions.len() {
+                        state.current_change += 1;
+                    }
+                    if state.current_change < state.change_visual_offsets.len() {
+                        let target = state.change_visual_offsets[state.current_change];
+                        state.scroll = target.saturating_sub(visible / 4).min(max_scroll);
+                    }
                 }
             }
+            DiffFileViewAction::PrevChange => {
+                if !state.change_positions.is_empty() {
+                    if state.current_change > 0 {
+                        state.current_change -= 1;
+                    }
+                    if state.current_change < state.change_visual_offsets.len() {
+                        let target = state.change_visual_offsets[state.current_change];
+                        state.scroll = target.saturating_sub(visible / 4).min(max_scroll);
+                    }
+                }
+            }
+            DiffFileViewAction::Close => {
+                app.current_screen = super::app::Screen::DiffScreen;
+                app.diff_file_view_state = None;
+            }
         }
-        KeyCode::Esc => {
-            // Go back to DiffScreen
-            app.current_screen = super::app::Screen::DiffScreen;
-            app.diff_file_view_state = None;
-        }
-        _ => {}
     }
 }
 

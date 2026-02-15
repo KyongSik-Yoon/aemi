@@ -9,6 +9,7 @@ use std::time::{Instant, SystemTime};
 use chrono::{DateTime, Local};
 
 use crate::config::Settings;
+use crate::keybindings::Keybindings;
 use crate::services::file_ops::{self, FileOperationType, ProgressMessage, FileOperationResult};
 use crate::services::remote::{self, RemoteContext, RemoteProfile, ConnectionStatus, SftpFileEntry};
 use crate::services::remote_transfer;
@@ -1293,6 +1294,9 @@ pub struct App {
     // Design mode flag (--design): enables theme hot-reload
     pub design_mode: bool,
 
+    // Keybindings (built from settings)
+    pub keybindings: Keybindings,
+
     // File viewer state (새로운 고급 상태)
     pub viewer_state: Option<ViewerState>,
 
@@ -1432,6 +1436,7 @@ impl App {
             theme: crate::ui::theme::Theme::default(),
             theme_watch_state: ThemeWatchState::watch_theme(DEFAULT_THEME_NAME),
             design_mode: false,
+            keybindings: Keybindings::from_config(&crate::keybindings::KeybindingsConfig::default()),
 
             // 새로운 고급 상태
             viewer_state: None,
@@ -1516,6 +1521,9 @@ impl App {
         let theme = crate::ui::theme::Theme::load(&settings.theme.name);
         let theme_watch_state = ThemeWatchState::watch_theme(&settings.theme.name);
 
+        // Build keybindings from settings
+        let keybindings = Keybindings::from_config(&settings.keybindings);
+
         Self {
             panels,
             active_panel_index,
@@ -1528,6 +1536,7 @@ impl App {
             theme,
             theme_watch_state,
             design_mode: false,
+            keybindings,
 
             // 새로운 고급 상태
             viewer_state: None,
@@ -1660,6 +1669,10 @@ impl App {
 
         // Update diff compare method
         self.settings.diff_compare_method = new_settings.diff_compare_method;
+
+        // Update keybindings
+        self.keybindings = crate::keybindings::Keybindings::from_config(&new_settings.keybindings);
+        self.settings.keybindings = new_settings.keybindings;
 
         // Update settings
         self.settings.theme = new_settings.theme;
@@ -2669,7 +2682,9 @@ impl App {
             } else {
                 // First selection
                 self.diff_first_panel = Some(self.active_panel_index);
-                self.show_message("Select second panel for diff (8) or ESC to cancel");
+                let diff_key = self.keybindings.panel_first_key(crate::keybindings::PanelAction::StartDiff);
+                let cancel_key = self.keybindings.panel_first_key(crate::keybindings::PanelAction::ParentDir);
+                self.show_message(&format!("Select second panel for diff ({}) or {} to cancel", diff_key, cancel_key));
             }
         }
     }

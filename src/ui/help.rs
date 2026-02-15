@@ -17,6 +17,10 @@ use super::{
     draw::draw_panel_background,
     theme::Theme,
 };
+use crate::keybindings::{
+    DiffFileViewAction, DiffScreenAction, EditorAction, ImageViewerAction, Keybindings,
+    PanelAction, ProcessManagerAction, SearchResultAction,
+};
 
 /// Draw the help screen
 pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
@@ -24,7 +28,7 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     draw_panel_background(frame, app, area, theme);
 
     // Build help content
-    let lines = build_help_content(theme);
+    let lines = build_help_content(theme, &app.keybindings);
     let total_lines = lines.len();
 
     // Calculate dialog size (max 80% of screen, within bounds)
@@ -139,7 +143,7 @@ pub fn handle_input(app: &mut App, code: KeyCode) -> bool {
 }
 
 /// Build the help content as styled lines
-fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
+fn build_help_content(theme: &Theme, kb: &Keybindings) -> Vec<Line<'static>> {
     let section_title_style = Style::default()
         .fg(theme.help.section_title)
         .add_modifier(Modifier::BOLD);
@@ -160,10 +164,19 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
         ])
     };
 
-    // Helper to create key-description line
+    // Helper to create key-description line (static strings)
     let key_line = |key: &str, desc: &str| -> Line<'static> {
         Line::from(vec![
             Span::styled(format!("  {:16}", key), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
+    // Helper to create key-description line from a PanelAction (reads from keybindings)
+    let pk = |action: PanelAction, desc: &str| -> Line<'static> {
+        let key_display = kb.panel_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
             Span::styled(desc.to_string(), desc_style),
         ])
     };
@@ -172,30 +185,34 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // Section 1: Navigation
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Navigation"));
-    lines.push(key_line("Up/Down", "Move cursor up/down"));
-    lines.push(key_line("PgUp/PgDn", "Move page up/down"));
-    lines.push(key_line("Home/End", "Go to first/last item"));
-    lines.push(key_line("Enter", "Open directory or file"));
-    lines.push(key_line("Esc", "Go to parent directory"));
-    lines.push(key_line("Tab", "Switch panel"));
-    lines.push(key_line("Left/Right", "Switch panel (keep position)"));
-    lines.push(key_line("1", "Go to home directory"));
-    lines.push(key_line("2", "Refresh file list"));
-    lines.push(key_line("/", "Go to path dialog"));
-    lines.push(key_line("'", "Toggle bookmark"));
-    lines.push(key_line("0", "Add new panel"));
-    lines.push(key_line("9", "Close current panel"));
+    lines.push(pk(PanelAction::MoveUp, "Move cursor up"));
+    lines.push(pk(PanelAction::MoveDown, "Move cursor down"));
+    lines.push(pk(PanelAction::PageUp, "Page up"));
+    lines.push(pk(PanelAction::PageDown, "Page down"));
+    lines.push(pk(PanelAction::GoHome, "Go to first item"));
+    lines.push(pk(PanelAction::GoEnd, "Go to last item"));
+    lines.push(pk(PanelAction::Open, "Open directory or file"));
+    lines.push(pk(PanelAction::ParentDir, "Go to parent directory"));
+    lines.push(pk(PanelAction::SwitchPanel, "Switch panel"));
+    lines.push(pk(PanelAction::SwitchPanelLeft, "Switch to left panel"));
+    lines.push(pk(PanelAction::SwitchPanelRight, "Switch to right panel"));
+    lines.push(pk(PanelAction::GoHomeDir, "Go to home directory"));
+    lines.push(pk(PanelAction::Refresh, "Refresh file list"));
+    lines.push(pk(PanelAction::GoToPath, "Go to path dialog"));
+    lines.push(pk(PanelAction::ToggleBookmark, "Toggle bookmark"));
+    lines.push(pk(PanelAction::AddPanel, "Add new panel"));
+    lines.push(pk(PanelAction::ClosePanel, "Close current panel"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 2: Selection & Marking
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Selection & Marking"));
-    lines.push(key_line("Space", "Select/deselect file"));
-    lines.push(key_line("Ctrl+A", "Select all files"));
-    lines.push(key_line("Shift+Up/Down", "Select while moving cursor"));
-    lines.push(key_line("*", "Select/deselect all"));
-    lines.push(key_line(";", "Select by extension"));
+    lines.push(pk(PanelAction::ToggleSelect, "Select/deselect file"));
+    lines.push(pk(PanelAction::SelectAll, "Select/deselect all"));
+    lines.push(pk(PanelAction::SelectUp, "Select and move up"));
+    lines.push(pk(PanelAction::SelectDown, "Select and move down"));
+    lines.push(pk(PanelAction::SelectByExtension, "Select by extension"));
     lines.push(Line::from(vec![
         Span::styled("  ".to_string(), desc_style),
         Span::styled("Selected files are marked with ".to_string(), hint_style),
@@ -207,10 +224,10 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // Section 3: Sorting
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Sorting"));
-    lines.push(key_line("N", "Sort by name"));
-    lines.push(key_line("S", "Sort by size"));
-    lines.push(key_line("D", "Sort by date"));
-    lines.push(key_line("Y", "Sort by type (extension)"));
+    lines.push(pk(PanelAction::SortByName, "Sort by name"));
+    lines.push(pk(PanelAction::SortBySize, "Sort by size"));
+    lines.push(pk(PanelAction::SortByDate, "Sort by date"));
+    lines.push(pk(PanelAction::SortByType, "Sort by type (extension)"));
     lines.push(Line::from(vec![
         Span::styled("  ".to_string(), desc_style),
         Span::styled("Press again to toggle Asc/Desc".to_string(), hint_style),
@@ -221,19 +238,19 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // Section 4: File Operations
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("File Operations"));
-    lines.push(key_line("E", "Edit file"));
-    lines.push(key_line("I", "File info (properties)"));
-    lines.push(key_line("K", "Create new directory"));
-    lines.push(key_line("M", "Create new file"));
-    lines.push(key_line("R", "Rename file/directory"));
-    lines.push(key_line("T", "Create tar archive"));
-    lines.push(key_line("U", "Set/Edit file handler"));
-    lines.push(key_line("X / Delete", "Delete file(s)"));
-    lines.push(key_line("F", "Find/search files"));
+    lines.push(pk(PanelAction::Edit, "Edit file"));
+    lines.push(pk(PanelAction::FileInfo, "File info (properties)"));
+    lines.push(pk(PanelAction::Mkdir, "Create new directory"));
+    lines.push(pk(PanelAction::Mkfile, "Create new file"));
+    lines.push(pk(PanelAction::Rename, "Rename file/directory"));
+    lines.push(pk(PanelAction::Tar, "Create tar archive"));
+    lines.push(pk(PanelAction::SetHandler, "Set/Edit file handler"));
+    lines.push(pk(PanelAction::Delete, "Delete file(s)"));
+    lines.push(pk(PanelAction::Search, "Find/search files"));
     #[cfg(target_os = "macos")]
     {
-        lines.push(key_line("O", "Open folder in Finder"));
-        lines.push(key_line("C", "Open folder in VS Code"));
+        lines.push(pk(PanelAction::OpenInFinder, "Open folder in Finder"));
+        lines.push(pk(PanelAction::OpenInVSCode, "Open folder in VS Code"));
     }
     lines.push(Line::from(""));
 
@@ -241,9 +258,9 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // Section 5: Clipboard
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Clipboard"));
-    lines.push(key_line("Ctrl+C", "Copy to clipboard"));
-    lines.push(key_line("Ctrl+X", "Cut to clipboard"));
-    lines.push(key_line("Ctrl+V", "Paste from clipboard"));
+    lines.push(pk(PanelAction::Copy, "Copy to clipboard"));
+    lines.push(pk(PanelAction::Cut, "Cut to clipboard"));
+    lines.push(pk(PanelAction::Paste, "Paste from clipboard"));
     lines.push(Line::from(vec![
         Span::styled("  ".to_string(), desc_style),
         Span::styled("Conflict resolution: Overwrite/Skip/All".to_string(), hint_style),
@@ -253,61 +270,96 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // ═══════════════════════════════════════════════════════════════════════
     // Section 6: File Editor
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from an EditorAction
+    let ek = |action: EditorAction, desc: &str| -> Line<'static> {
+        let key_display = kb.editor_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("File Editor"));
     lines.push(key_line("Arrows", "Move cursor"));
     lines.push(key_line("Home/End", "Go to line start/end"));
-    lines.push(key_line("Ctrl+Home/End", "Go to file start/end"));
+    lines.push(ek(EditorAction::GoToFileStart, "Go to file start"));
+    lines.push(ek(EditorAction::GoToFileEnd, "Go to file end"));
     lines.push(key_line("Shift+Arrows", "Select text"));
-    lines.push(key_line("Ctrl+A", "Select all"));
-    lines.push(key_line("Ctrl+C", "Copy (line if no selection)"));
-    lines.push(key_line("Ctrl+X", "Cut (line if no selection)"));
-    lines.push(key_line("Ctrl+V", "Paste"));
-    lines.push(key_line("Ctrl+D", "Select word"));
-    lines.push(key_line("Ctrl+L", "Select line"));
-    lines.push(key_line("Ctrl+K", "Delete line"));
-    lines.push(key_line("Ctrl+J", "Duplicate line"));
-    lines.push(key_line("Ctrl+/", "Toggle comment"));
-    lines.push(key_line("Alt+Up/Down", "Move line up/down"));
-    lines.push(key_line("Ctrl+Z/Y", "Undo/redo"));
-    lines.push(key_line("Ctrl+F", "Find text"));
-    lines.push(key_line("Ctrl+H", "Find and replace"));
-    lines.push(key_line("Ctrl+G", "Go to line"));
-    lines.push(key_line("Ctrl+S", "Save file"));
-    lines.push(key_line("Esc", "Close editor"));
+    lines.push(ek(EditorAction::SelectAll, "Select all"));
+    lines.push(ek(EditorAction::Copy, "Copy (line if no selection)"));
+    lines.push(ek(EditorAction::Cut, "Cut (line if no selection)"));
+    lines.push(ek(EditorAction::Paste, "Paste"));
+    lines.push(ek(EditorAction::SelectNextOccurrence, "Select word"));
+    lines.push(ek(EditorAction::SelectLine, "Select line"));
+    lines.push(ek(EditorAction::DeleteLine, "Delete line"));
+    lines.push(ek(EditorAction::DuplicateLine, "Duplicate line"));
+    lines.push(ek(EditorAction::ToggleComment, "Toggle comment"));
+    lines.push(ek(EditorAction::MoveLineUp, "Move line up"));
+    lines.push(ek(EditorAction::MoveLineDown, "Move line down"));
+    lines.push(ek(EditorAction::Undo, "Undo"));
+    lines.push(ek(EditorAction::Redo, "Redo"));
+    lines.push(ek(EditorAction::Find, "Find text"));
+    lines.push(ek(EditorAction::Replace, "Find and replace"));
+    lines.push(ek(EditorAction::GotoLine, "Go to line"));
+    lines.push(ek(EditorAction::Save, "Save file"));
+    lines.push(ek(EditorAction::Exit, "Close editor"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 8: Image Viewer
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from an ImageViewerAction
+    let ivk = |action: ImageViewerAction, desc: &str| -> Line<'static> {
+        let key_display = kb.image_viewer_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("Image Viewer"));
-    lines.push(key_line("+/-", "Zoom in/out"));
-    lines.push(key_line("R", "Reset zoom"));
-    lines.push(key_line("Arrows", "Pan image"));
-    lines.push(key_line("PgUp/PgDn", "Previous/next image"));
-    lines.push(key_line("Esc/Q", "Close viewer"));
+    lines.push(ivk(ImageViewerAction::ZoomIn, "Zoom in"));
+    lines.push(ivk(ImageViewerAction::ZoomOut, "Zoom out"));
+    lines.push(ivk(ImageViewerAction::ResetView, "Reset zoom"));
+    lines.push(ivk(ImageViewerAction::PanUp, "Pan up"));
+    lines.push(ivk(ImageViewerAction::PanDown, "Pan down"));
+    lines.push(ivk(ImageViewerAction::PrevImage, "Previous image"));
+    lines.push(ivk(ImageViewerAction::NextImage, "Next image"));
+    lines.push(ivk(ImageViewerAction::Close, "Close viewer"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 9: Process Manager
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from a ProcessManagerAction
+    let pmk = |action: ProcessManagerAction, desc: &str| -> Line<'static> {
+        let key_display = kb.process_manager_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("Process Manager"));
-    lines.push(key_line("Up/Down", "Navigate processes"));
-    lines.push(key_line("PgUp/PgDn", "Page through list"));
-    lines.push(key_line("P", "Sort by PID"));
-    lines.push(key_line("C", "Sort by CPU usage"));
-    lines.push(key_line("M", "Sort by memory usage"));
-    lines.push(key_line("N", "Sort by name"));
-    lines.push(key_line("K", "Kill process (SIGTERM)"));
-    lines.push(key_line("Shift+K", "Force kill (SIGKILL)"));
-    lines.push(key_line("R", "Refresh list"));
-    lines.push(key_line("Esc/Q", "Close manager"));
+    lines.push(pmk(ProcessManagerAction::MoveUp, "Navigate up"));
+    lines.push(pmk(ProcessManagerAction::MoveDown, "Navigate down"));
+    lines.push(pmk(ProcessManagerAction::PageUp, "Page up"));
+    lines.push(pmk(ProcessManagerAction::PageDown, "Page down"));
+    lines.push(pmk(ProcessManagerAction::SortByPid, "Sort by PID"));
+    lines.push(pmk(ProcessManagerAction::SortByCpu, "Sort by CPU usage"));
+    lines.push(pmk(ProcessManagerAction::SortByMem, "Sort by memory usage"));
+    lines.push(pmk(ProcessManagerAction::SortByName, "Sort by name"));
+    lines.push(pmk(ProcessManagerAction::Kill, "Kill process (SIGTERM)"));
+    lines.push(pmk(ProcessManagerAction::ForceKill, "Force kill (SIGKILL)"));
+    lines.push(pmk(ProcessManagerAction::Refresh, "Refresh list"));
+    lines.push(pmk(ProcessManagerAction::Quit, "Close manager"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 10: AI Assistant
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("AI Assistant"));
-    lines.push(key_line(".", "Open AI assistant"));
+    lines.push(pk(PanelAction::AIScreen, "Open AI assistant"));
     lines.push(key_line("Enter", "Send message"));
     lines.push(key_line("Shift+Enter", "New line in input"));
     lines.push(key_line("Ctrl+Up/Down", "Scroll response"));
@@ -319,49 +371,90 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     // ═══════════════════════════════════════════════════════════════════════
     // Section 11: Search
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from a SearchResultAction
+    let srk = |action: SearchResultAction, desc: &str| -> Line<'static> {
+        let key_display = kb.search_result_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("Search"));
-    lines.push(key_line("F", "Open search dialog"));
-    lines.push(key_line("Up/Down", "Navigate results"));
-    lines.push(key_line("Enter", "Go to selected result"));
-    lines.push(key_line("Esc", "Close search"));
+    lines.push(pk(PanelAction::Search, "Open search dialog"));
+    lines.push(srk(SearchResultAction::MoveUp, "Navigate up"));
+    lines.push(srk(SearchResultAction::MoveDown, "Navigate down"));
+    lines.push(srk(SearchResultAction::Open, "Go to selected result"));
+    lines.push(srk(SearchResultAction::Close, "Close search"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 12: Diff Compare
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from a DiffScreenAction
+    let dsk = |action: DiffScreenAction, desc: &str| -> Line<'static> {
+        let key_display = kb.diff_screen_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("Diff Compare"));
-    lines.push(key_line("8", "Start folder diff (2 panels)"));
+    lines.push(pk(PanelAction::StartDiff, "Start folder diff (2 panels)"));
     lines.push(Line::from(vec![
         Span::styled("  ".to_string(), desc_style),
-        Span::styled("3+ panels: press 8 twice to select pair".to_string(), hint_style),
+        Span::styled("3+ panels: press twice to select pair".to_string(), hint_style),
     ]));
-    lines.push(key_line("Up/Down", "Move cursor"));
-    lines.push(key_line("PgUp/PgDn", "Page scroll"));
-    lines.push(key_line("Home/End", "Go to first/last item"));
-    lines.push(key_line("Enter", "View file content diff"));
-    lines.push(key_line("Space", "Select/deselect item"));
-    lines.push(key_line("F", "Cycle filter (All/Diff/L/R)"));
-    lines.push(key_line("N/S/D/Y", "Sort by name/size/date/type"));
-    lines.push(key_line("Esc", "Return to file panel"));
+    lines.push(dsk(DiffScreenAction::MoveUp, "Move cursor up"));
+    lines.push(dsk(DiffScreenAction::MoveDown, "Move cursor down"));
+    lines.push(dsk(DiffScreenAction::PageUp, "Page up"));
+    lines.push(dsk(DiffScreenAction::PageDown, "Page down"));
+    lines.push(dsk(DiffScreenAction::GoHome, "Go to first item"));
+    lines.push(dsk(DiffScreenAction::GoEnd, "Go to last item"));
+    lines.push(dsk(DiffScreenAction::Open, "View file content diff"));
+    lines.push(dsk(DiffScreenAction::ToggleSelect, "Select/deselect item"));
+    lines.push(dsk(DiffScreenAction::CycleFilter, "Cycle filter (All/Diff/L/R)"));
+    lines.push(dsk(DiffScreenAction::SortByName, "Sort by name"));
+    lines.push(dsk(DiffScreenAction::SortBySize, "Sort by size"));
+    lines.push(dsk(DiffScreenAction::SortByDate, "Sort by date"));
+    lines.push(dsk(DiffScreenAction::SortByType, "Sort by type"));
+    lines.push(dsk(DiffScreenAction::ExpandDir, "Expand directory"));
+    lines.push(dsk(DiffScreenAction::CollapseDir, "Collapse directory"));
+    lines.push(dsk(DiffScreenAction::ExpandAll, "Expand all"));
+    lines.push(dsk(DiffScreenAction::CollapseAll, "Collapse all"));
+    lines.push(dsk(DiffScreenAction::Close, "Return to file panel"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 12b: File Content Diff
     // ═══════════════════════════════════════════════════════════════════════
+    // Helper to create key-description line from a DiffFileViewAction
+    let dfk = |action: DiffFileViewAction, desc: &str| -> Line<'static> {
+        let key_display = kb.diff_file_view_keys_joined(action, " / ");
+        Line::from(vec![
+            Span::styled(format!("  {:16}", key_display), key_style),
+            Span::styled(desc.to_string(), desc_style),
+        ])
+    };
+
     lines.push(section("File Content Diff"));
-    lines.push(key_line("Up/Down", "Scroll line by line"));
-    lines.push(key_line("PgUp/PgDn", "Page scroll"));
-    lines.push(key_line("Home/End", "Go to start/end"));
-    lines.push(key_line("n", "Jump to next change"));
-    lines.push(key_line("N", "Jump to previous change"));
-    lines.push(key_line("Esc", "Return to diff screen"));
+    lines.push(dfk(DiffFileViewAction::MoveUp, "Scroll up"));
+    lines.push(dfk(DiffFileViewAction::MoveDown, "Scroll down"));
+    lines.push(dfk(DiffFileViewAction::PageUp, "Page up"));
+    lines.push(dfk(DiffFileViewAction::PageDown, "Page down"));
+    lines.push(dfk(DiffFileViewAction::GoHome, "Go to start"));
+    lines.push(dfk(DiffFileViewAction::GoEnd, "Go to end"));
+    lines.push(dfk(DiffFileViewAction::NextChange, "Jump to next change"));
+    lines.push(dfk(DiffFileViewAction::PrevChange, "Jump to previous change"));
+    lines.push(dfk(DiffFileViewAction::Close, "Return to diff screen"));
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
     // Section 13: Settings
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Settings"));
-    lines.push(key_line("` (backtick)", "Open settings dialog"));
+    lines.push(pk(PanelAction::Settings, "Open settings dialog"));
     lines.push(key_line("Up/Down", "Select setting row"));
     lines.push(key_line("Left/Right", "Change value (theme/diff)"));
     lines.push(key_line("Enter", "Save settings"));
@@ -377,63 +470,55 @@ fn build_help_content(theme: &Theme) -> Vec<Line<'static>> {
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Section 13: Quick Reference
+    // Quick Reference (built from keybindings)
     // ═══════════════════════════════════════════════════════════════════════
     lines.push(section("Quick Reference"));
-    lines.push(Line::from(vec![
-        Span::styled("  h", key_highlight_style),
-        Span::styled("elp ", desc_style),
-        Span::styled("i", key_highlight_style),
-        Span::styled("nfo ", desc_style),
-        Span::styled("e", key_highlight_style),
-        Span::styled("dit ", desc_style),
-        Span::styled("k", key_highlight_style),
-        Span::styled("mkdir ", desc_style),
-        Span::styled("m", key_highlight_style),
-        Span::styled("kfile ", desc_style),
-        Span::styled("x", key_highlight_style),
-        Span::styled("del ", desc_style),
-        Span::styled("r", key_highlight_style),
-        Span::styled("en", desc_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  t", key_highlight_style),
-        Span::styled("ar ", desc_style),
-        Span::styled("f", key_highlight_style),
-        Span::styled("ind ", desc_style),
-        Span::styled(".", key_highlight_style),
-        Span::styled("AI ", desc_style),
-        Span::styled("p", key_highlight_style),
-        Span::styled("roc ", desc_style),
-        Span::styled("1", key_highlight_style),
-        Span::styled("home ", desc_style),
-        Span::styled("2", key_highlight_style),
-        Span::styled("ref ", desc_style),
-        Span::styled("8", key_highlight_style),
-        Span::styled("diff ", desc_style),
-        Span::styled("0", key_highlight_style),
-        Span::styled("+pan ", desc_style),
-        Span::styled("9", key_highlight_style),
-        Span::styled("-pan", desc_style),
-    ]));
-    #[cfg(target_os = "macos")]
-    lines.push(Line::from(vec![
-        Span::styled("  o", key_highlight_style),
-        Span::styled("pen ", desc_style),
-        Span::styled("c", key_highlight_style),
-        Span::styled("ode ", desc_style),
-        Span::styled("`", key_highlight_style),
-        Span::styled("set ", desc_style),
-        Span::styled("q", key_highlight_style),
-        Span::styled("uit", desc_style),
-    ]));
-    #[cfg(not(target_os = "macos"))]
-    lines.push(Line::from(vec![
-        Span::styled("  `", key_highlight_style),
-        Span::styled("set ", desc_style),
-        Span::styled("q", key_highlight_style),
-        Span::styled("uit", desc_style),
-    ]));
+    {
+        let mut qr_items: Vec<(PanelAction, &str)> = vec![
+            (PanelAction::Help, "help "),
+            (PanelAction::FileInfo, "info "),
+            (PanelAction::Edit, "edit "),
+            (PanelAction::Mkdir, "mkdir "),
+            (PanelAction::Mkfile, "mkfile "),
+            (PanelAction::Delete, "del "),
+            (PanelAction::Rename, "ren "),
+            (PanelAction::Tar, "tar "),
+            (PanelAction::Search, "find "),
+            (PanelAction::AIScreen, "AI "),
+            (PanelAction::ProcessManager, "proc "),
+            (PanelAction::GoHomeDir, "home "),
+            (PanelAction::Refresh, "ref "),
+            (PanelAction::StartDiff, "diff "),
+            (PanelAction::AddPanel, "+pan "),
+            (PanelAction::ClosePanel, "-pan "),
+        ];
+        #[cfg(target_os = "macos")]
+        {
+            qr_items.push((PanelAction::OpenInFinder, "finder "));
+            qr_items.push((PanelAction::OpenInVSCode, "vscode "));
+        }
+        qr_items.push((PanelAction::Settings, "set "));
+        qr_items.push((PanelAction::Quit, "quit "));
+
+        // Build spans in rows, wrapping at ~70 chars
+        let mut row_spans: Vec<Span> = vec![Span::styled("  ".to_string(), desc_style)];
+        let mut row_width: usize = 2;
+        for (action, label) in &qr_items {
+            let key_str = kb.panel_first_key(*action).to_string();
+            let entry_width = key_str.len() + 1 + label.len(); // key:label
+            if row_width + entry_width > 70 && row_width > 2 {
+                lines.push(Line::from(std::mem::take(&mut row_spans)));
+                row_spans.push(Span::styled("  ".to_string(), desc_style));
+                row_width = 2;
+            }
+            row_spans.push(Span::styled(key_str, key_highlight_style));
+            row_spans.push(Span::styled(format!(":{}", label), desc_style));
+            row_width += entry_width;
+        }
+        if row_spans.len() > 1 {
+            lines.push(Line::from(row_spans));
+        }
+    }
     lines.push(Line::from(""));
 
     // ═══════════════════════════════════════════════════════════════════════

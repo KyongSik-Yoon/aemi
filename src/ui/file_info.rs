@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -326,8 +326,9 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
 
     let hint_style = Style::default().fg(theme.file_info.hint_text);
     if is_calculating {
+        let close_key = app.keybindings.file_info_first_key(crate::keybindings::FileInfoAction::Close);
         lines.push(Line::from(Span::styled(
-            "Press ESC to cancel, any other key to close",
+            format!("Press {} to cancel, any other key to close", close_key),
             hint_style,
         )));
     } else {
@@ -376,26 +377,28 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     frame.render_widget(paragraph, padded_inner);
 }
 
-pub fn handle_input(app: &mut App, code: KeyCode) {
+pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::keybindings::FileInfoAction;
+
     // Check if we're calculating
     let is_calculating = app.file_info_state
         .as_ref()
         .map(|s| s.is_calculating)
         .unwrap_or(false);
 
-    if code == KeyCode::Esc && is_calculating {
-        // ESC during calculation: cancel the calculation
-        if let Some(ref mut state) = app.file_info_state {
-            state.cancel();
+    if let Some(FileInfoAction::Close) = app.keybindings.file_info_action(code, modifiers) {
+        if is_calculating {
+            // Close key during calculation: cancel the calculation only
+            if let Some(ref mut state) = app.file_info_state {
+                state.cancel();
+            }
+            return;
         }
-        // Don't close the dialog, just cancel the calculation
-        return;
     }
 
-    // Any other key (or ESC when not calculating) closes the dialog
-    // Clean up state
+    // Any key closes the dialog
     if let Some(ref mut state) = app.file_info_state {
-        state.cancel(); // Cancel any ongoing calculation
+        state.cancel();
     }
     app.file_info_state = None;
     app.current_screen = Screen::FilePanel;

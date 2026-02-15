@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use crate::ui::theme::{Theme, DEFAULT_THEME_NAME};
 use crate::services::remote::RemoteProfile;
+use crate::keybindings::KeybindingsConfig;
 
 /// Panel-specific settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +87,9 @@ pub struct Settings {
     /// Remote server profiles for SSH/SFTP connections
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remote_profiles: Vec<RemoteProfile>,
+    /// Keybindings configuration
+    #[serde(default)]
+    pub keybindings: KeybindingsConfig,
 }
 
 impl Default for Settings {
@@ -125,6 +129,7 @@ impl Default for Settings {
             active_panel_index: 0,
             diff_compare_method: default_diff_compare_method(),
             remote_profiles: Vec::new(),
+            keybindings: KeybindingsConfig::default(),
         }
     }
 }

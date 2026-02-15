@@ -398,11 +398,13 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     }
 
     if let Some(ref error) = state.error {
+        use crate::keybindings::ImageViewerAction;
+        let close_key = app.keybindings.image_viewer_first_key(ImageViewerAction::Close);
         let error_lines = vec![
             Line::from(""),
             Line::from(Span::styled(error.clone(), Style::default().fg(theme.image_viewer.error_text))),
             Line::from(""),
-            Line::from(Span::styled("Press ESC to close", Style::default().fg(theme.image_viewer.hint_text))),
+            Line::from(Span::styled(format!("Press {} to close", close_key), Style::default().fg(theme.image_viewer.hint_text))),
         ];
         frame.render_widget(Paragraph::new(error_lines), inner);
         return;
@@ -412,24 +414,26 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         render_image(frame, img, inner, state.zoom, state.offset_x, state.offset_y);
     }
 
-    // Help line at bottom
+    // Help line at bottom (keybindings에서 동적으로)
+    use crate::keybindings::ImageViewerAction;
+    let kb = &app.keybindings;
     let help_area = Rect::new(inner.x, inner.y + inner.height.saturating_sub(1), inner.width, 1);
-    let help = Line::from(vec![
-        Span::styled("PgUp", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled("/", Style::default().fg(theme.image_viewer.footer_separator)),
-        Span::styled("PgDn", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled(" Prev/Next ", Style::default().fg(theme.image_viewer.footer_text)),
-        Span::styled("+", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled("/", Style::default().fg(theme.image_viewer.footer_separator)),
-        Span::styled("-", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled(" Zoom ", Style::default().fg(theme.image_viewer.footer_text)),
-        Span::styled("Arrow", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled(" Pan ", Style::default().fg(theme.image_viewer.footer_text)),
-        Span::styled("r", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled(" Reset ", Style::default().fg(theme.image_viewer.footer_text)),
-        Span::styled("Esc", Style::default().fg(theme.image_viewer.footer_key)),
-        Span::styled(" Close", Style::default().fg(theme.image_viewer.footer_text)),
-    ]);
+    let fk = Style::default().fg(theme.image_viewer.footer_key);
+    let ft = Style::default().fg(theme.image_viewer.footer_text);
+    let shortcuts: Vec<(String, &str)> = vec![
+        (kb.image_viewer_first_key(ImageViewerAction::PrevImage).to_string(), " prev "),
+        (kb.image_viewer_first_key(ImageViewerAction::NextImage).to_string(), " next "),
+        (kb.image_viewer_first_key(ImageViewerAction::ZoomIn).to_string(), " zoom+ "),
+        (kb.image_viewer_first_key(ImageViewerAction::ZoomOut).to_string(), " zoom- "),
+        (kb.image_viewer_first_key(ImageViewerAction::ResetView).to_string(), " reset "),
+        (kb.image_viewer_first_key(ImageViewerAction::Close).to_string(), " close"),
+    ];
+    let mut help_spans = Vec::new();
+    for (key, label) in &shortcuts {
+        help_spans.push(Span::styled(key.as_str(), fk));
+        help_spans.push(Span::styled(*label, ft));
+    }
+    let help = Line::from(help_spans);
     frame.render_widget(Paragraph::new(help), help_area);
 }
 
@@ -516,6 +520,8 @@ fn render_image(frame: &mut Frame, img: &DynamicImage, area: Rect, zoom: f32, of
 }
 
 pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::keybindings::ImageViewerAction;
+
     let state = match &mut app.image_viewer_state {
         Some(s) => s,
         None => {
@@ -524,87 +530,73 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
     };
 
-    match code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-            // Get the filename of the last viewed image to focus on it
-            let last_image_name = state.path.file_name()
-                .map(|n| n.to_string_lossy().to_string());
+    if let Some(action) = app.keybindings.image_viewer_action(code, modifiers) {
+        match action {
+            ImageViewerAction::Close => {
+                let last_image_name = state.path.file_name()
+                    .map(|n| n.to_string_lossy().to_string());
 
-            // Set pending_focus on active panel so cursor lands on the last viewed image
-            if let Some(filename) = last_image_name {
-                app.active_panel_mut().pending_focus = Some(filename);
-                app.active_panel_mut().load_files();
+                if let Some(filename) = last_image_name {
+                    app.active_panel_mut().pending_focus = Some(filename);
+                    app.active_panel_mut().load_files();
+                }
+
+                app.current_screen = Screen::FilePanel;
+                app.image_viewer_state = None;
             }
-
-            app.current_screen = Screen::FilePanel;
-            app.image_viewer_state = None;
-        }
-        KeyCode::Char('+') | KeyCode::Char('=') => {
-            state.zoom_in();
-        }
-        KeyCode::Char('-') | KeyCode::Char('_') => {
-            state.zoom_out();
-        }
-        KeyCode::Char('r') | KeyCode::Char('R') => {
-            state.reset_view();
-        }
-        KeyCode::Up if modifiers.contains(KeyModifiers::SHIFT) => {
-            state.navigate_prev();
-        }
-        KeyCode::Down if modifiers.contains(KeyModifiers::SHIFT) => {
-            state.navigate_next();
-        }
-        KeyCode::Up => {
-            state.pan(0, 5);
-        }
-        KeyCode::Down => {
-            state.pan(0, -5);
-        }
-        KeyCode::Left => {
-            state.pan(5, 0);
-        }
-        KeyCode::Right => {
-            state.pan(-5, 0);
-        }
-        // Navigate to previous image
-        KeyCode::PageUp => {
-            state.navigate_prev();
-        }
-        // Navigate to next image
-        KeyCode::PageDown => {
-            state.navigate_next();
-        }
-        // Select current image and move to next
-        KeyCode::Char(' ') => {
-            // 현재 이미지 파일 이름 가져오기
-            let filename = state.path.file_name().map(|n| n.to_string_lossy().to_string());
-            // 다음 이미지로 이동 (state borrow 해제 전에 처리)
-            state.navigate_next();
-            // 활성 패널의 selected_files에 토글 (state borrow 해제 후)
-            if let Some(name) = filename {
-                let panel = app.active_panel_mut();
-                if panel.selected_files.contains(&name) {
-                    panel.selected_files.remove(&name);
-                } else {
-                    panel.selected_files.insert(name);
+            ImageViewerAction::ZoomIn => {
+                state.zoom_in();
+            }
+            ImageViewerAction::ZoomOut => {
+                state.zoom_out();
+            }
+            ImageViewerAction::ResetView => {
+                state.reset_view();
+            }
+            ImageViewerAction::PanUp => {
+                state.pan(0, 5);
+            }
+            ImageViewerAction::PanDown => {
+                state.pan(0, -5);
+            }
+            ImageViewerAction::PanLeft => {
+                state.pan(5, 0);
+            }
+            ImageViewerAction::PanRight => {
+                state.pan(-5, 0);
+            }
+            ImageViewerAction::PrevImage => {
+                state.navigate_prev();
+            }
+            ImageViewerAction::NextImage => {
+                state.navigate_next();
+            }
+            ImageViewerAction::ToggleSelect => {
+                let filename = state.path.file_name().map(|n| n.to_string_lossy().to_string());
+                state.navigate_next();
+                if let Some(name) = filename {
+                    let panel = app.active_panel_mut();
+                    if panel.selected_files.contains(&name) {
+                        panel.selected_files.remove(&name);
+                    } else {
+                        panel.selected_files.insert(name);
+                    }
                 }
             }
+            ImageViewerAction::Delete => {
+                let filename = state.path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "file".to_string());
+                app.dialog = Some(Dialog {
+                    dialog_type: DialogType::Delete,
+                    input: String::new(),
+                    cursor_pos: 0,
+                    message: format!("Delete {}?", filename),
+                    completion: None,
+                    selected_button: 1,
+                    selection: None,
+                });
+            }
         }
-        // Delete current image
-        KeyCode::Delete | KeyCode::Backspace => {
-            let filename = state.path.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "file".to_string());
-            app.dialog = Some(Dialog {
-                dialog_type: DialogType::Delete,
-                input: String::new(),
-                cursor_pos: 0,
-                message: format!("Delete {}?", filename),
-                completion: None,
-                selected_button: 1,  // 기본값: No (안전을 위해)
-                selection: None,
-            });
-        }
-        _ => {}
     }
 }

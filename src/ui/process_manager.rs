@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::Rect,
@@ -146,36 +146,36 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         );
     }
 
-    // Footer - 첫 글자 강조 스타일
+    // Footer - keybindings에서 동적으로
+    use crate::keybindings::ProcessManagerAction;
+    let kb = &app.keybindings;
     let mut footer_spans = vec![];
 
-    // 기본 명령어
-    let commands = [
-        ("k", "ill "),
-        ("K", "ill! "),
-        ("r", "efresh "),
-        ("q", "uit "),
+    let commands: Vec<(String, &str)> = vec![
+        (kb.process_manager_first_key(ProcessManagerAction::Kill).to_string(), " kill "),
+        (kb.process_manager_first_key(ProcessManagerAction::ForceKill).to_string(), " kill! "),
+        (kb.process_manager_first_key(ProcessManagerAction::Refresh).to_string(), " refresh "),
+        (kb.process_manager_first_key(ProcessManagerAction::Quit).to_string(), " quit "),
     ];
 
-    for (key, rest) in commands {
-        footer_spans.push(Span::styled(key, theme.header_style()));
-        footer_spans.push(Span::styled(rest, theme.dim_style()));
+    for (key, rest) in &commands {
+        footer_spans.push(Span::styled(key.as_str(), theme.header_style()));
+        footer_spans.push(Span::styled(*rest, theme.dim_style()));
     }
 
     // 구분자
     footer_spans.push(Span::styled("| sort: ", theme.dim_style()));
 
-    // 정렬 옵션
-    let sort_options = [
-        ("p", "id "),
-        ("c", "pu "),
-        ("m", "em "),
-        ("n", "ame"),
+    let sort_options: Vec<(String, &str)> = vec![
+        (kb.process_manager_first_key(ProcessManagerAction::SortByPid).to_string(), " pid "),
+        (kb.process_manager_first_key(ProcessManagerAction::SortByCpu).to_string(), " cpu "),
+        (kb.process_manager_first_key(ProcessManagerAction::SortByMem).to_string(), " mem "),
+        (kb.process_manager_first_key(ProcessManagerAction::SortByName).to_string(), " name"),
     ];
 
-    for (key, rest) in sort_options {
-        footer_spans.push(Span::styled(key, theme.header_style()));
-        footer_spans.push(Span::styled(rest, theme.dim_style()));
+    for (key, rest) in &sort_options {
+        footer_spans.push(Span::styled(key.as_str(), theme.header_style()));
+        footer_spans.push(Span::styled(*rest, theme.dim_style()));
     }
 
     let footer = Line::from(footer_spans);
@@ -189,8 +189,10 @@ fn truncate(s: &str, max_width: usize) -> String {
     crate::utils::format::truncate_with_ellipsis(s, max_width)
 }
 
-pub fn handle_input(app: &mut App, code: KeyCode) {
-    // Handle confirm dialog
+pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::keybindings::ProcessManagerAction;
+
+    // Handle confirm dialog (hardcoded — modal y/n prompt)
     if app.process_confirm_kill.is_some() {
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
@@ -204,7 +206,6 @@ pub fn handle_input(app: &mut App, code: KeyCode) {
                         Ok(_) => app.show_message(&format!("Process {} killed", pid)),
                         Err(e) => app.show_message(&format!("Error: {}", e)),
                     }
-                    // Refresh process list
                     app.processes = process::get_process_list();
                     sort_processes(app);
                 }
@@ -220,65 +221,64 @@ pub fn handle_input(app: &mut App, code: KeyCode) {
         return;
     }
 
-    match code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-            app.current_screen = Screen::FilePanel;
-        }
-        KeyCode::Up => {
-            if app.process_selected_index > 0 {
-                app.process_selected_index -= 1;
+    if let Some(action) = app.keybindings.process_manager_action(code, modifiers) {
+        match action {
+            ProcessManagerAction::Quit => {
+                app.current_screen = Screen::FilePanel;
+            }
+            ProcessManagerAction::MoveUp => {
+                if app.process_selected_index > 0 {
+                    app.process_selected_index -= 1;
+                }
+            }
+            ProcessManagerAction::MoveDown => {
+                if app.process_selected_index < app.processes.len().saturating_sub(1) {
+                    app.process_selected_index += 1;
+                }
+            }
+            ProcessManagerAction::PageUp => {
+                app.process_selected_index = app.process_selected_index.saturating_sub(10);
+            }
+            ProcessManagerAction::PageDown => {
+                app.process_selected_index = (app.process_selected_index + 10)
+                    .min(app.processes.len().saturating_sub(1));
+            }
+            ProcessManagerAction::GoHome => {
+                app.process_selected_index = 0;
+            }
+            ProcessManagerAction::GoEnd => {
+                app.process_selected_index = app.processes.len().saturating_sub(1);
+            }
+            ProcessManagerAction::SortByPid => {
+                toggle_sort(app, SortField::Pid);
+            }
+            ProcessManagerAction::SortByCpu => {
+                toggle_sort(app, SortField::Cpu);
+            }
+            ProcessManagerAction::SortByMem => {
+                toggle_sort(app, SortField::Mem);
+            }
+            ProcessManagerAction::SortByName => {
+                toggle_sort(app, SortField::Command);
+            }
+            ProcessManagerAction::Kill => {
+                if let Some(proc) = app.processes.get(app.process_selected_index) {
+                    app.process_confirm_kill = Some(proc.pid);
+                    app.process_force_kill = false;
+                }
+            }
+            ProcessManagerAction::ForceKill => {
+                if let Some(proc) = app.processes.get(app.process_selected_index) {
+                    app.process_confirm_kill = Some(proc.pid);
+                    app.process_force_kill = true;
+                }
+            }
+            ProcessManagerAction::Refresh => {
+                app.processes = process::get_process_list();
+                sort_processes(app);
+                app.show_message("Refreshed");
             }
         }
-        KeyCode::Down => {
-            if app.process_selected_index < app.processes.len().saturating_sub(1) {
-                app.process_selected_index += 1;
-            }
-        }
-        KeyCode::PageUp => {
-            app.process_selected_index = app.process_selected_index.saturating_sub(10);
-        }
-        KeyCode::PageDown => {
-            app.process_selected_index = (app.process_selected_index + 10)
-                .min(app.processes.len().saturating_sub(1));
-        }
-        KeyCode::Home => {
-            app.process_selected_index = 0;
-        }
-        KeyCode::End => {
-            app.process_selected_index = app.processes.len().saturating_sub(1);
-        }
-        KeyCode::Char('p') | KeyCode::Char('P') => {
-            toggle_sort(app, SortField::Pid);
-        }
-        KeyCode::Char('c') | KeyCode::Char('C') => {
-            toggle_sort(app, SortField::Cpu);
-        }
-        KeyCode::Char('m') | KeyCode::Char('M') => {
-            toggle_sort(app, SortField::Mem);
-        }
-        KeyCode::Char('n') | KeyCode::Char('N') => {
-            toggle_sort(app, SortField::Command);
-        }
-        KeyCode::Char('k') => {
-            // 일반 kill (SIGTERM)
-            if let Some(proc) = app.processes.get(app.process_selected_index) {
-                app.process_confirm_kill = Some(proc.pid);
-                app.process_force_kill = false;
-            }
-        }
-        KeyCode::Char('K') => {
-            // Force kill (SIGKILL)
-            if let Some(proc) = app.processes.get(app.process_selected_index) {
-                app.process_confirm_kill = Some(proc.pid);
-                app.process_force_kill = true;
-            }
-        }
-        KeyCode::Char('r') | KeyCode::Char('R') => {
-            app.processes = process::get_process_list();
-            sort_processes(app);
-            app.show_message("Refreshed");
-        }
-        _ => {}
     }
 }
 

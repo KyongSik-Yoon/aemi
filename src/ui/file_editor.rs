@@ -17,6 +17,7 @@ use super::{
     syntax::{Language, SyntaxHighlighter},
     theme::Theme,
 };
+use crate::keybindings::EditorAction;
 
 /// Undo/Redo 액션 유형
 #[derive(Debug, Clone)]
@@ -2203,7 +2204,7 @@ impl EditorState {
     }
 }
 
-pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Theme) {
+pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
     let border_color = if state.modified {
         theme.editor.modified_mark
     } else {
@@ -2491,22 +2492,22 @@ pub fn draw(frame: &mut Frame, state: &mut EditorState, area: Rect, theme: &Them
                     footer_spans.push(Span::styled("Wrap ", Style::default().fg(theme.editor.wrap_indicator)));
                 }
 
-                // 단축키 안내
-                let shortcuts = [
-                    ("^S", " save "),
-                    ("^K", " del "),
-                    ("^J", " dup "),
-                    ("^/", " comment "),
-                    ("^D", " select "),
-                    ("^F", " find "),
-                    ("^G", " goto "),
-                    ("^W", " wrap "),
-                    ("Esc", " exit"),
+                // 단축키 안내 (keybindings에서 동적으로)
+                let shortcuts: Vec<(String, &str)> = vec![
+                    (kb.editor_first_key(EditorAction::Save).to_string(), " save "),
+                    (kb.editor_first_key(EditorAction::DeleteLine).to_string(), " del "),
+                    (kb.editor_first_key(EditorAction::DuplicateLine).to_string(), " dup "),
+                    (kb.editor_first_key(EditorAction::ToggleComment).to_string(), " comment "),
+                    (kb.editor_first_key(EditorAction::SelectNextOccurrence).to_string(), " select "),
+                    (kb.editor_first_key(EditorAction::Find).to_string(), " find "),
+                    (kb.editor_first_key(EditorAction::GotoLine).to_string(), " goto "),
+                    (kb.editor_first_key(EditorAction::ToggleWordWrap).to_string(), " wrap "),
+                    (kb.editor_first_key(EditorAction::Exit).to_string(), " exit"),
                 ];
 
-                for (key, rest) in shortcuts {
-                    footer_spans.push(Span::styled(key, theme.header_style()));
-                    footer_spans.push(Span::styled(rest, theme.dim_style()));
+                for (key, rest) in &shortcuts {
+                    footer_spans.push(Span::styled(key.as_str(), theme.header_style()));
+                    footer_spans.push(Span::styled(*rest, theme.dim_style()));
                 }
 
                 let footer = Line::from(footer_spans);
@@ -2859,13 +2860,9 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         None => return,
     };
 
-    // pending_exit 상태 초기화 (Esc 외의 키 입력 시)
-    if code != KeyCode::Esc {
-        state.pending_exit = false;
-    }
-
-    // Goto 모드
+    // Goto 모드 (텍스트 입력 모드이므로 pending_exit 리셋)
     if state.goto_mode {
+        state.pending_exit = false;
         match code {
             KeyCode::Esc => {
                 state.goto_mode = false;
@@ -2887,8 +2884,9 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         return;
     }
 
-    // Find/Replace 모드
+    // Find/Replace 모드 (텍스트 입력 모드이므로 pending_exit 리셋)
     if state.find_mode != FindReplaceMode::None {
+        state.pending_exit = false;
         match code {
             KeyCode::Esc => {
                 state.find_mode = FindReplaceMode::None;
@@ -3028,10 +3026,15 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         return;
     }
 
-    // Ctrl 조합
-    if modifiers.contains(KeyModifiers::CONTROL) {
-        match code {
-            KeyCode::Char('s') => {
+    // EditorAction 조회 (Ctrl/Alt 조합 및 Esc)
+    if let Some(action) = app.keybindings.editor_action(code, modifiers) {
+        // Exit 이외의 action은 pending_exit 리셋
+        if action != EditorAction::Exit {
+            state.pending_exit = false;
+        }
+
+        match action {
+            EditorAction::Save => {
                 let save_result = state.save_file();
                 let is_settings = App::is_settings_file(&state.file_path);
                 let remote_info = state.remote_origin.as_ref().map(|o| {
@@ -3116,126 +3119,85 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     app.reload_settings();
                 }
                 app.refresh_panels();
-                return;
             }
-            KeyCode::Char('x') => {
-                // Ctrl+X: 잘라내기 (선택 없으면 줄 전체)
+            EditorAction::Cut => {
                 state.cut_line_or_selection();
-                return;
             }
-            KeyCode::Char('z') => {
+            EditorAction::Undo => {
                 state.undo();
-                return;
             }
-            KeyCode::Char('y') => {
+            EditorAction::Redo => {
                 state.redo();
-                return;
             }
-            KeyCode::Char('a') => {
+            EditorAction::SelectAll => {
                 state.select_all();
-                return;
             }
-            KeyCode::Char('c') => {
+            EditorAction::Copy => {
                 state.copy();
-                return;
             }
-            KeyCode::Char('v') => {
+            EditorAction::Paste => {
                 state.paste();
-                return;
             }
-            KeyCode::Char('w') => {
-                // Ctrl+W: word wrap 토글
+            EditorAction::ToggleWordWrap => {
                 state.word_wrap = !state.word_wrap;
                 if state.word_wrap {
                     state.horizontal_scroll = 0;
                 }
-                return;
             }
-            KeyCode::Char('k') => {
-                // Ctrl+K: 줄 삭제
+            EditorAction::DeleteLine => {
                 state.delete_line();
-                return;
             }
-            KeyCode::Char('j') => {
-                // Ctrl+J: 줄 복제
+            EditorAction::DuplicateLine => {
                 state.duplicate_line();
-                return;
             }
-            KeyCode::Char('d') => {
-                // Ctrl+D: 단어 선택 / 다중 선택
+            EditorAction::SelectNextOccurrence => {
                 state.select_next_occurrence();
-                return;
             }
-            KeyCode::Char('l') => {
-                // Ctrl+L: 현재 줄 선택
+            EditorAction::SelectLine => {
                 state.select_line();
-                return;
             }
-            KeyCode::Char('/') | KeyCode::Char('_') | KeyCode::Char('7') => {
-                // Ctrl+/: 주석 토글
-                // 일부 터미널에서 Ctrl+_ 또는 Ctrl+7로 전달됨
+            EditorAction::ToggleComment => {
                 state.toggle_comment();
-                return;
             }
-            KeyCode::Char(']') => {
-                // Ctrl+]: 들여쓰기
+            EditorAction::Indent => {
                 state.indent();
-                return;
             }
-            // Ctrl+[는 터미널에서 ESC로 해석되어 작동 안 함
-            // 내어쓰기는 Shift+Tab 사용 (아래 KeyCode::Tab 참조)
-            KeyCode::Enter => {
-                if modifiers.contains(KeyModifiers::SHIFT) {
-                    // Ctrl+Shift+Enter: 위에 빈 줄 삽입
-                    state.insert_line_above();
-                } else {
-                    // Ctrl+Enter: 아래에 빈 줄 삽입
-                    state.insert_line_below();
-                }
-                return;
+            EditorAction::InsertLineBelow => {
+                state.insert_line_below();
             }
-            KeyCode::Left => {
-                // Ctrl+Left: 단어 이동 왼쪽 (Shift 있으면 선택)
+            EditorAction::InsertLineAbove => {
+                state.insert_line_above();
+            }
+            EditorAction::MoveWordLeft => {
                 let extend_sel = modifiers.contains(KeyModifiers::SHIFT);
                 state.move_word_left(extend_sel);
-                return;
             }
-            KeyCode::Right => {
-                // Ctrl+Right: 단어 이동 오른쪽 (Shift 있으면 선택)
+            EditorAction::MoveWordRight => {
                 let extend_sel = modifiers.contains(KeyModifiers::SHIFT);
                 state.move_word_right(extend_sel);
-                return;
             }
-            KeyCode::Backspace => {
-                // Ctrl+Backspace: 단어 삭제 (뒤)
+            EditorAction::DeleteWordBackward => {
                 state.delete_word_backward();
-                return;
             }
-            KeyCode::Delete => {
-                // Ctrl+Delete: 단어 삭제 (앞)
+            EditorAction::DeleteWordForward => {
                 state.delete_word_forward();
-                return;
             }
-            KeyCode::Char('f') => {
+            EditorAction::Find => {
                 state.find_mode = FindReplaceMode::Find;
                 state.input_focus = 0;
                 state.find_cursor_pos = state.find_input.chars().count();
-                return;
             }
-            KeyCode::Char('h') => {
+            EditorAction::Replace => {
                 state.find_mode = FindReplaceMode::Replace;
                 state.input_focus = 0;
                 state.find_cursor_pos = state.find_input.chars().count();
                 state.replace_cursor_pos = state.replace_input.chars().count();
-                return;
             }
-            KeyCode::Char('g') => {
+            EditorAction::GotoLine => {
                 state.goto_mode = true;
                 state.goto_input.clear();
-                return;
             }
-            KeyCode::Home => {
-                // 파일 시작으로 (Shift 있으면 선택)
+            EditorAction::GoToFileStart => {
                 let extend_sel = modifiers.contains(KeyModifiers::SHIFT);
                 if extend_sel {
                     if state.selection.is_none() {
@@ -3251,10 +3213,8 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     sel.end_col = state.cursor_col;
                 }
                 state.update_scroll();
-                return;
             }
-            KeyCode::End => {
-                // 파일 끝으로 (Shift 있으면 선택)
+            EditorAction::GoToFileEnd => {
                 let extend_sel = modifiers.contains(KeyModifiers::SHIFT);
                 if extend_sel {
                     if state.selection.is_none() {
@@ -3270,71 +3230,64 @@ pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     sel.end_col = state.cursor_col;
                 }
                 state.update_scroll();
-                return;
             }
-            _ => {}
-        }
-    }
-
-    // Alt 조합 (줄 이동)
-    if modifiers.contains(KeyModifiers::ALT) && !modifiers.contains(KeyModifiers::SHIFT) {
-        match code {
-            KeyCode::Up => {
+            EditorAction::MoveLineUp => {
                 state.move_line_up();
-                return;
             }
-            KeyCode::Down => {
+            EditorAction::MoveLineDown => {
                 state.move_line_down();
-                return;
             }
-            _ => {}
-        }
-    }
-
-    // Shift 선택
-    let extend_selection = modifiers.contains(KeyModifiers::SHIFT);
-
-    match code {
-        KeyCode::Esc => {
-            if state.selection.is_some() {
-                // 선택 해제 및 다중 커서 초기화
-                state.selection = None;
-                state.cursors.clear();
-                state.last_word_selection = None;
-            } else if state.modified {
-                // 변경사항이 있을 때
-                if state.pending_exit {
-                    // 두 번째 Esc: 변경 무시하고 종료
+            EditorAction::Exit => {
+                if state.selection.is_some() {
+                    // 선택 해제 및 다중 커서 초기화
+                    state.selection = None;
+                    state.cursors.clear();
+                    state.last_word_selection = None;
+                } else if state.modified {
+                    // 변경사항이 있을 때
+                    if state.pending_exit {
+                        // 두 번째 Esc: 변경 무시하고 종료
+                        if let Some(Screen::FileViewer) = app.previous_screen {
+                            if let Some(ref mut viewer) = app.viewer_state {
+                                viewer.scroll = state.scroll;
+                            }
+                            app.previous_screen = None;
+                            app.current_screen = Screen::FileViewer;
+                        } else {
+                            app.current_screen = Screen::FilePanel;
+                        }
+                    } else {
+                        // 첫 번째 Esc: 경고 메시지
+                        state.pending_exit = true;
+                        let exit_key = app.keybindings.editor_first_key(EditorAction::Exit);
+                        let save_key = app.keybindings.editor_first_key(EditorAction::Save);
+                        state.set_message(format!("Unsaved changes! Press {} again to discard, {} to save", exit_key, save_key), 60);
+                    }
+                } else {
+                    // 변경사항 없으면 바로 종료
                     if let Some(Screen::FileViewer) = app.previous_screen {
                         if let Some(ref mut viewer) = app.viewer_state {
-                            viewer.scroll = state.scroll;
+                            let scroll = state.scroll;
+                            let path = viewer.file_path.clone();
+                            let _ = viewer.load_file(&path);
+                            viewer.scroll = scroll;
                         }
                         app.previous_screen = None;
                         app.current_screen = Screen::FileViewer;
                     } else {
                         app.current_screen = Screen::FilePanel;
                     }
-                } else {
-                    // 첫 번째 Esc: 경고 메시지
-                    state.pending_exit = true;
-                    state.set_message("Unsaved changes! Press Esc again to discard, ^S to save", 60);
-                }
-            } else {
-                // 변경사항 없으면 바로 종료
-                if let Some(Screen::FileViewer) = app.previous_screen {
-                    if let Some(ref mut viewer) = app.viewer_state {
-                        let scroll = state.scroll;
-                        let path = viewer.file_path.clone();
-                        let _ = viewer.load_file(&path);
-                        viewer.scroll = scroll;
-                    }
-                    app.previous_screen = None;
-                    app.current_screen = Screen::FileViewer;
-                } else {
-                    app.current_screen = Screen::FilePanel;
                 }
             }
         }
+        return;
+    }
+
+    // 일반 모드 (화살표, Home/End, Enter, Tab, Backspace, Delete, 문자 입력)
+    state.pending_exit = false;
+    let extend_selection = modifiers.contains(KeyModifiers::SHIFT);
+
+    match code {
         KeyCode::Up => {
             state.move_cursor(-1, 0, extend_selection);
         }

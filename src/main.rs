@@ -2,6 +2,7 @@ mod ui;
 mod services;
 mod utils;
 mod config;
+mod keybindings;
 
 use std::io;
 use std::env;
@@ -19,6 +20,7 @@ use ratatui::{
 use crate::ui::app::{App, Screen};
 use crate::services::claude;
 use crate::utils::markdown::{render_markdown, MarkdownTheme, is_line_empty};
+use crate::keybindings::PanelAction;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -607,10 +609,10 @@ fn run_app<B: ratatui::backend::Backend>(
                             ui::file_editor::handle_input(app, key.code, key.modifiers);
                         }
                         Screen::FileInfo => {
-                            ui::file_info::handle_input(app, key.code);
+                            ui::file_info::handle_input(app, key.code, key.modifiers);
                         }
                         Screen::ProcessManager => {
-                            ui::process_manager::handle_input(app, key.code);
+                            ui::process_manager::handle_input(app, key.code, key.modifiers);
                         }
                         Screen::Help => {
                             if ui::help::handle_input(app, key.code) {
@@ -630,7 +632,7 @@ fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                         Screen::SystemInfo => {
-                            if ui::system_info::handle_input(&mut app.system_info_state, key.code) {
+                            if ui::system_info::handle_input(&mut app.system_info_state, key.code, key.modifiers, &app.keybindings) {
                                 app.current_screen = Screen::FilePanel;
                             }
                         }
@@ -643,19 +645,21 @@ fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                         Screen::SearchResult => {
-                            let should_close = ui::search_result::handle_input(
+                            let result = ui::search_result::handle_input(
                                 &mut app.search_result_state,
                                 key.code,
+                                key.modifiers,
+                                &app.keybindings,
                             );
-                            if should_close {
-                                if key.code == KeyCode::Enter {
-                                    // Enter: 선택한 경로로 이동
+                            match result {
+                                Some(crate::keybindings::SearchResultAction::Open) => {
                                     app.goto_search_result();
-                                } else {
-                                    // Esc: 검색 결과 화면 닫기
+                                }
+                                Some(crate::keybindings::SearchResultAction::Close) => {
                                     app.search_result_state.active = false;
                                     app.current_screen = Screen::FilePanel;
                                 }
+                                _ => {}
                             }
                         }
                         Screen::DiffScreen => {
@@ -714,7 +718,7 @@ fn handle_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> 
     // AI 모드일 때: active_panel이 AI 패널 쪽이면 AI로 입력 전달, 아니면 파일 패널 조작
     if app.is_ai_mode() {
         let ai_has_focus = app.ai_panel_index == Some(app.active_panel_index);
-        if code == KeyCode::Tab {
+        if app.keybindings.panel_action(code, modifiers) == Some(PanelAction::SwitchPanel) {
             app.switch_panel();
             return false;
         }
@@ -732,7 +736,7 @@ fn handle_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> 
 
     // Handle advanced search dialog first
     if app.advanced_search_state.active {
-        if let Some(criteria) = ui::advanced_search::handle_input(&mut app.advanced_search_state, code) {
+        if let Some(criteria) = ui::advanced_search::handle_input(&mut app.advanced_search_state, code, modifiers, &app.keybindings) {
             app.execute_advanced_search(&criteria);
         }
         return false;
@@ -744,140 +748,67 @@ fn handle_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> 
     }
 
 
-    // Handle Ctrl key combinations first
-    if modifiers.contains(KeyModifiers::CONTROL) {
-        match code {
-            // Clipboard operations
-            KeyCode::Char('c') => {
-                app.clipboard_copy();
-                return false;
+    // Look up action from keybindings
+    if let Some(action) = app.keybindings.panel_action(code, modifiers) {
+        match action {
+            PanelAction::Quit => return true,
+            PanelAction::MoveUp => app.move_cursor(-1),
+            PanelAction::MoveDown => app.move_cursor(1),
+            PanelAction::PageUp => app.move_cursor(-10),
+            PanelAction::PageDown => app.move_cursor(10),
+            PanelAction::GoHome => app.cursor_to_start(),
+            PanelAction::GoEnd => app.cursor_to_end(),
+            PanelAction::Open => app.enter_selected(),
+            PanelAction::ParentDir => {
+                if app.diff_first_panel.is_some() {
+                    app.diff_first_panel = None;
+                    app.show_message("Diff cancelled");
+                } else {
+                    app.go_to_parent();
+                }
             }
-            KeyCode::Char('x') => {
-                app.clipboard_cut();
-                return false;
-            }
-            KeyCode::Char('v') => {
-                app.clipboard_paste();
-                return false;
-            }
-            // Select all - Ctrl+A
-            KeyCode::Char('a') => {
-                app.toggle_all_selection();
-                return false;
-            }
-            _ => {}
+            PanelAction::SwitchPanel => app.switch_panel(),
+            PanelAction::SwitchPanelLeft => app.switch_panel_left(),
+            PanelAction::SwitchPanelRight => app.switch_panel_right(),
+            PanelAction::ToggleSelect => app.toggle_selection(),
+            PanelAction::SelectAll => app.toggle_all_selection(),
+            PanelAction::SelectByExtension => app.select_by_extension(),
+            PanelAction::SelectUp => app.move_cursor_with_selection(-1),
+            PanelAction::SelectDown => app.move_cursor_with_selection(1),
+            PanelAction::Copy => app.clipboard_copy(),
+            PanelAction::Cut => app.clipboard_cut(),
+            PanelAction::Paste => app.clipboard_paste(),
+            PanelAction::SortByName => app.toggle_sort_by_name(),
+            PanelAction::SortByType => app.toggle_sort_by_type(),
+            PanelAction::SortBySize => app.toggle_sort_by_size(),
+            PanelAction::SortByDate => app.toggle_sort_by_date(),
+            PanelAction::Help => app.show_help(),
+            PanelAction::FileInfo => app.show_file_info(),
+            PanelAction::Edit => app.edit_file(),
+            PanelAction::Mkdir => app.show_mkdir_dialog(),
+            PanelAction::Mkfile => app.show_mkfile_dialog(),
+            PanelAction::Delete => app.show_delete_dialog(),
+            PanelAction::ProcessManager => app.show_process_manager(),
+            PanelAction::Rename => app.show_rename_dialog(),
+            PanelAction::Tar => app.show_tar_dialog(),
+            PanelAction::Search => app.show_search_dialog(),
+            PanelAction::GoToPath => app.show_goto_dialog(),
+            PanelAction::AddPanel => app.add_panel(),
+            PanelAction::GoHomeDir => app.goto_home(),
+            PanelAction::Refresh => app.refresh_panels(),
+            PanelAction::GitLogDiff => app.show_git_log_diff_dialog(),
+            PanelAction::StartDiff => app.start_diff(),
+            PanelAction::ClosePanel => app.close_panel(),
+            PanelAction::AIScreen => app.show_ai_screen(),
+            PanelAction::Settings => app.show_settings_dialog(),
+            PanelAction::GitScreen => app.show_git_screen(),
+            PanelAction::ToggleBookmark => app.toggle_bookmark(),
+            PanelAction::SetHandler => app.show_handler_dialog(),
+            #[cfg(target_os = "macos")]
+            PanelAction::OpenInFinder => app.open_in_finder(),
+            #[cfg(target_os = "macos")]
+            PanelAction::OpenInVSCode => app.open_in_vscode(),
         }
-    }
-
-    // Shift+방향키: 선택하면서 이동, Shift+V: 붙여넣기 (Windows 호환)
-    if modifiers.contains(KeyModifiers::SHIFT) {
-        match code {
-            KeyCode::Up => {
-                app.move_cursor_with_selection(-1);
-                return false;
-            }
-            KeyCode::Down => {
-                app.move_cursor_with_selection(1);
-                return false;
-            }
-            KeyCode::Char('V') | KeyCode::Char('v') => {
-                app.clipboard_paste();
-                return false;
-            }
-            _ => {}
-        }
-    }
-
-    match code {
-        // Quit
-        KeyCode::Char('q') | KeyCode::Char('Q') => return true,
-
-        // Navigation
-        KeyCode::Up => app.move_cursor(-1),
-        KeyCode::Down => app.move_cursor(1),
-        KeyCode::PageUp => app.move_cursor(-10),
-        KeyCode::PageDown => app.move_cursor(10),
-        KeyCode::Home => app.cursor_to_start(),
-        KeyCode::End => app.cursor_to_end(),
-
-        // Tab - switch panels
-        KeyCode::Tab => app.switch_panel(),
-
-        // Left/Right - switch panels (keep same index position)
-        KeyCode::Left => app.switch_panel_left(),
-        KeyCode::Right => app.switch_panel_right(),
-
-        // Enter - open directory or file
-        KeyCode::Enter => app.enter_selected(),
-
-        // Escape - cancel diff selection or go to parent directory
-        KeyCode::Esc => {
-            if app.diff_first_panel.is_some() {
-                app.diff_first_panel = None;
-                app.show_message("Diff cancelled");
-            } else {
-                app.go_to_parent();
-            }
-        }
-
-        // Space - select/deselect file
-        KeyCode::Char(' ') => app.toggle_selection(),
-
-        // * - select/deselect all
-        KeyCode::Char('*') => app.toggle_all_selection(),
-
-        // ; - select files by extension
-        KeyCode::Char(';') => app.select_by_extension(),
-
-        // Sort keys
-        KeyCode::Char('n') | KeyCode::Char('N') => app.toggle_sort_by_name(),
-        KeyCode::Char('y') | KeyCode::Char('Y') => app.toggle_sort_by_type(),
-        KeyCode::Char('s') | KeyCode::Char('S') => app.toggle_sort_by_size(),
-        KeyCode::Char('d') | KeyCode::Char('D') => app.toggle_sort_by_date(),
-
-        // Function keys (alphabet)
-        KeyCode::Char('h') | KeyCode::Char('H') => app.show_help(),
-        KeyCode::Char('i') | KeyCode::Char('I') => app.show_file_info(),
-        KeyCode::Char('e') | KeyCode::Char('E') => app.edit_file(),
-        KeyCode::Char('k') | KeyCode::Char('K') => app.show_mkdir_dialog(),
-        KeyCode::Char('m') | KeyCode::Char('M') => app.show_mkfile_dialog(),
-        KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Delete | KeyCode::Backspace => app.show_delete_dialog(),
-        KeyCode::Char('p') | KeyCode::Char('P') => app.show_process_manager(),
-        KeyCode::Char('r') | KeyCode::Char('R') => app.show_rename_dialog(),
-        KeyCode::Char('t') | KeyCode::Char('T') => app.show_tar_dialog(),
-        KeyCode::Char('f') => app.show_search_dialog(),
-        KeyCode::Char('/') => app.show_goto_dialog(),
-        KeyCode::Char('0') => app.add_panel(),
-        KeyCode::Char('1') => app.goto_home(),
-        KeyCode::Char('2') => app.refresh_panels(),
-        KeyCode::Char('7') => app.show_git_log_diff_dialog(),
-        KeyCode::Char('8') => app.start_diff(),
-        KeyCode::Char('9') => app.close_panel(),
-
-        // AI screen - '.'
-        KeyCode::Char('.') => app.show_ai_screen(),
-
-        // Settings dialog - '`'
-        KeyCode::Char('`') => app.show_settings_dialog(),
-
-        // Git screen - 'g'
-        KeyCode::Char('g') | KeyCode::Char('G') => app.show_git_screen(),
-
-        // Bookmark toggle - '\''
-        KeyCode::Char('\'') => app.toggle_bookmark(),
-
-        // Handler setup - 'u'
-        KeyCode::Char('u') | KeyCode::Char('U') => app.show_handler_dialog(),
-
-        // macOS: Open current folder in Finder
-        #[cfg(target_os = "macos")]
-        KeyCode::Char('o') | KeyCode::Char('O') => app.open_in_finder(),
-
-        // macOS: Open current folder in VS Code
-        #[cfg(target_os = "macos")]
-        KeyCode::Char('c') => app.open_in_vscode(),
-
-        _ => {}
     }
     false
 }

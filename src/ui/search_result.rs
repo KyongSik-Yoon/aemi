@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use chrono::{DateTime, Local};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::Rect,
@@ -188,6 +188,7 @@ pub fn draw(
     state: &mut SearchResultState,
     area: Rect,
     theme: &Theme,
+    kb: &crate::keybindings::Keybindings,
 ) {
     let title = format!(
         " Search Results: \"{}\" ({} found) ",
@@ -342,13 +343,14 @@ pub fn draw(
         frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
     }
 
-    // 하단 도움말
+    // 하단 도움말 (keybindings에서 동적으로)
+    use crate::keybindings::SearchResultAction;
     let help_line = Line::from(vec![
-        Span::styled("↑↓", theme.header_style()),
+        Span::styled(kb.search_result_first_key(SearchResultAction::MoveUp).to_string(), theme.header_style()),
         Span::styled(":navigate ", theme.dim_style()),
-        Span::styled("Enter", theme.header_style()),
+        Span::styled(kb.search_result_first_key(SearchResultAction::Open).to_string(), theme.header_style()),
         Span::styled(":go to path ", theme.dim_style()),
-        Span::styled("Esc", theme.header_style()),
+        Span::styled(kb.search_result_first_key(SearchResultAction::Close).to_string(), theme.header_style()),
         Span::styled(":close", theme.dim_style()),
     ]);
 
@@ -357,35 +359,25 @@ pub fn draw(
 }
 
 /// 입력 처리 - true 반환 시 화면 닫기
-pub fn handle_input(state: &mut SearchResultState, code: KeyCode) -> bool {
-    match code {
-        KeyCode::Esc => {
-            state.active = false;
-            return true;
+pub fn handle_input(state: &mut SearchResultState, code: KeyCode, modifiers: KeyModifiers, kb: &crate::keybindings::Keybindings) -> Option<crate::keybindings::SearchResultAction> {
+    use crate::keybindings::SearchResultAction;
+
+    if let Some(action) = kb.search_result_action(code, modifiers) {
+        match action {
+            SearchResultAction::Close => {
+                state.active = false;
+                return Some(SearchResultAction::Close);
+            }
+            SearchResultAction::MoveUp => { state.move_cursor(-1); }
+            SearchResultAction::MoveDown => { state.move_cursor(1); }
+            SearchResultAction::PageUp => { state.move_cursor(-10); }
+            SearchResultAction::PageDown => { state.move_cursor(10); }
+            SearchResultAction::GoHome => { state.cursor_to_start(); }
+            SearchResultAction::GoEnd => { state.cursor_to_end(); }
+            SearchResultAction::Open => {
+                return Some(SearchResultAction::Open);
+            }
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.move_cursor(-1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            state.move_cursor(1);
-        }
-        KeyCode::PageUp => {
-            state.move_cursor(-10);
-        }
-        KeyCode::PageDown => {
-            state.move_cursor(10);
-        }
-        KeyCode::Home | KeyCode::Char('g') => {
-            state.cursor_to_start();
-        }
-        KeyCode::End | KeyCode::Char('G') => {
-            state.cursor_to_end();
-        }
-        KeyCode::Enter => {
-            // Enter는 App에서 처리 (경로 이동)
-            return true;
-        }
-        _ => {}
     }
-    false
+    None
 }

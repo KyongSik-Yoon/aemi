@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -127,7 +127,7 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-pub fn draw(frame: &mut Frame, state: &AdvancedSearchState, area: Rect, theme: &Theme) {
+pub fn draw(frame: &mut Frame, state: &AdvancedSearchState, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
     let width = 50u16;
     let height = 12u16;
     let x = area.x + (area.width.saturating_sub(width)) / 2;
@@ -194,10 +194,16 @@ pub fn draw(frame: &mut Frame, state: &AdvancedSearchState, area: Rect, theme: &
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "[↑↓/Tab] Navigate  [Enter] Search  [Esc] Cancel",
-        theme.dim_style(),
-    )));
+    {
+        use crate::keybindings::AdvancedSearchAction;
+        let nav_key = kb.advanced_search_keys_joined(AdvancedSearchAction::MoveDown, "/");
+        let submit_key = kb.advanced_search_first_key(AdvancedSearchAction::Submit);
+        let cancel_key = kb.advanced_search_first_key(AdvancedSearchAction::Cancel);
+        lines.push(Line::from(Span::styled(
+            format!("[{}] Navigate  [{}] Search  [{}] Cancel", nav_key, submit_key, cancel_key),
+            theme.dim_style(),
+        )));
+    }
 
     frame.render_widget(
         Paragraph::new(lines),
@@ -214,39 +220,46 @@ pub fn handle_paste(state: &mut AdvancedSearchState, text: &str) {
     }
 }
 
-pub fn handle_input(state: &mut AdvancedSearchState, code: KeyCode) -> Option<SearchCriteria> {
-    match code {
-        KeyCode::Esc => {
-            state.active = false;
-            state.reset();
-            None
-        }
-        KeyCode::Enter => {
-            state.active = false;
-            let criteria = state.get_criteria();
-            state.reset();
-            Some(criteria)
-        }
-        KeyCode::Up => {
-            state.active_field = state.active_field.saturating_sub(1);
-            None
-        }
-        KeyCode::Down | KeyCode::Tab => {
-            if state.active_field < 4 {
-                state.active_field += 1;
+pub fn handle_input(state: &mut AdvancedSearchState, code: KeyCode, modifiers: KeyModifiers, kb: &crate::keybindings::Keybindings) -> Option<SearchCriteria> {
+    use crate::keybindings::AdvancedSearchAction;
+
+    if let Some(action) = kb.advanced_search_action(code, modifiers) {
+        match action {
+            AdvancedSearchAction::Cancel => {
+                state.active = false;
+                state.reset();
+                return None;
             }
-            None
+            AdvancedSearchAction::Submit => {
+                state.active = false;
+                let criteria = state.get_criteria();
+                state.reset();
+                return Some(criteria);
+            }
+            AdvancedSearchAction::MoveUp => {
+                state.active_field = state.active_field.saturating_sub(1);
+                return None;
+            }
+            AdvancedSearchAction::MoveDown => {
+                if state.active_field < 4 {
+                    state.active_field += 1;
+                }
+                return None;
+            }
         }
+    }
+
+    // Text input (hardcoded)
+    match code {
         KeyCode::Backspace => {
             state.values[state.active_field].pop();
-            None
         }
         KeyCode::Char(c) => {
             state.values[state.active_field].push(c);
-            None
         }
-        _ => None,
+        _ => {}
     }
+    None
 }
 
 /// Check if a file matches the search criteria

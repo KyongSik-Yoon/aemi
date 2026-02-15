@@ -8,6 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::services::remote;
+use crate::keybindings::PanelAction;
 use super::{
     app::{App, Screen},
     dialogs,
@@ -73,7 +74,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 // AI 모드: 에디터와 AI 화면을 나란히 표시
                 draw_editor_with_ai(frame, app, area, &theme);
             } else if let Some(ref mut state) = app.editor_state {
-                file_editor::draw(frame, state, area, &theme);
+                file_editor::draw(frame, state, area, &theme, &app.keybindings);
             }
         }
         Screen::FileInfo => file_info::draw(frame, app, area, &theme),
@@ -85,7 +86,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
         }
         Screen::SystemInfo => {
-            system_info::draw(frame, &app.system_info_state, area, &theme);
+            system_info::draw(frame, &app.system_info_state, area, &theme, &app.keybindings);
         }
         Screen::ImageViewer => {
             // 이미지 뷰어는 항상 배경(패널) 위에 오버레이로 표시
@@ -93,16 +94,16 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             image_viewer::draw(frame, app, area, &theme);
         }
         Screen::SearchResult => {
-            search_result::draw(frame, &mut app.search_result_state, area, &theme);
+            search_result::draw(frame, &mut app.search_result_state, area, &theme, &app.keybindings);
         }
         Screen::DiffScreen => {
             if let Some(ref mut state) = app.diff_state {
-                diff_screen::draw(frame, state, area, &theme);
+                diff_screen::draw(frame, state, area, &theme, &app.keybindings);
             }
         }
         Screen::DiffFileView => {
             if let Some(ref mut state) = app.diff_file_view_state {
-                diff_file_view::draw(frame, state, area, &theme);
+                diff_file_view::draw(frame, state, area, &theme, &app.keybindings);
             }
         }
         Screen::GitScreen => {
@@ -114,7 +115,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     // Draw advanced search dialog overlay if active
     if app.advanced_search_state.active && app.current_screen == Screen::FilePanel {
-        advanced_search::draw(frame, &app.advanced_search_state, area, &theme);
+        advanced_search::draw(frame, &app.advanced_search_state, area, &theme, &app.keybindings);
     }
 
     // Draw dialog overlay on top of everything (모든 화면 위에 다이얼로그 표시)
@@ -284,56 +285,71 @@ fn draw_function_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         return;
     }
 
-    // 단축키: 첫 글자 강조 스타일
-    let mut shortcuts: Vec<(&str, &str)> = vec![
-        ("h", "elp "),
-        ("i", "nfo "),
-        ("e", "dit "),
-        ("k", "mkdir "),
-        ("m", "kfile "),
-        ("x", "del "),
-        ("r", "en "),
-        ("t", "ar "),
-        ("u", "hnd "),
-        ("f", "ind "),
-        (".", "AI "),
-        ("p", "roc "),
-        ("Spc", "sel "),
-        ("S↑↓", "sel "),
-        (";", "ext "),
-        ("^a", "ll "),
-        ("^c", "py "),
-        ("^x", "ut "),
-        ("^v/V", "pst "),
-        ("nsdy", "sort "),
-        ("1", "hom "),
-        ("2", "ref "),
-        ("'", "mrk "),
-        ("g", "it "),
-        ("7", "gdif "),
-        ("8", "diff "),
-        ("0", "+pan "),
-        ("9", "-pan "),
+    let kb = &app.keybindings;
+
+    // (action, short label) — key display comes from keybindings
+    let mut items: Vec<(PanelAction, &str)> = vec![
+        (PanelAction::Help, "help "),
+        (PanelAction::FileInfo, "info "),
+        (PanelAction::Edit, "edit "),
+        (PanelAction::Mkdir, "mkdir "),
+        (PanelAction::Mkfile, "mkfile "),
+        (PanelAction::Delete, "del "),
+        (PanelAction::Rename, "ren "),
+        (PanelAction::Tar, "tar "),
+        (PanelAction::SetHandler, "hnd "),
+        (PanelAction::Search, "find "),
+        (PanelAction::AIScreen, "AI "),
+        (PanelAction::ProcessManager, "proc "),
+        (PanelAction::ToggleSelect, "sel "),
+        (PanelAction::SelectUp, "sel "),
+        (PanelAction::SelectByExtension, "ext "),
+        (PanelAction::SelectAll, "all "),
+        (PanelAction::Copy, "cpy "),
+        (PanelAction::Cut, "cut "),
+        (PanelAction::Paste, "pst "),
+        (PanelAction::SortByName, "name "),
+        (PanelAction::SortBySize, "size "),
+        (PanelAction::SortByDate, "date "),
+        (PanelAction::SortByType, "type "),
+        (PanelAction::GoHomeDir, "home "),
+        (PanelAction::Refresh, "ref "),
+        (PanelAction::ToggleBookmark, "bmk "),
+        (PanelAction::GitScreen, "git "),
+        (PanelAction::GitLogDiff, "glog "),
+        (PanelAction::StartDiff, "diff "),
+        (PanelAction::AddPanel, "+pan "),
+        (PanelAction::ClosePanel, "-pan "),
     ];
 
-    // macOS only: open in Finder, open in VS Code
     #[cfg(target_os = "macos")]
     {
-        shortcuts.push(("o", "pen "));
-        shortcuts.push(("c", "ode "));
+        items.push((PanelAction::OpenInFinder, "finder "));
+        items.push((PanelAction::OpenInVSCode, "vscode "));
     }
 
-    shortcuts.push(("`", "set "));
-    shortcuts.push(("q", "uit"));
+    items.push((PanelAction::Settings, "set "));
+    items.push((PanelAction::Quit, "quit"));
+
+    let key_style = Style::default().fg(theme.function_bar.key);
+    let label_style = Style::default().fg(theme.function_bar.label);
+
+    // Build display strings for width calculation
+    let shortcuts: Vec<(String, &str)> = items.iter().map(|(action, label)| {
+        (kb.panel_first_key(*action).to_string(), *label)
+    }).collect();
 
     let mut spans = Vec::new();
-    for (key, rest) in &shortcuts {
-        spans.push(Span::styled(*key, Style::default().fg(theme.function_bar.key)));
-        spans.push(Span::styled(*rest, Style::default().fg(theme.function_bar.label)));
+    for (key, label) in &shortcuts {
+        spans.push(Span::styled(key.as_str(), key_style));
+        spans.push(Span::styled(":", label_style));
+        spans.push(Span::styled(*label, label_style));
     }
 
     // Calculate shortcuts width and add padding + version
-    let shortcuts_width: usize = shortcuts.iter().map(|(k, r)| k.width() + r.width()).sum();
+    let shortcuts_width: usize = shortcuts.iter()
+        .map(|(k, l)| k.width() + 1 + l.width()) // +1 for ":"
+        .sum();
     let version_text = format!(" {}", APP_TITLE);
     let padding_width = (area.width as usize).saturating_sub(shortcuts_width + version_text.width());
 
@@ -368,12 +384,12 @@ fn draw_editor_with_ai(frame: &mut Frame, app: &mut App, area: Rect, theme: &The
             ai_screen::draw_with_focus(frame, state, panel_chunks[0], theme, false);
         }
         if let Some(ref mut state) = app.editor_state {
-            file_editor::draw(frame, state, panel_chunks[1], theme);
+            file_editor::draw(frame, state, panel_chunks[1], theme, &app.keybindings);
         }
     } else {
         // 에디터 왼쪽, AI 오른쪽
         if let Some(ref mut state) = app.editor_state {
-            file_editor::draw(frame, state, panel_chunks[0], theme);
+            file_editor::draw(frame, state, panel_chunks[0], theme, &app.keybindings);
         }
         if let Some(ref mut state) = app.ai_state {
             ai_screen::draw_with_focus(frame, state, panel_chunks[1], theme, false);

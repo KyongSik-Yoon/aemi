@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -231,7 +231,7 @@ fn get_usage_color(percent: u8, theme: &Theme) -> Color {
     }
 }
 
-pub fn draw(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: &Theme) {
+pub fn draw(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -251,10 +251,17 @@ pub fn draw(frame: &mut Frame, state: &SystemInfoState, area: Rect, theme: &Them
         InfoTab::Disk => draw_disk_tab(frame, state, chunks[1], theme),
     }
 
-    // Footer
+    // Footer (keybindings에서 동적으로)
+    use crate::keybindings::SystemInfoAction;
+    let switch_key = kb.system_info_first_key(SystemInfoAction::SwitchTab);
+    let quit_key = kb.system_info_first_key(SystemInfoAction::Quit);
     let footer_text = match state.current_tab {
-        InfoTab::System => "Tab/←→: Switch tab | ESC: Back",
-        InfoTab::Disk => "Tab/←→: Switch tab | ↑↓: Select | ESC: Back",
+        InfoTab::System => format!("{}: Switch tab | {}: Back", switch_key, quit_key),
+        InfoTab::Disk => {
+            let up_key = kb.system_info_first_key(SystemInfoAction::MoveUp);
+            let down_key = kb.system_info_first_key(SystemInfoAction::MoveDown);
+            format!("{}: Switch tab | {}/{}: Select | {}: Back", switch_key, up_key, down_key, quit_key)
+        }
     };
     let footer = Paragraph::new(Span::styled(footer_text, theme.dim_style()))
         .alignment(ratatui::layout::Alignment::Center);
@@ -479,29 +486,36 @@ fn create_info_line<'a>(label: &'a str, value: &'a str, theme: &Theme) -> Line<'
     ])
 }
 
-pub fn handle_input(state: &mut SystemInfoState, code: KeyCode) -> bool {
-    match code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-            return true;
-        }
-        KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
-            state.current_tab = match state.current_tab {
-                InfoTab::System => InfoTab::Disk,
-                InfoTab::Disk => InfoTab::System,
-            };
-            if state.current_tab == InfoTab::Disk {
-                state.refresh_disks();
+pub fn handle_input(state: &mut SystemInfoState, code: KeyCode, modifiers: KeyModifiers, kb: &crate::keybindings::Keybindings) -> bool {
+    use crate::keybindings::SystemInfoAction;
+
+    if let Some(action) = kb.system_info_action(code, modifiers) {
+        match action {
+            SystemInfoAction::Quit => {
+                return true;
+            }
+            SystemInfoAction::SwitchTab => {
+                state.current_tab = match state.current_tab {
+                    InfoTab::System => InfoTab::Disk,
+                    InfoTab::Disk => InfoTab::System,
+                };
+                if state.current_tab == InfoTab::Disk {
+                    state.refresh_disks();
+                }
+            }
+            SystemInfoAction::MoveUp => {
+                if state.current_tab == InfoTab::Disk {
+                    state.disk_selected = state.disk_selected.saturating_sub(1);
+                }
+            }
+            SystemInfoAction::MoveDown => {
+                if state.current_tab == InfoTab::Disk {
+                    if state.disk_selected < state.disks.len().saturating_sub(1) {
+                        state.disk_selected += 1;
+                    }
+                }
             }
         }
-        KeyCode::Up if state.current_tab == InfoTab::Disk => {
-            state.disk_selected = state.disk_selected.saturating_sub(1);
-        }
-        KeyCode::Down if state.current_tab == InfoTab::Disk => {
-            if state.disk_selected < state.disks.len().saturating_sub(1) {
-                state.disk_selected += 1;
-            }
-        }
-        _ => {}
     }
     false
 }

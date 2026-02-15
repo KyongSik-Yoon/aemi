@@ -1614,6 +1614,7 @@ pub fn draw(
     state: &mut DiffState,
     area: Rect,
     theme: &Theme,
+    kb: &crate::keybindings::Keybindings,
 ) {
     // Layout: Header(1) + ColumnHeader(1) + Content(fill) + StatusBar(1) + FunctionBar(1)
     let layout = Layout::default()
@@ -1641,7 +1642,7 @@ pub fn draw(
         frame.render_widget(Paragraph::new(""), col_header_area);
 
         // ── Progress screen ─────────────────────────────────────────────────
-        draw_comparing_progress(frame, state, content_area, theme);
+        draw_comparing_progress(frame, state, content_area, theme, kb);
 
         // Status bar shows comparing status
         let status_text = if state.progress_count == 0 {
@@ -1665,9 +1666,10 @@ pub fn draw(
         )]);
         frame.render_widget(Paragraph::new(line), status_area);
 
-        // Function bar shows ESC only
+        // Function bar shows Close key only
+        let close_key = kb.diff_screen_first_key(crate::keybindings::DiffScreenAction::Close);
         let fn_line = Line::from(vec![
-            Span::styled("ESC", Style::default().fg(theme.diff.footer_key)),
+            Span::styled(close_key.to_string(), Style::default().fg(theme.diff.footer_key)),
             Span::styled(":cancel", Style::default().fg(theme.diff.footer_text)),
         ]);
         frame.render_widget(Paragraph::new(fn_line), fn_bar_area);
@@ -1706,10 +1708,10 @@ pub fn draw(
     draw_status_bar(frame, state, status_area, theme);
 
     // ── Function Bar ────────────────────────────────────────────────────────
-    draw_function_bar(frame, fn_bar_area, theme);
+    draw_function_bar(frame, fn_bar_area, theme, kb);
 }
 
-fn draw_comparing_progress(frame: &mut Frame, state: &DiffState, area: Rect, theme: &Theme) {
+fn draw_comparing_progress(frame: &mut Frame, state: &DiffState, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
     let center_y = area.y + area.height / 2;
 
     // Spinner
@@ -1743,11 +1745,12 @@ fn draw_comparing_progress(frame: &mut Frame, state: &DiffState, area: Rect, the
         let title_area = Rect::new(area.x, center_y, area.width, 1);
         frame.render_widget(Paragraph::new(title_line).alignment(Alignment::Center), title_area);
 
-        // ESC hint
+        // Cancel hint
         if center_y + 2 < area.y + area.height {
+            let close_key = kb.diff_screen_first_key(crate::keybindings::DiffScreenAction::Close);
             let hint_line = Line::from(vec![
                 Span::styled(
-                    "Press ESC to cancel",
+                    format!("Press {} to cancel", close_key),
                     Style::default().fg(theme.diff.progress_hint_text),
                 ),
             ]);
@@ -1819,11 +1822,12 @@ fn draw_comparing_progress(frame: &mut Frame, state: &DiffState, area: Rect, the
         frame.render_widget(Paragraph::new(file_line).alignment(Alignment::Center), file_area);
     }
 
-    // Line 4: ESC hint
+    // Line 4: Cancel hint
     if center_y + 3 < area.y + area.height {
+        let close_key = kb.diff_screen_first_key(crate::keybindings::DiffScreenAction::Close);
         let hint_line = Line::from(vec![
             Span::styled(
-                "Press ESC to cancel",
+                format!("Press {} to cancel", close_key),
                 Style::default().fg(theme.diff.progress_hint_text),
             ),
         ]);
@@ -2162,26 +2166,28 @@ fn draw_status_bar(frame: &mut Frame, state: &DiffState, area: Rect, theme: &The
     frame.render_widget(Paragraph::new(line), area);
 }
 
-fn draw_function_bar(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let shortcuts = vec![
-        ("\u{2191}\u{2193}", "nav "),
-        ("\u{2192}", ":open "),
-        ("\u{2190}", ":close "),
-        ("Enter", ":view "),
-        ("e", ":expand "),
-        ("c", ":collapse "),
-        ("f", ":filter "),
-        ("n", "ame "),
-        ("s", "ize "),
-        ("d", "ate "),
-        ("y", ":type "),
-        ("Esc", ":back"),
+fn draw_function_bar(frame: &mut Frame, area: Rect, theme: &Theme, kb: &crate::keybindings::Keybindings) {
+    use crate::keybindings::DiffScreenAction;
+
+    let shortcuts: Vec<(String, &str)> = vec![
+        (format!("{}/{}", kb.diff_screen_first_key(DiffScreenAction::MoveUp), kb.diff_screen_first_key(DiffScreenAction::MoveDown)), "nav "),
+        (kb.diff_screen_first_key(DiffScreenAction::ExpandDir).to_string(), ":open "),
+        (kb.diff_screen_first_key(DiffScreenAction::CollapseDir).to_string(), ":close "),
+        (kb.diff_screen_first_key(DiffScreenAction::Open).to_string(), ":view "),
+        (kb.diff_screen_first_key(DiffScreenAction::ExpandAll).to_string(), ":expand "),
+        (kb.diff_screen_first_key(DiffScreenAction::CollapseAll).to_string(), ":collapse "),
+        (kb.diff_screen_first_key(DiffScreenAction::CycleFilter).to_string(), ":filter "),
+        (kb.diff_screen_first_key(DiffScreenAction::SortByName).to_string(), "ame "),
+        (kb.diff_screen_first_key(DiffScreenAction::SortBySize).to_string(), "ize "),
+        (kb.diff_screen_first_key(DiffScreenAction::SortByDate).to_string(), "ate "),
+        (kb.diff_screen_first_key(DiffScreenAction::SortByType).to_string(), ":type "),
+        (kb.diff_screen_first_key(DiffScreenAction::Close).to_string(), ":back"),
     ];
 
     let mut spans: Vec<Span> = Vec::new();
     for (key, label) in &shortcuts {
         spans.push(Span::styled(
-            *key,
+            key.clone(),
             Style::default().fg(theme.diff.footer_key),
         ));
         spans.push(Span::styled(
@@ -2199,11 +2205,13 @@ fn draw_function_bar(frame: &mut Frame, area: Rect, theme: &Theme) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Handle keyboard input for the diff screen
-pub fn handle_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
-    // While comparing, only ESC is allowed
+pub fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    use crate::keybindings::DiffScreenAction;
+
+    // While comparing, only Close action is allowed
     if let Some(ref state) = app.diff_state {
         if state.is_comparing {
-            if code == KeyCode::Esc {
+            if let Some(DiffScreenAction::Close) = app.keybindings.diff_screen_action(code, modifiers) {
                 if let Some(ref mut state) = app.diff_state {
                     state.cancel();
                 }
@@ -2214,79 +2222,83 @@ pub fn handle_input(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
         }
     }
 
+    let action = match app.keybindings.diff_screen_action(code, modifiers) {
+        Some(a) => a,
+        None => return,
+    };
+
     {
         let state = match app.diff_state.as_mut() {
             Some(s) => s,
             None => return,
         };
 
-        match code {
-            KeyCode::Up | KeyCode::Char('k') => {
+        match action {
+            DiffScreenAction::MoveUp => {
                 state.move_cursor(-1);
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            DiffScreenAction::MoveDown => {
                 state.move_cursor(1);
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            DiffScreenAction::ExpandDir => {
                 state.expand_one_level();
             }
-            KeyCode::Left | KeyCode::Char('h') => {
+            DiffScreenAction::CollapseDir => {
                 state.collapse_one_level();
             }
-            KeyCode::PageUp => {
+            DiffScreenAction::PageUp => {
                 let page = state.visible_height.saturating_sub(1).max(1) as i32;
                 state.move_cursor(-page);
             }
-            KeyCode::PageDown => {
+            DiffScreenAction::PageDown => {
                 let page = state.visible_height.saturating_sub(1).max(1) as i32;
                 state.move_cursor(page);
             }
-            KeyCode::Home => {
+            DiffScreenAction::GoHome => {
                 state.cursor_to_start();
             }
-            KeyCode::End => {
+            DiffScreenAction::GoEnd => {
                 state.cursor_to_end();
             }
-            KeyCode::Char(' ') => {
+            DiffScreenAction::ToggleSelect => {
                 state.toggle_selection();
             }
-            KeyCode::Char('f') => {
+            DiffScreenAction::CycleFilter => {
                 state.filter = state.filter.next();
                 state.apply_filter();
             }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
+            DiffScreenAction::SortByName => {
                 toggle_diff_sort(state, SortBy::Name);
                 state.resort_entries();
             }
-            KeyCode::Char('s') | KeyCode::Char('S') => {
+            DiffScreenAction::SortBySize => {
                 toggle_diff_sort(state, SortBy::Size);
                 state.resort_entries();
             }
-            KeyCode::Char('d') | KeyCode::Char('D') => {
+            DiffScreenAction::SortByDate => {
                 toggle_diff_sort(state, SortBy::Modified);
                 state.resort_entries();
             }
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
+            DiffScreenAction::SortByType => {
                 toggle_diff_sort(state, SortBy::Type);
                 state.resort_entries();
             }
-            KeyCode::Char('e') => {
+            DiffScreenAction::ExpandAll => {
                 state.expand_all();
             }
-            KeyCode::Char('c') => {
+            DiffScreenAction::CollapseAll => {
                 state.collapse();
             }
-            KeyCode::Enter => {
+            DiffScreenAction::Open => {
                 // Handle Enter: view file diff if current entry is a file
                 handle_enter(app);
                 return;
             }
-            KeyCode::Esc => {
+            DiffScreenAction::Close => {
                 app.current_screen = Screen::FilePanel;
                 app.diff_state = None;
                 return;
             }
-            _ => {}
         }
     };
 }
