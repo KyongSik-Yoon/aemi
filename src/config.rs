@@ -30,6 +30,10 @@ fn default_diff_compare_method() -> String {
     "content".to_string()
 }
 
+fn default_encrypt_split_size() -> u64 {
+    1800
+}
+
 impl Default for PanelSettings {
     fn default() -> Self {
         Self {
@@ -90,6 +94,9 @@ pub struct Settings {
     /// Keybindings configuration
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    /// Encryption split size in MB (0 = no split)
+    #[serde(default = "default_encrypt_split_size")]
+    pub encrypt_split_size: u64,
 }
 
 impl Default for Settings {
@@ -130,6 +137,7 @@ impl Default for Settings {
             diff_compare_method: default_diff_compare_method(),
             remote_profiles: Vec::new(),
             keybindings: KeybindingsConfig::default(),
+            encrypt_split_size: default_encrypt_split_size(),
         }
     }
 }

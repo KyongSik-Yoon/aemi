@@ -3191,10 +3191,12 @@ impl App {
             return;
         }
 
+        let split_size = self.settings.encrypt_split_size.to_string();
+        let cursor = split_size.len();
         self.dialog = Some(Dialog {
             dialog_type: DialogType::EncryptConfirm,
-            input: "1800".to_string(),
-            cursor_pos: 4,
+            input: split_size,
+            cursor_pos: cursor,
             message: format!("Encrypt {} file(s)? Split size MB (0=no split):", count),
             completion: None,
             selected_button: 0,
@@ -3238,6 +3240,9 @@ impl App {
     }
 
     pub fn execute_encrypt(&mut self, split_size_mb: u64, use_md5: bool) {
+        // Remember split size for next time
+        self.settings.encrypt_split_size = split_size_mb;
+
         let key_path = match crate::enc::ensure_key() {
             Ok(p) => p,
             Err(e) => {
