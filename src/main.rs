@@ -602,7 +602,13 @@ fn run_app<B: ratatui::backend::Backend>(
         if event::poll(poll_timeout)? {
             // Block all input while remote spinner is active
             if app.remote_spinner.is_some() {
-                let _ = event::read()?;
+                let ev = event::read()?;
+                if let Event::Key(key) = ev {
+                    if key.code == KeyCode::Esc {
+                        app.remote_spinner = None;
+                        app.show_message("Connection cancelled");
+                    }
+                }
                 continue;
             }
             match event::read()? {
