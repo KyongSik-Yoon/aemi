@@ -643,6 +643,23 @@ pub struct GitScreenColors {
     pub diff_header: Color,
 }
 
+#[derive(Clone, Copy)]
+pub struct DedupScreenColors {
+    pub bg: Color,
+    pub border: Color,
+    pub title: Color,
+    pub phase_text: Color,
+    pub stats_text: Color,
+    pub progress_bar_fill: Color,
+    pub progress_bar_empty: Color,
+    pub progress_text: Color,
+    pub log_text: Color,
+    pub log_deleted: Color,
+    pub log_error: Color,
+    pub footer_key: Color,
+    pub footer_text: Color,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 메인 Theme 구조체
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -679,6 +696,7 @@ pub struct Theme {
     pub diff: DiffColors,
     pub diff_file_view: DiffFileViewColors,
     pub git_screen: GitScreenColors,
+    pub dedup_screen: DedupScreenColors,
 
     // 아이콘 문자
     pub chars: ThemeChars,
@@ -1239,6 +1257,22 @@ impl Theme {
             diff_header: Color::Indexed(21),
         };
 
+        let dedup_screen = DedupScreenColors {
+            bg: Color::Indexed(255),
+            border: Color::Indexed(238),
+            title: Color::Indexed(21),
+            phase_text: Color::Indexed(34),
+            stats_text: Color::Indexed(243),
+            progress_bar_fill: Color::Indexed(34),
+            progress_bar_empty: Color::Indexed(254),
+            progress_text: Color::Indexed(243),
+            log_text: Color::Indexed(243),
+            log_deleted: Color::Indexed(198),
+            log_error: Color::Indexed(124),
+            footer_key: Color::Indexed(74),
+            footer_text: Color::Indexed(251),
+        };
+
         Self {
             palette,
             state,
@@ -1264,6 +1298,7 @@ impl Theme {
             diff,
             diff_file_view,
             git_screen,
+            dedup_screen,
             chars: ThemeChars::default(),
         }
     }
@@ -1716,6 +1751,22 @@ impl Theme {
             diff_header: Color::Indexed(81),
         };
 
+        let dedup_screen = DedupScreenColors {
+            bg: Color::Indexed(235),
+            border: Color::Indexed(245),
+            title: Color::Indexed(81),
+            phase_text: Color::Indexed(114),
+            stats_text: Color::Indexed(252),
+            progress_bar_fill: Color::Indexed(114),
+            progress_bar_empty: Color::Indexed(237),
+            progress_text: Color::Indexed(252),
+            log_text: Color::Indexed(252),
+            log_deleted: Color::Indexed(204),
+            log_error: Color::Indexed(209),
+            footer_key: Color::Indexed(117),
+            footer_text: Color::Indexed(245),
+        };
+
         Self {
             palette,
             state,
@@ -1741,6 +1792,7 @@ impl Theme {
             diff,
             diff_file_view,
             git_screen,
+            dedup_screen,
             chars: ThemeChars::default(),
         }
     }
@@ -2185,6 +2237,22 @@ impl Theme {
             diff_header: Color::Indexed(110),
         };
 
+        let dedup_screen = DedupScreenColors {
+            bg: Color::Indexed(234),
+            border: Color::Indexed(102),
+            title: Color::Indexed(110),
+            phase_text: Color::Indexed(108),
+            stats_text: Color::Indexed(188),
+            progress_bar_fill: Color::Indexed(108),
+            progress_bar_empty: Color::Indexed(236),
+            progress_text: Color::Indexed(188),
+            log_text: Color::Indexed(188),
+            log_deleted: Color::Indexed(174),
+            log_error: Color::Indexed(167),
+            footer_key: Color::Indexed(146),
+            footer_text: Color::Indexed(102),
+        };
+
         Self {
             palette,
             state,
@@ -2210,6 +2278,7 @@ impl Theme {
             diff,
             diff_file_view,
             git_screen,
+            dedup_screen,
             chars: ThemeChars::default(),
         }
     }
@@ -3140,6 +3209,36 @@ impl Theme {
     "diff_remove": {},
     "__diff_header__": "Diff 헤더",
     "diff_header": {}
+  }},
+
+  "__dedup_screen__": "=== 중복 파일 제거 화면: Shift+X로 진입하는 전체화면 중복 제거 UI ===",
+  "dedup_screen": {{
+    "__bg__": "배경색",
+    "bg": {},
+    "__border__": "테두리",
+    "border": {},
+    "__title__": "제목 텍스트",
+    "title": {},
+    "__phase_text__": "현재 단계 텍스트 (Scanning/Hashing/Deleting/Complete)",
+    "phase_text": {},
+    "__stats_text__": "통계 레이블 텍스트",
+    "stats_text": {},
+    "__progress_bar_fill__": "진행률 바 채움",
+    "progress_bar_fill": {},
+    "__progress_bar_empty__": "진행률 바 빈 영역",
+    "progress_bar_empty": {},
+    "__progress_text__": "진행률 텍스트 (현재 파일 경로)",
+    "progress_text": {},
+    "__log_text__": "로그 일반 텍스트",
+    "log_text": {},
+    "__log_deleted__": "삭제된 파일 로그 텍스트",
+    "log_deleted": {},
+    "__log_error__": "에러 로그 텍스트",
+    "log_error": {},
+    "__footer_key__": "기능 바 단축키",
+    "footer_key": {},
+    "__footer_text__": "기능 바 설명",
+    "footer_text": {}
   }}
 }}"#,
             // name
@@ -3327,6 +3426,13 @@ impl Theme {
             ci(self.git_screen.log_author), ci(self.git_screen.log_date),
             ci(self.git_screen.branch_current), ci(self.git_screen.branch_normal),
             ci(self.git_screen.diff_add), ci(self.git_screen.diff_remove), ci(self.git_screen.diff_header),
+            // dedup_screen
+            ci(self.dedup_screen.bg), ci(self.dedup_screen.border), ci(self.dedup_screen.title),
+            ci(self.dedup_screen.phase_text), ci(self.dedup_screen.stats_text),
+            ci(self.dedup_screen.progress_bar_fill), ci(self.dedup_screen.progress_bar_empty),
+            ci(self.dedup_screen.progress_text), ci(self.dedup_screen.log_text),
+            ci(self.dedup_screen.log_deleted), ci(self.dedup_screen.log_error),
+            ci(self.dedup_screen.footer_key), ci(self.dedup_screen.footer_text),
         )
     }
 }

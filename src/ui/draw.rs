@@ -26,6 +26,7 @@ use super::{
     diff_screen,
     diff_file_view,
     git_screen,
+    dedup_screen,
     theme::Theme,
 };
 
@@ -109,6 +110,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Screen::GitScreen => {
             if let Some(ref mut state) = app.git_screen_state {
                 git_screen::draw(frame, state, area, &theme);
+            }
+        }
+        Screen::DedupScreen => {
+            if let Some(ref mut state) = app.dedup_screen_state {
+                dedup_screen::draw(frame, state, area, &theme);
             }
         }
     }

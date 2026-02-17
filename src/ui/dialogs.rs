@@ -275,6 +275,9 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         | DialogType::DecryptConfirm => {
             (SIMPLE_DIALOG_WIDTH, CONFIRM_DIALOG_HEIGHT, CONFIRM_DIALOG_HEIGHT)
         }
+        DialogType::DedupConfirm => {
+            (60, 10, 10)
+        }
         DialogType::ExtensionHandlerError => {
             // Error dialog: wider to accommodate error messages, taller for multi-line
             (65, 8, 8)
@@ -391,6 +394,9 @@ pub fn draw_dialog(frame: &mut Frame, app: &App, dialog: &Dialog, area: Rect, th
         }
         DialogType::DecryptConfirm => {
             draw_confirm_dialog(frame, dialog, dialog_area, theme, " Decrypt ");
+        }
+        DialogType::DedupConfirm => {
+            draw_dedup_confirm_dialog(frame, dialog, dialog_area, theme);
         }
         DialogType::LargeImageConfirm => {
             draw_confirm_dialog(frame, dialog, dialog_area, theme, " Large Image ");
@@ -1021,6 +1027,59 @@ fn draw_confirm_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &T
     let no_style = if dialog.selected_button == 1 { selected_style } else { normal_style };
 
     // 버튼 (중앙 정렬)
+    let buttons = Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(" Yes ", yes_style),
+        Span::styled("    ", Style::default()),
+        Span::styled(" No ", no_style),
+        Span::styled("  ", Style::default()),
+    ]);
+    let button_area = Rect::new(inner.x + 1, inner.y + inner.height - 2, inner.width - 2, 1);
+    frame.render_widget(
+        Paragraph::new(buttons).alignment(ratatui::layout::Alignment::Center),
+        button_area,
+    );
+}
+
+fn draw_dedup_confirm_dialog(frame: &mut Frame, dialog: &Dialog, area: Rect, theme: &Theme) {
+    let block = Block::default()
+        .title(" Remove Duplicates ")
+        .title_style(Style::default().fg(theme.confirm_dialog.title).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.confirm_dialog.border))
+        .style(Style::default().bg(theme.confirm_dialog.bg));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Warning line
+    let warn_area = Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1);
+    frame.render_widget(
+        Paragraph::new("!! WARNING !!")
+            .style(Style::default().fg(theme.state.error).add_modifier(Modifier::BOLD))
+            .alignment(ratatui::layout::Alignment::Center),
+        warn_area,
+    );
+
+    // Message (wrapped)
+    let msg_area = Rect::new(inner.x + 1, inner.y + 3, inner.width - 2, 3);
+    frame.render_widget(
+        Paragraph::new(dialog.message.clone())
+            .style(Style::default().fg(theme.confirm_dialog.message_text))
+            .wrap(ratatui::widgets::Wrap { trim: true })
+            .alignment(ratatui::layout::Alignment::Center),
+        msg_area,
+    );
+
+    // Buttons
+    let selected_style = Style::default()
+        .fg(theme.confirm_dialog.button_selected_text)
+        .bg(theme.confirm_dialog.button_selected_bg);
+    let normal_style = Style::default().fg(theme.confirm_dialog.button_text);
+
+    let yes_style = if dialog.selected_button == 0 { selected_style } else { normal_style };
+    let no_style = if dialog.selected_button == 1 { selected_style } else { normal_style };
+
     let buttons = Line::from(vec![
         Span::styled("  ", Style::default()),
         Span::styled(" Yes ", yes_style),
@@ -2373,6 +2432,29 @@ pub fn handle_dialog_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers
                         if dialog.selected_button == 0 {
                             app.dialog = None;
                             app.execute_decrypt();
+                        } else {
+                            app.dialog = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            DialogType::DedupConfirm => {
+                match code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        app.dialog = None;
+                        app.execute_dedup();
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                        app.dialog = None;
+                    }
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                        dialog.selected_button = 1 - dialog.selected_button;
+                    }
+                    KeyCode::Enter => {
+                        if dialog.selected_button == 0 {
+                            app.dialog = None;
+                            app.execute_dedup();
                         } else {
                             app.dialog = None;
                         }

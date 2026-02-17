@@ -60,6 +60,8 @@ pub struct ThemeJson {
     pub diff_file_view: DiffFileViewColorsJson,
     #[serde(default)]
     pub git_screen: GitScreenColorsJson,
+    #[serde(default)]
+    pub dedup_screen: DedupScreenColorsJson,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -900,6 +902,36 @@ pub struct GitScreenColorsJson {
     pub diff_header: u8,
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct DedupScreenColorsJson {
+    #[serde(default = "default_234")]
+    pub bg: u8,
+    #[serde(default = "default_102")]
+    pub border: u8,
+    #[serde(default = "default_110")]
+    pub title: u8,
+    #[serde(default = "default_108")]
+    pub phase_text: u8,
+    #[serde(default = "default_188")]
+    pub stats_text: u8,
+    #[serde(default = "default_108")]
+    pub progress_bar_fill: u8,
+    #[serde(default = "default_236")]
+    pub progress_bar_empty: u8,
+    #[serde(default = "default_188")]
+    pub progress_text: u8,
+    #[serde(default = "default_188")]
+    pub log_text: u8,
+    #[serde(default = "default_174")]
+    pub log_deleted: u8,
+    #[serde(default = "default_167")]
+    pub log_error: u8,
+    #[serde(default = "default_146")]
+    pub footer_key: u8,
+    #[serde(default = "default_102")]
+    pub footer_text: u8,
+}
+
 // 기본값 함수들
 fn default_21() -> u8 { 21 }
 fn default_22() -> u8 { 22 }
@@ -1461,6 +1493,22 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         diff_header: idx(json.git_screen.diff_header),
     };
 
+    let dedup_screen = DedupScreenColors {
+        bg: idx(json.dedup_screen.bg),
+        border: idx(json.dedup_screen.border),
+        title: idx(json.dedup_screen.title),
+        phase_text: idx(json.dedup_screen.phase_text),
+        stats_text: idx(json.dedup_screen.stats_text),
+        progress_bar_fill: idx(json.dedup_screen.progress_bar_fill),
+        progress_bar_empty: idx(json.dedup_screen.progress_bar_empty),
+        progress_text: idx(json.dedup_screen.progress_text),
+        log_text: idx(json.dedup_screen.log_text),
+        log_deleted: idx(json.dedup_screen.log_deleted),
+        log_error: idx(json.dedup_screen.log_error),
+        footer_key: idx(json.dedup_screen.footer_key),
+        footer_text: idx(json.dedup_screen.footer_text),
+    };
+
     Theme {
         palette,
         state,
@@ -1486,6 +1534,7 @@ pub fn theme_from_json(json: &ThemeJson) -> Theme {
         diff,
         diff_file_view,
         git_screen,
+        dedup_screen,
         chars: ThemeChars::default(),
     }
 }

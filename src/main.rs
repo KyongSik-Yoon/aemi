@@ -708,6 +708,15 @@ fn run_app<B: ratatui::backend::Backend>(
                         Screen::GitScreen => {
                             ui::git_screen::handle_input(app, key.code, key.modifiers);
                         }
+                        Screen::DedupScreen => {
+                            if let Some(ref mut state) = app.dedup_screen_state {
+                                if ui::dedup_screen::handle_input(state, key.code, key.modifiers) {
+                                    app.current_screen = Screen::FilePanel;
+                                    app.dedup_screen_state = None;
+                                    app.refresh_panels();
+                                }
+                            }
+                        }
                     }
                 }
                 Event::Paste(text) => {
@@ -847,6 +856,7 @@ fn handle_panel_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> 
             PanelAction::SetHandler => app.show_handler_dialog(),
             PanelAction::EncryptAll => app.show_encrypt_dialog(),
             PanelAction::DecryptAll => app.show_decrypt_dialog(),
+            PanelAction::RemoveDuplicates => app.show_dedup_screen(),
             #[cfg(target_os = "macos")]
             PanelAction::OpenInFinder => app.open_in_finder(),
             #[cfg(target_os = "macos")]

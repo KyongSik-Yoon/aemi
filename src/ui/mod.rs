@@ -18,3 +18,4 @@ pub mod help;
 pub mod diff_screen;
 pub mod diff_file_view;
 pub mod git_screen;
+pub mod dedup_screen;

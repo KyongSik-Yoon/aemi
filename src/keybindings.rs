@@ -297,6 +297,7 @@ pub enum PanelAction {
     SetHandler,
     EncryptAll,
     DecryptAll,
+    RemoveDuplicates,
     #[cfg(target_os = "macos")]
     OpenInFinder,
     #[cfg(target_os = "macos")]
@@ -374,6 +375,7 @@ pub fn default_panel_keybindings() -> HashMap<PanelAction, Vec<String>> {
     // Encryption
     m.insert(PanelAction::EncryptAll, vec!["//Encrypt all files in directory".into(), "shift+e".into()]);
     m.insert(PanelAction::DecryptAll, vec!["//Decrypt all .cokacenc files".into(), "shift+d".into()]);
+    m.insert(PanelAction::RemoveDuplicates, vec!["//Remove duplicate files".into(), "shift+x".into()]);
 
     // macOS only
     #[cfg(target_os = "macos")]

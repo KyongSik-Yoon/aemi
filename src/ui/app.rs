@@ -167,6 +167,7 @@ pub enum Screen {
     DiffScreen,
     DiffFileView,
     GitScreen,
+    DedupScreen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,6 +198,7 @@ pub enum DialogType {
     RemoteProfileSave,
     EncryptConfirm,
     DecryptConfirm,
+    DedupConfirm,
 }
 
 /// Settings dialog state
@@ -1441,6 +1443,9 @@ pub struct App {
     // Git screen state
     pub git_screen_state: Option<crate::ui::git_screen::GitScreenState>,
 
+    // Dedup screen state
+    pub dedup_screen_state: Option<crate::ui::dedup_screen::DedupScreenState>,
+
     // Git log diff state
     pub git_log_diff_state: Option<GitLogDiffState>,
 
@@ -1524,6 +1529,7 @@ impl App {
             diff_state: None,
             diff_file_view_state: None,
             git_screen_state: None,
+            dedup_screen_state: None,
             git_log_diff_state: None,
             pending_remote_open: None,
             remote_spinner: None,
@@ -1626,6 +1632,7 @@ impl App {
             diff_state: None,
             diff_file_view_state: None,
             git_screen_state: None,
+            dedup_screen_state: None,
             git_log_diff_state: None,
             pending_remote_open: None,
             remote_spinner: None,
@@ -3517,6 +3524,26 @@ impl App {
         }
         self.git_screen_state = Some(crate::ui::git_screen::GitScreenState::new(path));
         self.current_screen = Screen::GitScreen;
+    }
+
+    pub fn show_dedup_screen(&mut self) {
+        let path = self.active_panel().path.clone();
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::DedupConfirm,
+            input: String::new(),
+            cursor_pos: 0,
+            message: format!("WARNING: This will PERMANENTLY DELETE duplicate files in {}. This action cannot be undone. Proceed?", path.display()),
+            completion: None,
+            selected_button: 1,  // Default: No
+            selection: None,
+            use_md5: false,
+        });
+    }
+
+    pub fn execute_dedup(&mut self) {
+        let path = self.active_panel().path.clone();
+        self.dedup_screen_state = Some(crate::ui::dedup_screen::DedupScreenState::new(path));
+        self.current_screen = Screen::DedupScreen;
     }
 
     pub fn show_git_log_diff_dialog(&mut self) {
