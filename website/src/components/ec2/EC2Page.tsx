@@ -336,6 +336,16 @@ export default function EC2Page() {
               <InlineStep n={3}>
                 이제부터 <strong className="text-white">"웹사이트 만들어줘"</strong> 와 같이 Claude Code를 사용할 때와 같은 방식으로 요청할 수 있습니다.
               </InlineStep>
+
+              <div className="mt-2">
+                <Link
+                  to="/tutorial#telegram-bot"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-accent-cyan/30 bg-accent-cyan/5 text-accent-cyan text-sm font-medium hover:bg-accent-cyan/10 transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Telegram 원격 제어 — 자세히 보기 →
+                </Link>
+              </div>
             </div>
           </motion.section>
 
