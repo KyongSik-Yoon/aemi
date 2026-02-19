@@ -253,7 +253,8 @@ async fn handle_message(
         }
     };
     if imprinted {
-        let _ = bot.send_message(chat_id, format!("✓ Registered as owner (id: {})", uid)).await;
+        // Owner registration is logged to server console only (line 242)
+        // No response sent to the user
     }
 
     let user_name = format!("{}({uid})", raw_user_name);
