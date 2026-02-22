@@ -40,7 +40,9 @@ fn print_help() {
     println!("    --prompt <TEXT>         Send prompt to AI and print rendered response");
     println!("    --design                Enable theme hot-reload (for theme development)");
     println!("    --base64 <TEXT>         Decode base64 and print (internal use)");
-    println!("    --ccserver <TOKEN>...   Start Telegram bot server(s)");
+    println!("    --ccserver <TOKEN>... [--chat-id <ID>]");
+    println!("                            Start Telegram bot server(s)");
+    println!("                            --chat-id restricts access to a specific Telegram chat ID");
     println!("    --sendfile <PATH> --chat <ID> --key <HASH>");
     println!("                            Send file via Telegram bot (internal use, HASH = token hash)");
     println!();
@@ -98,7 +100,7 @@ fn print_version() {
     println!("cokacdir {}", VERSION);
 }
 
-fn handle_ccserver(tokens: Vec<String>) {
+fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  cokacdir v{}  |  Telegram Bot Server  ", VERSION);
@@ -109,11 +111,15 @@ fn handle_ccserver(tokens: Vec<String>) {
     println!("  └{}┘", "─".repeat(width));
     println!();
 
+    if let Some(cid) = allowed_chat_id {
+        println!("  ▸ Chat ID filter : {}", cid);
+    }
+
     if tokens.len() == 1 {
         println!("  ▸ Bot instance : 1");
         println!("  ▸ Status       : Connecting...");
         println!();
-        rt.block_on(services::telegram::run_bot(&tokens[0]));
+        rt.block_on(services::telegram::run_bot(&tokens[0], allowed_chat_id));
     } else {
         println!("  ▸ Bot instances : {}", tokens.len());
         println!("  ▸ Status        : Connecting...");
@@ -121,9 +127,10 @@ fn handle_ccserver(tokens: Vec<String>) {
         rt.block_on(async {
             let mut handles = Vec::new();
             for (i, token) in tokens.into_iter().enumerate() {
+                let chat_id = allowed_chat_id;
                 handles.push(tokio::spawn(async move {
                     println!("  ✓ Bot #{} connected", i + 1);
-                    services::telegram::run_bot(&token).await;
+                    services::telegram::run_bot(&token, chat_id).await;
                 }));
             }
             for handle in handles {
@@ -239,16 +246,39 @@ fn main() -> io::Result<()> {
                 return Ok(());
             }
             "--ccserver" => {
-                let tokens: Vec<String> = args[i + 1..].iter()
-                    .filter(|a| !a.starts_with('-'))
-                    .cloned()
-                    .collect();
+                let mut tokens: Vec<String> = Vec::new();
+                let mut allowed_chat_id: Option<i64> = None;
+                let mut j = i + 1;
+                while j < args.len() {
+                    match args[j].as_str() {
+                        "--chat-id" => {
+                            if j + 1 < args.len() {
+                                allowed_chat_id = args[j + 1].parse().ok();
+                                if allowed_chat_id.is_none() {
+                                    eprintln!("Error: --chat-id value must be a valid integer");
+                                    return Ok(());
+                                }
+                                j += 2;
+                            } else {
+                                eprintln!("Error: --chat-id requires a value");
+                                return Ok(());
+                            }
+                        }
+                        arg if arg.starts_with('-') => {
+                            j += 1;
+                        }
+                        _ => {
+                            tokens.push(args[j].clone());
+                            j += 1;
+                        }
+                    }
+                }
                 if tokens.is_empty() {
                     eprintln!("Error: --ccserver requires at least one token argument");
-                    eprintln!("Usage: cokacdir --ccserver <TOKEN> [TOKEN2] ...");
+                    eprintln!("Usage: cokacdir --ccserver <TOKEN> [--chat-id <ID>]");
                     return Ok(());
                 }
-                handle_ccserver(tokens);
+                handle_ccserver(tokens, allowed_chat_id);
                 return Ok(());
             }
             "--sendfile" => {
