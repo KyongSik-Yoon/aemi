@@ -16,6 +16,7 @@ use sha2::{Sha256, Digest};
 
 use crate::services::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
 use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::formatter;
 
 /// Per-channel session state
 struct ChannelSession {
@@ -855,7 +856,12 @@ async fn handle_shell_command(
             let mut parts = Vec::new();
 
             if !stdout.is_empty() {
-                parts.push(format!("```\n{}\n```", stdout.trim_end()));
+                let trimmed = stdout.trim_end();
+                if formatter::is_diff_content(trimmed) {
+                    parts.push(format!("```diff\n{}\n```", trimmed));
+                } else {
+                    parts.push(format!("```\n{}\n```", trimmed));
+                }
             }
             if !stderr.is_empty() {
                 parts.push(format!("stderr:\n```\n{}\n```", stderr.trim_end()));
@@ -1132,6 +1138,7 @@ async fn handle_text_message(
         let mut cancelled = false;
         let mut new_session_id: Option<String> = None;
         let mut spin_idx: usize = 0;
+        let mut last_tool_name = String::new();
 
         while !done {
             if cancel_token.cancelled.load(Ordering::Relaxed) {
@@ -1162,24 +1169,16 @@ async fn handle_text_message(
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
                                 full_response.push_str(&format!("\n\n⚙️ {}\n", summary));
+                                last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
                                 if is_error {
                                     let ts = chrono::Local::now().format("%H:%M:%S");
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
-                                    let truncated = truncate_str(&content, 500);
-                                    if truncated.contains('\n') {
-                                        full_response.push_str(&format!("\n❌\n```\n{}\n```\n", truncated));
-                                    } else {
-                                        full_response.push_str(&format!("\n❌ `{}`\n\n", truncated));
-                                    }
-                                } else if !content.is_empty() {
-                                    let truncated = truncate_str(&content, 300);
-                                    if truncated.contains('\n') {
-                                        full_response.push_str(&format!("\n```\n{}\n```\n", truncated));
-                                    } else {
-                                        full_response.push_str(&format!("\n✅ `{}`\n\n", truncated));
-                                    }
+                                }
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true);
+                                if !formatted.is_empty() {
+                                    full_response.push_str(&formatted);
                                 }
                             }
                             StreamMessage::TaskNotification { summary, .. } => {
@@ -1596,12 +1595,10 @@ fn format_tool_input(name: &str, input: &str) -> String {
         }
         "Edit" => {
             let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+            let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
             let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            if replace_all {
-                format!("Edit {} (replace all)", fp)
-            } else {
-                format!("Edit {}", fp)
-            }
+            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all, true)
         }
         "Glob" => {
             let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
