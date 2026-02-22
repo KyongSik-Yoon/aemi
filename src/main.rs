@@ -43,6 +43,9 @@ fn print_help() {
     println!("    --ccserver <TOKEN>... [--chat-id <ID>]");
     println!("                            Start Telegram bot server(s)");
     println!("                            --chat-id restricts access to a specific Telegram chat ID");
+    println!("    --ccserver-discord <TOKEN> [--channel-id <ID>]");
+    println!("                            Start Discord bot server");
+    println!("                            --channel-id restricts access to a specific Discord channel");
     println!("    --sendfile <PATH> --chat <ID> --key <HASH>");
     println!("                            Send file via Telegram bot (internal use, HASH = token hash)");
     println!();
@@ -138,6 +141,27 @@ fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
             }
         });
     }
+}
+
+fn handle_ccserver_discord(token: String, allowed_channel_id: Option<u64>) {
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
+    let title = format!("  cokacdir v{}  |  Discord Bot Server  ", VERSION);
+    let width = title.chars().count();
+    println!();
+    println!("  ┌{}┐", "─".repeat(width));
+    println!("  │{}│", title);
+    println!("  └{}┘", "─".repeat(width));
+    println!();
+
+    if let Some(cid) = allowed_channel_id {
+        println!("  ▸ Channel ID filter : {}", cid);
+    }
+
+    println!("  ▸ Bot instance : 1");
+    println!("  ▸ Status       : Connecting...");
+    println!();
+    rt.block_on(services::discord::run_bot(&token, allowed_channel_id));
 }
 
 fn handle_prompt(prompt: &str) {
@@ -279,6 +303,36 @@ fn main() -> io::Result<()> {
                     return Ok(());
                 }
                 handle_ccserver(tokens, allowed_chat_id);
+                return Ok(());
+            }
+            "--ccserver-discord" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --ccserver-discord requires a token argument");
+                    eprintln!("Usage: cokacdir --ccserver-discord <TOKEN> [--channel-id <ID>]");
+                    return Ok(());
+                }
+                let token = args[i + 1].clone();
+                let mut allowed_channel_id: Option<u64> = None;
+                let mut j = i + 2;
+                while j < args.len() {
+                    match args[j].as_str() {
+                        "--channel-id" => {
+                            if j + 1 < args.len() {
+                                allowed_channel_id = args[j + 1].parse().ok();
+                                if allowed_channel_id.is_none() {
+                                    eprintln!("Error: --channel-id value must be a valid integer");
+                                    return Ok(());
+                                }
+                                j += 2;
+                            } else {
+                                eprintln!("Error: --channel-id requires a value");
+                                return Ok(());
+                            }
+                        }
+                        _ => { j += 1; }
+                    }
+                }
+                handle_ccserver_discord(token, allowed_channel_id);
                 return Ok(());
             }
             "--sendfile" => {
