@@ -11,7 +11,7 @@ use teloxide::types::ParseMode;
 use sha2::{Sha256, Digest};
 
 use crate::services::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
-use crate::ui::ai_screen::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
 
 /// Per-chat session state
 struct ChatSession {
@@ -1082,7 +1082,7 @@ async fn handle_text_message(
     let placeholder_msg_id = placeholder.id;
 
     // Sanitize input
-    let sanitized_input = ai_screen::sanitize_user_input(user_text);
+    let sanitized_input = session::sanitize_user_input(user_text);
 
     // Prepend pending file upload records so Claude knows about recently uploaded files
     let context_prompt = if pending_uploads.is_empty() {
@@ -1495,7 +1495,7 @@ async fn handle_text_message(
 
 /// Load existing session from ai_sessions directory matching the given path
 fn load_existing_session(current_path: &str) -> Option<(SessionData, std::time::SystemTime)> {
-    let sessions_dir = ai_screen::ai_sessions_dir()?;
+    let sessions_dir = session::ai_sessions_dir()?;
 
     if !sessions_dir.exists() {
         return None;
@@ -1541,7 +1541,7 @@ fn save_session_to_file(session: &ChatSession, current_path: &str) {
         return;
     }
 
-    let Some(sessions_dir) = ai_screen::ai_sessions_dir() else {
+    let Some(sessions_dir) = session::ai_sessions_dir() else {
         return;
     };
 
