@@ -55,6 +55,8 @@ struct SharedData {
     stop_message_ids: HashMap<ChatId, teloxide::types::MessageId>,
     /// Per-chat timestamp of the last Telegram API call (for rate limiting)
     api_timestamps: HashMap<ChatId, tokio::time::Instant>,
+    /// If set, only messages from this chat ID are allowed (--chat-id parameter)
+    allowed_chat_id: Option<i64>,
 }
 
 type SharedState = Arc<Mutex<SharedData>>;
@@ -198,13 +200,17 @@ fn risk_badge(destructive: bool) -> &'static str {
 }
 
 /// Entry point: start the Telegram bot with long polling
-pub async fn run_bot(token: &str) {
+pub async fn run_bot(token: &str, allowed_chat_id: Option<i64>) {
     let bot = Bot::new(token);
     let bot_settings = load_bot_settings(token);
 
-    match bot_settings.owner_user_id {
-        Some(owner_id) => println!("  ✓ Owner: {owner_id}"),
-        None => println!("  ⚠ No owner registered — first user will be registered as owner"),
+    if let Some(cid) = allowed_chat_id {
+        println!("  ✓ Chat ID restriction: {cid}");
+    } else {
+        match bot_settings.owner_user_id {
+            Some(owner_id) => println!("  ✓ Owner: {owner_id}"),
+            None => println!("  ⚠ No owner registered — first user will be registered as owner"),
+        }
     }
 
     let state: SharedState = Arc::new(Mutex::new(SharedData {
@@ -213,6 +219,7 @@ pub async fn run_bot(token: &str) {
         cancel_tokens: HashMap::new(),
         stop_message_ids: HashMap::new(),
         api_timestamps: HashMap::new(),
+        allowed_chat_id,
     }));
 
     println!("  ✓ Bot connected — Listening for messages");
@@ -243,37 +250,53 @@ async fn handle_message(
     let timestamp = chrono::Local::now().format("%H:%M:%S");
     let user_id = msg.from.as_ref().map(|u| u.id.0);
 
-    // Auth check (imprinting)
-    let Some(uid) = user_id else {
-        // No user info (e.g. channel post) → reject
-        return Ok(());
+    // Auth check: --chat-id restriction takes priority over imprinting
+    let allowed_cid = {
+        let data = state.lock().await;
+        data.allowed_chat_id
     };
-    let imprinted = {
-        let mut data = state.lock().await;
-        match data.settings.owner_user_id {
-            None => {
-                // Imprint: register first user as owner
-                data.settings.owner_user_id = Some(uid);
-                save_bot_settings(token, &data.settings);
-                println!("  [{timestamp}] ★ Owner registered: {raw_user_name} (id:{uid})");
-                true
-            }
-            Some(owner_id) => {
-                if uid != owner_id {
-                    // Unregistered user → reject silently (log only)
-                    println!("  [{timestamp}] ✗ Rejected: {raw_user_name} (id:{uid})");
-                    return Ok(());
-                }
-                false
-            }
+
+    if let Some(allowed) = allowed_cid {
+        // --chat-id mode: only allow messages from the specified chat ID
+        if chat_id.0 != allowed {
+            let uid_str = user_id.map(|u| u.to_string()).unwrap_or_else(|| "?".to_string());
+            println!("  [{timestamp}] ✗ Rejected (chat:{}, user:{raw_user_name}/{uid_str}) — allowed chat: {allowed}", chat_id.0);
+            return Ok(());
         }
-    };
-    if imprinted {
-        // Owner registration is logged to server console only (line 242)
-        // No response sent to the user
+    } else {
+        // Imprinting mode (original behavior)
+        let Some(uid) = user_id else {
+            // No user info (e.g. channel post) → reject
+            return Ok(());
+        };
+        let imprinted = {
+            let mut data = state.lock().await;
+            match data.settings.owner_user_id {
+                None => {
+                    // Imprint: register first user as owner
+                    data.settings.owner_user_id = Some(uid);
+                    save_bot_settings(token, &data.settings);
+                    println!("  [{timestamp}] ★ Owner registered: {raw_user_name} (id:{uid})");
+                    true
+                }
+                Some(owner_id) => {
+                    if uid != owner_id {
+                        // Unregistered user → reject silently (log only)
+                        println!("  [{timestamp}] ✗ Rejected: {raw_user_name} (id:{uid})");
+                        return Ok(());
+                    }
+                    false
+                }
+            }
+        };
+        if imprinted {
+            // Owner registration is logged to server console only
+            // No response sent to the user
+        }
     }
 
-    let user_name = format!("{}({uid})", raw_user_name);
+    let uid_display = user_id.map(|u| u.to_string()).unwrap_or_else(|| "?".to_string());
+    let user_name = format!("{raw_user_name}({uid_display})");
 
     // Handle file/photo uploads
     if msg.document().is_some() || msg.photo().is_some() {
