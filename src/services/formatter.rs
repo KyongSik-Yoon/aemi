@@ -4,6 +4,32 @@
 /// to HTML via `markdown_to_telegram_html()` at the final rendering step.
 /// Discord uses markdown natively.
 
+/// Strip ANSI terminal escape codes from a string.
+/// Handles `ESC[...m` color/style sequences that appear in command output.
+pub fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // ESC sequence: skip until alphabetic terminator
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                for nc in chars.by_ref() {
+                    if nc.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            // Other ESC variants: just drop the ESC char
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 /// Detect if content looks like unified diff output.
 pub fn is_diff_content(content: &str) -> bool {
     let lines: Vec<&str> = content.lines().take(40).collect();
@@ -64,6 +90,10 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
     if content.is_empty() && !is_error {
         return String::new();
     }
+
+    // Strip ANSI escape codes so terminal color sequences don't leak into chat output
+    let cleaned = strip_ansi_codes(content);
+    let content = cleaned.as_str();
 
     let max_len: usize = 1500;
 
@@ -255,4 +285,125 @@ fn floor_char_boundary(s: &str, index: usize) -> usize {
         i -= 1;
     }
     i
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- strip_ansi_codes ---
+
+    #[test]
+    fn test_strip_ansi_no_codes() {
+        assert_eq!(strip_ansi_codes("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_strip_ansi_empty() {
+        assert_eq!(strip_ansi_codes(""), "");
+    }
+
+    #[test]
+    fn test_strip_ansi_color_sequence() {
+        // ESC[0;32m → ESC[0m (green color + reset)
+        let input = "\x1b[0;32m→\x1b[0m Current branch: main";
+        assert_eq!(strip_ansi_codes(input), "→ Current branch: main");
+    }
+
+    #[test]
+    fn test_strip_ansi_multiple_sequences() {
+        let input = "\x1b[1mBold\x1b[0m and \x1b[31mred\x1b[0m text";
+        assert_eq!(strip_ansi_codes(input), "Bold and red text");
+    }
+
+    #[test]
+    fn test_strip_ansi_preserves_newlines() {
+        let input = "\x1b[32mline1\x1b[0m\nline2\n\x1b[33mline3\x1b[0m";
+        assert_eq!(strip_ansi_codes(input), "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn test_strip_ansi_lone_esc_dropped() {
+        // ESC not followed by '[' should just be dropped
+        let input = "a\x1bb";
+        assert_eq!(strip_ansi_codes(input), "ab");
+    }
+
+    // --- is_diff_content ---
+
+    #[test]
+    fn test_is_diff_with_hunk_header() {
+        let diff = "@@ -1,3 +1,4 @@\n context\n-old line\n+new line";
+        assert!(is_diff_content(diff));
+    }
+
+    #[test]
+    fn test_is_diff_git_format() {
+        let diff = "diff --git a/foo.rs b/foo.rs\n--- a/foo.rs\n+++ b/foo.rs\n@@ -1,2 +1,3 @@\n-old\n+new";
+        assert!(is_diff_content(diff));
+    }
+
+    #[test]
+    fn test_is_diff_plain_text() {
+        let text = "This is just regular text.\nNothing special here.\nNo diff markers.";
+        assert!(!is_diff_content(text));
+    }
+
+    #[test]
+    fn test_is_diff_short_content() {
+        assert!(!is_diff_content("single line"));
+        assert!(!is_diff_content(""));
+    }
+
+    // --- format_tool_result ---
+
+    #[test]
+    fn test_format_tool_result_empty() {
+        assert_eq!(format_tool_result("", false, "Read", true), "");
+    }
+
+    #[test]
+    fn test_format_tool_result_strips_ansi() {
+        let input = "\x1b[32mok\x1b[0m";
+        let result = format_tool_result(input, false, "Bash", true);
+        assert!(!result.contains("\x1b"), "ANSI codes should be stripped");
+        assert!(result.contains("ok"));
+    }
+
+    #[test]
+    fn test_format_tool_result_error_single_line() {
+        let result = format_tool_result("file not found", true, "Read", true);
+        assert!(result.contains("❌"));
+        assert!(result.contains("file not found"));
+    }
+
+    #[test]
+    fn test_format_tool_result_diff_discord() {
+        let diff = "@@ -1,2 +1,3 @@\n-old\n+new\n+added";
+        let result = format_tool_result(diff, false, "Bash", true);
+        assert!(result.contains("```diff"), "Discord diff should use ```diff");
+    }
+
+    #[test]
+    fn test_format_tool_result_diff_telegram() {
+        let diff = "@@ -1,2 +1,3 @@\n-old\n+new\n+added";
+        let result = format_tool_result(diff, false, "Bash", false);
+        assert!(result.contains("```\n"), "Telegram diff should use plain ```");
+        assert!(!result.contains("```diff"), "Telegram should not use ```diff");
+    }
+
+    #[test]
+    fn test_format_tool_result_multiline_in_code_block() {
+        let content = "line1\nline2\nline3";
+        let result = format_tool_result(content, false, "Read", true);
+        assert!(result.contains("```"), "Multi-line should be in code block");
+        assert!(result.contains("line1\nline2\nline3"));
+    }
+
+    #[test]
+    fn test_format_tool_result_single_line_checkmark() {
+        let result = format_tool_result("done", false, "Bash", true);
+        assert!(result.contains("✅"));
+        assert!(result.contains("`done`"));
+    }
 }
