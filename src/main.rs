@@ -11,7 +11,7 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("    aimi [OPTIONS]");
-    println!("    aimi --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... [OPTIONS]");
+    println!("    aimi --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... --chat-id|--channel-id <ID>");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help              Print help information");
@@ -22,11 +22,11 @@ fn print_help() {
     println!("    --agent <AGENT>         AI agent to use (claude)");
     println!("    --routing <PLATFORM>    Messaging platform (telegram, discord)");
     println!("    --token <TOKEN>...      Bot token(s). Telegram supports multiple tokens");
-    println!("    --chat-id <ID>          Restrict to a specific Telegram chat ID");
-    println!("    --channel-id <ID>       Restrict to a specific Discord channel ID");
+    println!("    --chat-id <ID>          Telegram chat ID (required for telegram routing)");
+    println!("    --channel-id <ID>       Discord channel ID (required for discord routing)");
     println!();
     println!("EXAMPLES:");
-    println!("    aimi --agent claude --routing telegram --token <TOKEN>");
+    println!("    aimi --agent claude --routing telegram --token <TOKEN> --chat-id <ID>");
     println!("    aimi --agent claude --routing telegram --token <T1> <T2> --chat-id <ID>");
     println!("    aimi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
     println!();
@@ -113,7 +113,7 @@ fn handle_prompt(prompt: &str) {
     }
 }
 
-fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
+fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Telegram Bot Server  ", VERSION);
@@ -124,15 +124,13 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     println!("  └{}┘", "─".repeat(width));
     println!();
 
-    if let Some(cid) = allowed_chat_id {
-        println!("  ▸ Chat ID filter : {}", cid);
-    }
+    println!("  ▸ Chat ID filter : {}", allowed_chat_id);
 
     if tokens.len() == 1 {
         println!("  ▸ Bot instance : 1");
         println!("  ▸ Status       : Connecting...");
         println!();
-        rt.block_on(services::telegram::run_bot(&tokens[0], allowed_chat_id));
+        rt.block_on(services::telegram::run_bot(&tokens[0], Some(allowed_chat_id)));
     } else {
         println!("  ▸ Bot instances : {}", tokens.len());
         println!("  ▸ Status        : Connecting...");
@@ -143,7 +141,7 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
                 let chat_id = allowed_chat_id;
                 handles.push(tokio::spawn(async move {
                     println!("  ✓ Bot #{} connected", i + 1);
-                    services::telegram::run_bot(&token, chat_id).await;
+                    services::telegram::run_bot(&token, Some(chat_id)).await;
                 }));
             }
             for handle in handles {
@@ -153,7 +151,7 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     }
 }
 
-fn handle_discord_server(token: String, allowed_channel_id: Option<u64>) {
+fn handle_discord_server(token: String, allowed_channel_id: u64) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Discord Bot Server  ", VERSION);
@@ -164,14 +162,12 @@ fn handle_discord_server(token: String, allowed_channel_id: Option<u64>) {
     println!("  └{}┘", "─".repeat(width));
     println!();
 
-    if let Some(cid) = allowed_channel_id {
-        println!("  ▸ Channel ID filter : {}", cid);
-    }
+    println!("  ▸ Channel ID filter : {}", allowed_channel_id);
 
     println!("  ▸ Bot instance : 1");
     println!("  ▸ Status       : Connecting...");
     println!();
-    rt.block_on(services::discord::run_bot(&token, allowed_channel_id));
+    rt.block_on(services::discord::run_bot(&token, Some(allowed_channel_id)));
 }
 
 fn main() {
@@ -349,6 +345,14 @@ fn main() {
     match agent.as_str() {
         "claude" => match routing.as_str() {
             "telegram" => {
+                let chat_id = match chat_id {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("Error: --chat-id is required for Telegram routing (security)");
+                        eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN> --chat-id <ID>");
+                        return;
+                    }
+                };
                 handle_telegram_server(tokens, chat_id);
             }
             "discord" => {
@@ -356,6 +360,14 @@ fn main() {
                     eprintln!("Error: Discord supports only one token");
                     return;
                 }
+                let channel_id = match channel_id {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("Error: --channel-id is required for Discord routing (security)");
+                        eprintln!("Usage: aimi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
+                        return;
+                    }
+                };
                 handle_discord_server(tokens.into_iter().next().unwrap(), channel_id);
             }
             other => {
