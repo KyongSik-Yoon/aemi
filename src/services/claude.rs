@@ -71,6 +71,7 @@ fn debug_log(msg: &str) {
 pub struct ClaudeResponse {
     pub success: bool,
     pub response: Option<String>,
+    #[allow(dead_code)]
     pub session_id: Option<String>,
     pub error: Option<String>,
 }
@@ -312,6 +313,7 @@ pub fn is_claude_available() -> bool {
 }
 
 /// Check if platform supports AI features
+#[allow(dead_code)]
 pub fn is_ai_supported() -> bool {
     cfg!(unix)
 }

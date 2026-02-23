@@ -578,6 +578,7 @@ async fn handle_clear_command(
         if let Ok(guard) = token.child_pid.lock() {
             if let Some(pid) = *guard {
                 #[cfg(unix)]
+                #[allow(unsafe_code)]
                 unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM); }
             }
         }
@@ -658,6 +659,7 @@ async fn handle_stop_command(
             if let Ok(guard) = token.child_pid.lock() {
                 if let Some(pid) = *guard {
                     #[cfg(unix)]
+                    #[allow(unsafe_code)]
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGTERM);
                     }
@@ -1300,6 +1302,7 @@ async fn handle_text_message(
             if let Ok(guard) = cancel_token.child_pid.lock() {
                 if let Some(pid) = *guard {
                     #[cfg(unix)]
+                    #[allow(unsafe_code)]
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGTERM);
                     }
