@@ -6,7 +6,7 @@ A CLI tool that relays AI agent responses through Telegram/Discord bots.
 
 ## Origin
 
-This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
+This project is a fork of [kstost/cokacdir](https://github.com/kstost/cokacdir). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
 
 ## Features
 
