@@ -11,7 +11,8 @@ use teloxide::types::ParseMode;
 use sha2::{Sha256, Digest};
 
 use crate::services::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
-use crate::ui::ai_screen::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::formatter;
 
 /// Per-chat session state
 struct ChatSession {
@@ -386,7 +387,7 @@ async fn handle_message(
         println!("  [{timestamp}] ▶ [{user_name}] Shell done");
     } else {
         println!("  [{timestamp}] ◀ [{user_name}] {preview}");
-        handle_text_message(&bot, chat_id, &text, &state).await?;
+        handle_text_message(&bot, chat_id, &text, msg.id, &state).await?;
     }
 
     Ok(())
@@ -881,7 +882,8 @@ async fn handle_shell_command(
             let mut parts = Vec::new();
 
             if !stdout.is_empty() {
-                parts.push(format!("<pre>{}</pre>", html_escape(stdout.trim_end())));
+                let trimmed = stdout.trim_end();
+                parts.push(format!("<pre>{}</pre>", html_escape(trimmed)));
             }
             if !stderr.is_empty() {
                 parts.push(format!("stderr:\n<pre>{}</pre>", html_escape(stderr.trim_end())));
@@ -1041,6 +1043,7 @@ async fn handle_text_message(
     bot: &Bot,
     chat_id: ChatId,
     user_text: &str,
+    user_msg_id: teloxide::types::MessageId,
     state: &SharedState,
 ) -> ResponseResult<()> {
     // Get session info, allowed tools, and pending uploads (drop lock before any await)
@@ -1082,7 +1085,7 @@ async fn handle_text_message(
     let placeholder_msg_id = placeholder.id;
 
     // Sanitize input
-    let sanitized_input = ai_screen::sanitize_user_input(user_text);
+    let sanitized_input = session::sanitize_user_input(user_text);
 
     // Prepend pending file upload records so Claude knows about recently uploaded files
     let context_prompt = if pending_uploads.is_empty() {
@@ -1177,6 +1180,7 @@ async fn handle_text_message(
         let mut cancelled = false;
         let mut new_session_id: Option<String> = None;
         let mut spin_idx: usize = 0;
+        let mut last_tool_name = String::new();
 
         while !done {
             // Check cancel token
@@ -1210,24 +1214,16 @@ async fn handle_text_message(
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
                                 full_response.push_str(&format!("\n\n⚙️ {}\n", summary));
+                                last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
                                 if is_error {
                                     let ts = chrono::Local::now().format("%H:%M:%S");
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
-                                    let truncated = truncate_str(&content, 500);
-                                    if truncated.contains('\n') {
-                                        full_response.push_str(&format!("\n❌\n```\n{}\n```\n", truncated));
-                                    } else {
-                                        full_response.push_str(&format!("\n❌ `{}`\n\n", truncated));
-                                    }
-                                } else if !content.is_empty() {
-                                    let truncated = truncate_str(&content, 300);
-                                    if truncated.contains('\n') {
-                                        full_response.push_str(&format!("\n```\n{}\n```\n", truncated));
-                                    } else {
-                                        full_response.push_str(&format!("\n✅ `{}`\n\n", truncated));
-                                    }
+                                }
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, false);
+                                if !formatted.is_empty() {
+                                    full_response.push_str(&formatted);
                                 }
                             }
                             StreamMessage::TaskNotification { summary, .. } => {
@@ -1486,6 +1482,12 @@ async fn handle_text_message(
             }
         }
 
+        // Send a reply to the user's original message so they get a notification
+        shared_rate_limit_wait(&state_owned, chat_id).await;
+        let _ = bot_owned.send_message(chat_id, "✅")
+            .reply_parameters(teloxide::types::ReplyParameters::new(user_msg_id))
+            .await;
+
         let ts = chrono::Local::now().format("%H:%M:%S");
         println!("  [{ts}] ▶ Response sent");
     });
@@ -1495,7 +1497,7 @@ async fn handle_text_message(
 
 /// Load existing session from ai_sessions directory matching the given path
 fn load_existing_session(current_path: &str) -> Option<(SessionData, std::time::SystemTime)> {
-    let sessions_dir = ai_screen::ai_sessions_dir()?;
+    let sessions_dir = session::ai_sessions_dir()?;
 
     if !sessions_dir.exists() {
         return None;
@@ -1541,7 +1543,7 @@ fn save_session_to_file(session: &ChatSession, current_path: &str) {
         return;
     }
 
-    let Some(sessions_dir) = ai_screen::ai_sessions_dir() else {
+    let Some(sessions_dir) = session::ai_sessions_dir() else {
         return;
     };
 
@@ -1776,9 +1778,33 @@ fn markdown_to_telegram_html(md: &str) -> String {
             continue;
         }
 
+        // Horizontal rule (---, ***, ___)
+        if is_horizontal_rule(trimmed) {
+            result.push_str("———————————\n");
+            i += 1;
+            continue;
+        }
+
         // Heading (# ~ ######)
         if let Some(rest) = strip_heading(trimmed) {
             result.push_str(&format!("<b>{}</b>", convert_inline(&html_escape(rest))));
+            result.push('\n');
+            i += 1;
+            continue;
+        }
+
+        // Blockquote (> text)
+        if trimmed.starts_with("> ") || trimmed == ">" {
+            let quote_content = if trimmed.len() > 2 { &trimmed[2..] } else { "" };
+            result.push_str(&format!("┃ <i>{}</i>", convert_inline(&html_escape(quote_content))));
+            result.push('\n');
+            i += 1;
+            continue;
+        }
+
+        // Ordered list (1. 2. 3.)
+        if let Some(rest) = strip_ordered_list(trimmed) {
+            result.push_str(&convert_inline(&html_escape(&rest)));
             result.push('\n');
             i += 1;
             continue;
@@ -1807,6 +1833,39 @@ fn markdown_to_telegram_html(md: &str) -> String {
     result.trim_end().to_string()
 }
 
+/// Check if a line is a horizontal rule (---, ***, ___, or variants with spaces)
+fn is_horizontal_rule(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.len() < 3 {
+        return false;
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    let first = chars[0];
+    if first != '-' && first != '*' && first != '_' {
+        return false;
+    }
+    chars.iter().all(|&c| c == first || c == ' ')
+        && chars.iter().filter(|&&c| c == first).count() >= 3
+}
+
+/// Strip ordered list prefix (e.g., "1. ", "2. ", "10. ") and return with number preserved
+fn strip_ordered_list(line: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    // Must start with digits
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    // Must have at least one digit, followed by ". "
+    if i > 0 && i < bytes.len() - 1 && bytes[i] == b'.' && bytes[i + 1] == b' ' {
+        let number = &line[..i];
+        let rest = &line[i + 2..];
+        Some(format!("{}. {}", number, rest))
+    } else {
+        None
+    }
+}
+
 /// Strip markdown heading prefix (# ~ ######), return remaining text
 fn strip_heading(line: &str) -> Option<&str> {
     let trimmed = line.trim_start_matches('#');
@@ -1820,7 +1879,7 @@ fn strip_heading(line: &str) -> Option<&str> {
     None
 }
 
-/// Convert inline markdown elements (bold, italic, code) in already HTML-escaped text
+/// Convert inline markdown elements (bold, italic, code, links, strikethrough) in already HTML-escaped text
 fn convert_inline(text: &str) -> String {
     // Process inline code first to protect content from further conversion
     let mut result = String::new();
@@ -1834,28 +1893,80 @@ fn convert_inline(text: &str) -> String {
                 // Found a complete inline code span
                 let before = &remaining[..start];
                 let code_content = &after_start[..end];
-                result.push_str(&convert_bold_italic(before));
+                result.push_str(&convert_links_and_formatting(before));
                 result.push_str(&format!("<code>{}</code>", code_content));
                 remaining = &after_start[end + 1..];
                 continue;
             }
         }
         // No more inline code spans
-        result.push_str(&convert_bold_italic(remaining));
+        result.push_str(&convert_links_and_formatting(remaining));
         break;
     }
 
     result
 }
 
-/// Convert bold (**...**) and italic (*...*) in text
-fn convert_bold_italic(text: &str) -> String {
+/// Convert markdown links [text](url), then bold/italic/strikethrough
+fn convert_links_and_formatting(text: &str) -> String {
+    // First convert links, then apply bold/italic/strikethrough to the result
+    let linked = convert_links(text);
+    convert_bold_italic_strike(&linked)
+}
+
+/// Convert markdown links [text](url) to Telegram HTML <a> tags
+/// Input text is already HTML-escaped, so we look for escaped brackets
+fn convert_links(text: &str) -> String {
+    let mut result = String::new();
+    let mut remaining = text;
+
+    loop {
+        // Find [text](url) pattern
+        if let Some(bracket_start) = remaining.find('[') {
+            let after_bracket = &remaining[bracket_start + 1..];
+            if let Some(bracket_end) = after_bracket.find("](") {
+                let link_text = &after_bracket[..bracket_end];
+                let after_paren = &after_bracket[bracket_end + 2..];
+                if let Some(paren_end) = after_paren.find(')') {
+                    let url = &after_paren[..paren_end];
+                    // Don't convert if URL is empty or link_text is empty
+                    if !url.is_empty() && !link_text.is_empty() {
+                        result.push_str(&remaining[..bracket_start]);
+                        result.push_str(&format!("<a href=\"{}\">{}</a>", url, link_text));
+                        remaining = &after_paren[paren_end + 1..];
+                        continue;
+                    }
+                }
+            }
+            // Not a valid link, output the [ and continue
+            result.push_str(&remaining[..bracket_start + 1]);
+            remaining = &remaining[bracket_start + 1..];
+            continue;
+        }
+        result.push_str(remaining);
+        break;
+    }
+
+    result
+}
+
+/// Convert bold (**...**), italic (*...*), and strikethrough (~~...~~) in text
+fn convert_bold_italic_strike(text: &str) -> String {
     let mut result = String::new();
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
     let mut i = 0;
 
     while i < len {
+        // Strikethrough: ~~...~~
+        if i + 1 < len && chars[i] == '~' && chars[i + 1] == '~' {
+            if let Some(end) = find_closing_marker(&chars, i + 2, &['~', '~']) {
+                let inner: String = chars[i + 2..end].iter().collect();
+                result.push_str(&format!("<s>{}</s>", inner));
+                i = end + 2;
+                continue;
+            }
+        }
         // Bold: **...**
         if i + 1 < len && chars[i] == '*' && chars[i + 1] == '*' {
             if let Some(end) = find_closing_marker(&chars, i + 2, &['*', '*']) {
@@ -1945,12 +2056,10 @@ fn format_tool_input(name: &str, input: &str) -> String {
         }
         "Edit" => {
             let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+            let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
             let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            if replace_all {
-                format!("Edit {} (replace all)", fp)
-            } else {
-                format!("Edit {}", fp)
-            }
+            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all, false)
         }
         "Glob" => {
             let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");

@@ -3,43 +3,26 @@ name = "cokacdir"
 version = "0.4.36"
 edition = "2021"
 authors = ["cokac <monogatree@gmail.com>"]
-description = "Multi-panel terminal file manager with AI-powered natural language commands"
+description = "LLM CLI routing tool with Telegram and Discord bot integration"
 license = "MIT"
 repository = "https://github.com/kstost/cokacdir"
 homepage = "https://cokacdir.cokac.com"
-keywords = ["terminal", "cli", "file-manager", "multi-panel", "tui", "ai"]
-categories = ["command-line-utilities", "filesystem"]
+keywords = ["cli", "ai", "llm", "telegram", "discord"]
+categories = ["command-line-utilities"]
 
 [dependencies]
-ratatui = { version = "0.28", features = ["unstable-rendered-line-info"] }
-crossterm = "0.28"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 dirs = "5"
-unicode-width = "0.2"
-textwrap = "0.16"
-image = "0.25"
 libc = "0.2"
 regex = "1"
 rand = "0.8"
-supports-color = "3"
 base64 = "0.22"
-aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
-cipher = { version = "0.4", features = ["block-padding"] }
-pbkdf2 = "0.12"
 sha2 = "0.10"
 hex = "0.4"
-hmac = "0.12"
-md-5 = "0.10"
-thiserror = "1"
-russh = "0.46"
-russh-sftp = "2.0"
-russh-keys = "0.46"
 async-trait = "0.1"
-ratatui-image = { version = "2.0", default-features = false, features = ["rustix", "image-defaults", "crossterm"] }
 teloxide = { version = "0.13", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
