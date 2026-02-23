@@ -387,7 +387,7 @@ async fn handle_message(
         println!("  [{timestamp}] ▶ [{user_name}] Shell done");
     } else {
         println!("  [{timestamp}] ◀ [{user_name}] {preview}");
-        handle_text_message(&bot, chat_id, &text, &state).await?;
+        handle_text_message(&bot, chat_id, &text, msg.id, &state).await?;
     }
 
     Ok(())
@@ -1043,6 +1043,7 @@ async fn handle_text_message(
     bot: &Bot,
     chat_id: ChatId,
     user_text: &str,
+    user_msg_id: teloxide::types::MessageId,
     state: &SharedState,
 ) -> ResponseResult<()> {
     // Get session info, allowed tools, and pending uploads (drop lock before any await)
@@ -1480,6 +1481,12 @@ async fn handle_text_message(
                 }
             }
         }
+
+        // Send a reply to the user's original message so they get a notification
+        shared_rate_limit_wait(&state_owned, chat_id).await;
+        let _ = bot_owned.send_message(chat_id, "✅")
+            .reply_parameters(teloxide::types::ReplyParameters::new(user_msg_id))
+            .await;
 
         let ts = chrono::Local::now().format("%H:%M:%S");
         println!("  [{ts}] ▶ Response sent");

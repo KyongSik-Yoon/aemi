@@ -405,7 +405,7 @@ async fn handle_message(
         println!("  [{timestamp}] ▶ [{user_display}] Shell done");
     } else {
         println!("  [{timestamp}] ◀ [{user_display}] {preview}");
-        handle_text_message(ctx, channel_id, &text, state).await?;
+        handle_text_message(ctx, channel_id, &text, msg.id, state).await?;
     }
 
     Ok(())
@@ -1009,6 +1009,7 @@ async fn handle_text_message(
     ctx: &Context,
     channel_id: ChannelId,
     user_text: &str,
+    user_msg_id: serenity::model::id::MessageId,
     state: &SharedState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get session info, allowed tools, and pending uploads
@@ -1329,6 +1330,13 @@ async fn handle_text_message(
                 }
             }
         }
+
+        // Send a reply to the user's original message so they get a notification
+        rate_limit_wait(&state_owned, channel_id).await;
+        let reply = CreateMessage::new()
+            .content("✅")
+            .reference_message((channel_id, user_msg_id));
+        let _ = channel_id.send_message(&http, reply).await;
 
         let ts = chrono::Local::now().format("%H:%M:%S");
         println!("  [{ts}] ▶ Response sent");
