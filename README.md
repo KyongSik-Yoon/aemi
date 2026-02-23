@@ -1,56 +1,68 @@
 # AIMI
 
-Multi-panel terminal file manager with AI-powered natural language commands.
+LLM CLI routing tool with Telegram and Discord bot integration.
 
-**Terminal File Manager for Vibe Coders** - An easy terminal explorer for vibe coders who are scared of the terminal.
+Claude Code의 응답을 Telegram/Discord 봇을 통해 중계하는 CLI 도구입니다.
+
+## Origin
+
+이 프로젝트는 [kstost/aimi](https://github.com/kstost/aimi)의 fork입니다. 원본 프로젝트의 LLM CLI routing 부분을 기반으로 하며, TUI 파일 매니저 기능은 제거하고 봇 중계 기능에 집중하였습니다.
 
 ## Features
 
-- **Blazing Fast**: Written in Rust for maximum performance. ~10ms startup, ~5MB memory usage, ~4MB static binary with zero runtime dependencies.
-- **AI-Powered Commands**: Natural language file operations powered by Claude AI. Press `.` and describe what you want.
-- **Multi-Panel Navigation**: Dynamic multi-panel interface for efficient file management
-- **Keyboard Driven**: Full keyboard navigation designed for power users
-- **Built-in Editor**: Edit files with syntax highlighting for 20+ languages
-- **Image Viewer**: View images directly in terminal with zoom and pan support
-- **Process Manager**: Monitor and manage system processes
-- **File Search**: Find files by name pattern with recursive search
-- **Diff Compare**: Side-by-side folder and file comparison
-- **Git Integration**: Built-in git status, commit, log, branch management and inter-commit diff
-- **Remote SSH/SFTP**: Browse remote servers via SSH/SFTP with saved profiles
-- **File Encryption**: AES-256 encryption with configurable chunk splitting
-- **Customizable Themes**: Light/Dark themes with full color customization
+- **Claude Code Routing**: `--prompt`로 Claude Code에 질의하고 응답을 받음
+- **Telegram Bot**: `--ccserver`로 Telegram 봇 서버를 실행하여 채팅으로 Claude Code 사용
+- **Discord Bot**: `--ccserver-discord`로 Discord 봇 서버를 실행하여 채팅으로 Claude Code 사용
+- **Multi-Bot**: 여러 Telegram 봇 토큰을 동시에 실행 가능
+- **Access Control**: `--chat-id` / `--channel-id`로 특정 채팅/채널만 허용
+
+## Usage
+
+```bash
+# Claude Code에 직접 질의
+aimi --prompt "explain this code"
+
+# Telegram 봇 서버 실행
+aimi --ccserver <TELEGRAM_BOT_TOKEN>
+
+# Telegram 봇 + 특정 채팅만 허용
+aimi --ccserver <TOKEN> --chat-id <CHAT_ID>
+
+# Discord 봇 서버 실행
+aimi --ccserver-discord <DISCORD_BOT_TOKEN>
+
+# Discord 봇 + 특정 채널만 허용
+aimi --ccserver-discord <TOKEN> --channel-id <CHANNEL_ID>
+
+# 여러 Telegram 봇 동시 실행
+aimi --ccserver <TOKEN1> <TOKEN2> <TOKEN3>
+```
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/kstost/aimi.git
-cd aimi
+### Prerequisites
 
-# Build release version
-cargo build --release
-
-# Run
-./target/release/aimi
-```
-
-You can open multiple panels by passing paths:
-
-```bash
-aimi ~/projects ~/downloads ~/documents
-```
-
-See [build_manual.md](build_manual.md) for detailed build instructions.
-
-## Enable AI Commands (Optional)
-
-Install Claude Code to unlock natural language file operations:
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 설치 필요
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code)
+### Build from source
+
+```bash
+# Clone
+git clone https://github.com/KyongSik-Yoon/cokacdir.git
+cd cokacdir
+
+# Build
+cargo build --release
+
+# 바이너리 위치
+./target/release/aimi
+```
+
+크로스 컴파일 등 상세 빌드 방법은 [build_manual.md](build_manual.md)를 참고하세요.
 
 ## Supported Platforms
 
@@ -66,15 +78,5 @@ MIT License
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-This includes, without limitation:
-
-- Data loss or corruption
-- System damage or malfunction
-- Security breaches or vulnerabilities
-- Financial losses
-- Any direct, indirect, incidental, special, exemplary, or consequential damages
-
-The user assumes full responsibility for all consequences arising from the use of this software, regardless of whether such use was intended, authorized, or anticipated.
 
 **USE AT YOUR OWN RISK.**
