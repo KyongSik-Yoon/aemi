@@ -45,15 +45,15 @@ fn get_claude_path() -> Option<&'static str> {
     CLAUDE_PATH.get_or_init(|| resolve_claude_path()).as_deref()
 }
 
-/// Debug logging helper (only active when COKACDIR_DEBUG=1)
+/// Debug logging helper (only active when AIMI_DEBUG=1)
 fn debug_log(msg: &str) {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     let enabled = ENABLED.get_or_init(|| {
-        std::env::var("COKACDIR_DEBUG").map(|v| v == "1").unwrap_or(false)
+        std::env::var("AIMI_DEBUG").map(|v| v == "1").unwrap_or(false)
     });
     if !*enabled { return; }
     if let Some(home) = dirs::home_dir() {
-        let debug_dir = home.join(".cokacdir").join("debug");
+        let debug_dir = home.join(".aimi").join("debug");
         let _ = std::fs::create_dir_all(&debug_dir);
         let log_path = debug_dir.join("claude.log");
         if let Ok(mut file) = OpenOptions::new()

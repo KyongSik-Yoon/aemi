@@ -73,9 +73,9 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(&result[..8]) // 16 hex chars
 }
 
-/// Path to bot settings file: ~/.cokacdir/bot_settings.json
+/// Path to bot settings file: ~/.aimi/bot_settings.json
 fn bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".cokacdir").join("bot_settings.json"))
+    dirs::home_dir().map(|h| h.join(".aimi").join("bot_settings.json"))
 }
 
 /// Load bot settings from bot_settings.json
@@ -400,7 +400,7 @@ async fn handle_help_command(
     state: &SharedState,
 ) -> ResponseResult<()> {
     let help = "\
-<b>cokacdir Telegram Bot</b>
+<b>aimi Telegram Bot</b>
 Manage server files &amp; chat with Claude AI.
 
 <b>Session</b>
@@ -457,7 +457,7 @@ async fn handle_start_command(
                 .await?;
             return Ok(());
         };
-        let workspace_dir = home.join(".cokacdir").join("workspace");
+        let workspace_dir = home.join(".aimi").join("workspace");
         use rand::Rng;
         let random_name: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
@@ -1119,7 +1119,7 @@ async fn handle_text_message(
          Current working directory: {}\n\n\
          When your work produces a file the user would want (generated code, reports, images, archives, etc.),\n\
          send it by running this bash command:\n\n\
-         cokacdir --sendfile <filepath> --chat {} --key {}\n\n\
+         aimi --sendfile <filepath> --chat {} --key {}\n\n\
          This delivers the file directly to the user's Telegram chat.\n\
          Do NOT tell the user to use /down — use the command above instead.\n\n\
          Always keep the user informed about what you are doing. \

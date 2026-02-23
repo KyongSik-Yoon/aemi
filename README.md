@@ -1,76 +1,68 @@
-# COKACDIR
+# AIMI
 
-Multi-panel terminal file manager with AI-powered natural language commands.
+LLM CLI routing tool with Telegram and Discord bot integration.
 
-**Terminal File Manager for Vibe Coders** - An easy terminal explorer for vibe coders who are scared of the terminal.
+A CLI tool that relays Claude Code responses through Telegram/Discord bots.
+
+## Origin
+
+This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
 
 ## Features
 
-- **Blazing Fast**: Written in Rust for maximum performance. ~10ms startup, ~5MB memory usage, ~4MB static binary with zero runtime dependencies.
-- **AI-Powered Commands**: Natural language file operations powered by Claude AI. Press `.` and describe what you want.
-- **Multi-Panel Navigation**: Dynamic multi-panel interface for efficient file management
-- **Keyboard Driven**: Full keyboard navigation designed for power users
-- **Built-in Editor**: Edit files with syntax highlighting for 20+ languages
-- **Image Viewer**: View images directly in terminal with zoom and pan support
-- **Process Manager**: Monitor and manage system processes
-- **File Search**: Find files by name pattern with recursive search
-- **Diff Compare**: Side-by-side folder and file comparison
-- **Git Integration**: Built-in git status, commit, log, branch management and inter-commit diff
-- **Remote SSH/SFTP**: Browse remote servers via SSH/SFTP with saved profiles
-- **File Encryption**: AES-256 encryption with configurable chunk splitting
-- **Customizable Themes**: Light/Dark themes with full color customization
+- **Claude Code Routing**: Query Claude Code and receive responses via `--prompt`
+- **Telegram Bot**: Run a Telegram bot server with `--ccserver` to use Claude Code through chat
+- **Discord Bot**: Run a Discord bot server with `--ccserver-discord` to use Claude Code through chat
+- **Multi-Bot**: Run multiple Telegram bot tokens simultaneously
+- **Access Control**: Restrict access to specific chats/channels with `--chat-id` / `--channel-id`
+
+## Usage
+
+```bash
+# Query Claude Code directly
+aimi --prompt "explain this code"
+
+# Start Telegram bot server
+aimi --ccserver <TELEGRAM_BOT_TOKEN>
+
+# Telegram bot with chat restriction
+aimi --ccserver <TOKEN> --chat-id <CHAT_ID>
+
+# Start Discord bot server
+aimi --ccserver-discord <DISCORD_BOT_TOKEN>
+
+# Discord bot with channel restriction
+aimi --ccserver-discord <TOKEN> --channel-id <CHANNEL_ID>
+
+# Run multiple Telegram bots simultaneously
+aimi --ccserver <TOKEN1> <TOKEN2> <TOKEN3>
+```
 
 ## Installation
 
-### Quick Install (Recommended)
+### Prerequisites
 
-```bash
-/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"
-```
-
-Then run:
-
-```bash
-cokacdir [PATH...]
-```
-
-You can open multiple panels by passing paths:
-
-```bash
-cokacdir ~/projects ~/downloads ~/documents
-```
-
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/kstost/cokacdir.git
-cd cokacdir
-
-# Build release version
-cargo build --release
-
-# Run
-./target/release/cokacdir
-```
-
-See [build_manual.md](build_manual.md) for detailed build instructions.
-
-## Enable AI Commands (Optional)
-
-Install Claude Code to unlock natural language file operations:
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be installed
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code)
+### Build from source
 
-## Documentation
+```bash
+# Clone
+git clone https://github.com/KyongSik-Yoon/cokacdir.git
+cd cokacdir
 
-For detailed usage guide, keyboard shortcuts, and tutorials:
+# Build
+cargo build --release
 
-**[https://cokacdir.cokac.com/#/tutorial](https://cokacdir.cokac.com/#/tutorial)**
+# Binary location
+./target/release/aimi
+```
+
+See [build_manual.md](build_manual.md) for detailed build instructions including cross-compilation.
 
 ## Supported Platforms
 
@@ -81,26 +73,10 @@ For detailed usage guide, keyboard shortcuts, and tutorials:
 
 MIT License
 
-## Author
-
-cokac <monogatree@gmail.com>
-
-Homepage: https://cokacdir.cokac.com
-
 ## Disclaimer
 
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-This includes, without limitation:
-
-- Data loss or corruption
-- System damage or malfunction
-- Security breaches or vulnerabilities
-- Financial losses
-- Any direct, indirect, incidental, special, exemplary, or consequential damages
-
-The user assumes full responsibility for all consequences arising from the use of this software, regardless of whether such use was intended, authorized, or anticipated.
 
 **USE AT YOUR OWN RISK.**

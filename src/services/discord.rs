@@ -76,9 +76,9 @@ fn discord_token_hash(token: &str) -> String {
     format!("dc_{}", hex::encode(&result[..8])) // prefix with dc_ to distinguish from Telegram
 }
 
-/// Path to bot settings file: ~/.cokacdir/bot_settings.json (shared with Telegram)
+/// Path to bot settings file: ~/.aimi/bot_settings.json (shared with Telegram)
 fn bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".cokacdir").join("bot_settings.json"))
+    dirs::home_dir().map(|h| h.join(".aimi").join("bot_settings.json"))
 }
 
 /// Load bot settings from bot_settings.json
@@ -418,7 +418,7 @@ async fn handle_help_command(
     state: &SharedState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let help = "\
-**cokacdir Discord Bot**
+**aimi Discord Bot**
 Manage server files & chat with Claude AI.
 
 **Session**
@@ -469,7 +469,7 @@ async fn handle_start_command(
             channel_id.say(&ctx.http, "Error: cannot determine home directory.").await?;
             return Ok(());
         };
-        let workspace_dir = home.join(".cokacdir").join("workspace");
+        let workspace_dir = home.join(".aimi").join("workspace");
         use rand::Rng;
         let random_name: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
