@@ -1,8 +1,8 @@
 # AIMI
 
-LLM CLI routing tool with Telegram and Discord bot integration.
+AI agent routing tool with Telegram and Discord bot integration.
 
-A CLI tool that relays Claude Code responses through Telegram/Discord bots.
+A CLI tool that relays AI agent responses through Telegram/Discord bots.
 
 ## Origin
 
@@ -10,9 +10,9 @@ This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is b
 
 ## Features
 
-- **Claude Code Routing**: Query Claude Code and receive responses via `--prompt`
-- **Telegram Bot**: Run a Telegram bot server with `--ccserver` to use Claude Code through chat
-- **Discord Bot**: Run a Discord bot server with `--ccserver-discord` to use Claude Code through chat
+- **AI Agent Routing**: Query AI agents and receive responses via `--prompt`
+- **Telegram Bot**: Route AI agent through Telegram with `--routing telegram`
+- **Discord Bot**: Route AI agent through Discord with `--routing discord`
 - **Multi-Bot**: Run multiple Telegram bot tokens simultaneously
 - **Access Control**: Restrict access to specific chats/channels with `--chat-id` / `--channel-id`
 
@@ -23,19 +23,19 @@ This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is b
 aimi --prompt "explain this code"
 
 # Start Telegram bot server
-aimi --ccserver <TELEGRAM_BOT_TOKEN>
+aimi --agent claude --routing telegram --token <TELEGRAM_BOT_TOKEN>
 
 # Telegram bot with chat restriction
-aimi --ccserver <TOKEN> --chat-id <CHAT_ID>
+aimi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server
-aimi --ccserver-discord <DISCORD_BOT_TOKEN>
+aimi --agent claude --routing discord --token <DISCORD_BOT_TOKEN>
 
 # Discord bot with channel restriction
-aimi --ccserver-discord <TOKEN> --channel-id <CHANNEL_ID>
+aimi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Run multiple Telegram bots simultaneously
-aimi --ccserver <TOKEN1> <TOKEN2> <TOKEN3>
+aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3>
 ```
 
 ## Installation
