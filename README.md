@@ -6,7 +6,7 @@ A CLI tool that relays AI agent responses through Telegram/Discord bots.
 
 ## Origin
 
-This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
+This project is a fork of [kstost/cokacdir](https://github.com/kstost/cokacdir). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
 
 ## Features
 
@@ -14,7 +14,7 @@ This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is b
 - **Telegram Bot**: Route AI agent through Telegram with `--routing telegram`
 - **Discord Bot**: Route AI agent through Discord with `--routing discord`
 - **Multi-Bot**: Run multiple Telegram bot tokens simultaneously
-- **Access Control**: Restrict access to specific chats/channels with `--chat-id` / `--channel-id`
+- **Access Control**: `--chat-id` (Telegram) / `--channel-id` (Discord) required for routing
 
 ## Usage
 
@@ -22,20 +22,14 @@ This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is b
 # Query Claude Code directly
 aimi --prompt "explain this code"
 
-# Start Telegram bot server
-aimi --agent claude --routing telegram --token <TELEGRAM_BOT_TOKEN>
-
-# Telegram bot with chat restriction
+# Start Telegram bot server (--chat-id required)
 aimi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
-# Start Discord bot server
-aimi --agent claude --routing discord --token <DISCORD_BOT_TOKEN>
-
-# Discord bot with channel restriction
+# Start Discord bot server (--channel-id required)
 aimi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Run multiple Telegram bots simultaneously
-aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3>
+aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
 ```
 
 ## Installation
