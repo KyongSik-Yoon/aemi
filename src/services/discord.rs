@@ -1348,7 +1348,7 @@ async fn handle_text_message(
         // Send a reply to the user's original message so they get a notification
         rate_limit_wait(&state_owned, channel_id).await;
         let reply = CreateMessage::new()
-            .content("✅")
+            .content("✅ Done")
             .reference_message((channel_id, user_msg_id));
         let _ = channel_id.send_message(&http, reply).await;
 
