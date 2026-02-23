@@ -46,8 +46,8 @@ npm install -g @anthropic-ai/claude-code
 
 ```bash
 # Clone
-git clone https://github.com/KyongSik-Yoon/cokacdir.git
-cd cokacdir
+git clone https://github.com/KyongSik-Yoon/aimi.git
+cd aimi
 
 # Build
 cargo build --release
