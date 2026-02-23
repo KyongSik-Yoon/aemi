@@ -4,6 +4,20 @@
 /// to HTML via `markdown_to_telegram_html()` at the final rendering step.
 /// Discord uses markdown natively.
 
+use std::sync::OnceLock;
+use regex::Regex;
+
+/// Strip ANSI escape sequences from text.
+/// Removes CSI sequences (e.g., `\x1b[0;32m`), OSC sequences, and other escape codes.
+fn strip_ansi(text: &str) -> String {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        // Matches: ESC[ ... m (SGR), ESC[ ... <letter> (other CSI), ESC] ... BEL/ST (OSC), ESC <char> (two-char)
+        Regex::new(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[^[\]()]").expect("Invalid ANSI regex")
+    });
+    re.replace_all(text, "").into_owned()
+}
+
 /// Detect if content looks like unified diff output.
 pub fn is_diff_content(content: &str) -> bool {
     let lines: Vec<&str> = content.lines().take(40).collect();
@@ -64,6 +78,10 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
     if content.is_empty() && !is_error {
         return String::new();
     }
+
+    // Strip ANSI escape sequences from tool output (e.g., git colored output)
+    let content = strip_ansi(content);
+    let content = content.as_str();
 
     let max_len: usize = 1500;
 
