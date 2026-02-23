@@ -2,39 +2,39 @@
 
 LLM CLI routing tool with Telegram and Discord bot integration.
 
-Claude Code의 응답을 Telegram/Discord 봇을 통해 중계하는 CLI 도구입니다.
+A CLI tool that relays Claude Code responses through Telegram/Discord bots.
 
 ## Origin
 
-이 프로젝트는 [kstost/aimi](https://github.com/kstost/aimi)의 fork입니다. 원본 프로젝트의 LLM CLI routing 부분을 기반으로 하며, TUI 파일 매니저 기능은 제거하고 봇 중계 기능에 집중하였습니다.
+This project is a fork of [kstost/aimi](https://github.com/kstost/aimi). It is based on the LLM CLI routing portion of the original project, with the TUI file manager removed to focus on bot relay functionality.
 
 ## Features
 
-- **Claude Code Routing**: `--prompt`로 Claude Code에 질의하고 응답을 받음
-- **Telegram Bot**: `--ccserver`로 Telegram 봇 서버를 실행하여 채팅으로 Claude Code 사용
-- **Discord Bot**: `--ccserver-discord`로 Discord 봇 서버를 실행하여 채팅으로 Claude Code 사용
-- **Multi-Bot**: 여러 Telegram 봇 토큰을 동시에 실행 가능
-- **Access Control**: `--chat-id` / `--channel-id`로 특정 채팅/채널만 허용
+- **Claude Code Routing**: Query Claude Code and receive responses via `--prompt`
+- **Telegram Bot**: Run a Telegram bot server with `--ccserver` to use Claude Code through chat
+- **Discord Bot**: Run a Discord bot server with `--ccserver-discord` to use Claude Code through chat
+- **Multi-Bot**: Run multiple Telegram bot tokens simultaneously
+- **Access Control**: Restrict access to specific chats/channels with `--chat-id` / `--channel-id`
 
 ## Usage
 
 ```bash
-# Claude Code에 직접 질의
+# Query Claude Code directly
 aimi --prompt "explain this code"
 
-# Telegram 봇 서버 실행
+# Start Telegram bot server
 aimi --ccserver <TELEGRAM_BOT_TOKEN>
 
-# Telegram 봇 + 특정 채팅만 허용
+# Telegram bot with chat restriction
 aimi --ccserver <TOKEN> --chat-id <CHAT_ID>
 
-# Discord 봇 서버 실행
+# Start Discord bot server
 aimi --ccserver-discord <DISCORD_BOT_TOKEN>
 
-# Discord 봇 + 특정 채널만 허용
+# Discord bot with channel restriction
 aimi --ccserver-discord <TOKEN> --channel-id <CHANNEL_ID>
 
-# 여러 Telegram 봇 동시 실행
+# Run multiple Telegram bots simultaneously
 aimi --ccserver <TOKEN1> <TOKEN2> <TOKEN3>
 ```
 
@@ -42,7 +42,7 @@ aimi --ccserver <TOKEN1> <TOKEN2> <TOKEN3>
 
 ### Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 설치 필요
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be installed
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -58,11 +58,11 @@ cd cokacdir
 # Build
 cargo build --release
 
-# 바이너리 위치
+# Binary location
 ./target/release/aimi
 ```
 
-크로스 컴파일 등 상세 빌드 방법은 [build_manual.md](build_manual.md)를 참고하세요.
+See [build_manual.md](build_manual.md) for detailed build instructions including cross-compilation.
 
 ## Supported Platforms
 
