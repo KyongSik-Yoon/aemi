@@ -1087,6 +1087,16 @@ async fn handle_text_message(
          Always keep the user informed about what you are doing. \
          Briefly explain each step as you work (e.g. \"Reading the file...\", \"Creating the script...\", \"Running tests...\"). \
          The user cannot see your tool calls, so narrate your progress so they know what is happening.\n\n\
+         DISCORD FORMATTING RULES:\n\
+         - Your response is displayed on Discord (2000 char message limit, mobile users common).\n\
+         - Keep text responses concise and well-structured.\n\
+         - Use short paragraphs with blank lines between them.\n\
+         - Use bullet lists (- item) instead of wide tables when possible.\n\
+         - If you must show a table, keep columns narrow (< 50 chars total width) so it renders on mobile.\n\
+         - Use `inline code` for file names, commands, and short values.\n\
+         - Use code blocks (```language) for multi-line code. Always specify the language hint.\n\
+         - Prefer summarized output over raw dumps. Show key results, not everything.\n\
+         - Do NOT use headers (## Title) unless the response is very long — they are visually heavy on Discord.\n\n\
          IMPORTANT: The user is on Discord and CANNOT interact with any interactive prompts, dialogs, or confirmation requests. \
          All tools that require user interaction (such as AskUserQuestion, EnterPlanMode, ExitPlanMode) will NOT work. \
          Never use tools that expect user interaction. If you need clarification, just ask in plain text.\n\
@@ -1171,7 +1181,8 @@ async fn handle_text_message(
                                 let summary = format_tool_input(&name, &input);
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
-                                full_response.push_str(&format!("\n\n⚙️ {}\n", summary));
+                                // Compact tool indicator: use > blockquote for less visual weight
+                                full_response.push_str(&format!("\n> ⚙️ {}\n", summary));
                                 last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
@@ -1186,7 +1197,7 @@ async fn handle_text_message(
                             }
                             StreamMessage::TaskNotification { summary, .. } => {
                                 if !summary.is_empty() {
-                                    full_response.push_str(&format!("\n[Task: {}]\n", summary));
+                                    full_response.push_str(&format!("\n> 📋 Task: {}\n", summary));
                                 }
                             }
                             StreamMessage::Done { result, session_id: sid } => {
@@ -1505,7 +1516,7 @@ async fn send_long_message_raw(
         // Handle code block continuity across splits
         let (chunk, rest) = remaining.split_at(split_at);
 
-        // Check for unclosed code blocks
+        // Check for unclosed code blocks and find the language hint
         let backtick_count = chunk.matches("```").count();
         let chunk_to_send = if backtick_count % 2 != 0 {
             // Unclosed code block - close it
@@ -1521,11 +1532,33 @@ async fn send_long_message_raw(
 
         // If we closed a code block, reopen it in the next chunk
         if backtick_count % 2 != 0 {
+            // Find the language hint from the last opening ``` in the chunk
+            let lang_hint = chunk.rmatch_indices("```").next()
+                .and_then(|(pos, _)| {
+                    let after = &chunk[pos + 3..];
+                    let lang_end = after.find('\n').unwrap_or(after.len());
+                    let lang = after[..lang_end].trim();
+                    if !lang.is_empty() && lang.len() < 20 && lang.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '+') {
+                        Some(lang.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
             remaining = remaining.strip_prefix("```").unwrap_or(remaining);
-            // We'll prepend ``` if there's more content
+            // Strip the language hint line too if present
+            if !lang_hint.is_empty() {
+                remaining = remaining.strip_prefix(&lang_hint).unwrap_or(remaining);
+                remaining = remaining.strip_prefix('\n').unwrap_or(remaining);
+            }
+            // We'll prepend ``` with language hint if there's more content
             if !remaining.is_empty() {
-                // Use a temporary buffer approach
-                let reopened = format!("```\n{}", remaining);
+                let reopened = if !lang_hint.is_empty() {
+                    format!("```{}\n{}", lang_hint, remaining)
+                } else {
+                    format!("```\n{}", remaining)
+                };
                 // Recursively handle the rest
                 return Box::pin(send_long_message_raw(http, channel_id, &reopened, state)).await;
             }
@@ -1592,16 +1625,18 @@ fn format_tool_input(name: &str, input: &str) -> String {
         }
         "Read" => {
             let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Read {}", fp)
+            let short = fp.rsplit('/').next().unwrap_or(fp);
+            format!("Read `{}`", short)
         }
         "Write" => {
             let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let short = fp.rsplit('/').next().unwrap_or(fp);
             let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
             let lines = content.lines().count();
             if lines > 0 {
-                format!("Write {} ({} lines)", fp, lines)
+                format!("Write `{}` ({} lines)", short, lines)
             } else {
-                format!("Write {}", fp)
+                format!("Write `{}`", short)
             }
         }
         "Edit" => {

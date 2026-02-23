@@ -31,6 +31,32 @@ pub fn is_diff_content(content: &str) -> bool {
     has_hunk_header || diff_indicators >= 4
 }
 
+/// Detect if content looks like a table (pipe-delimited markdown table or aligned columns).
+pub fn is_table_content(content: &str) -> bool {
+    let lines: Vec<&str> = content.lines().take(20).collect();
+    if lines.len() < 2 {
+        return false;
+    }
+
+    // Check for pipe-delimited markdown tables (| col1 | col2 |)
+    let pipe_lines = lines.iter().filter(|l| {
+        let trimmed = l.trim();
+        trimmed.starts_with('|') && trimmed.ends_with('|') && trimmed.matches('|').count() >= 3
+    }).count();
+
+    if pipe_lines >= 2 {
+        return true;
+    }
+
+    // Check for separator lines like |---|---|
+    let has_separator = lines.iter().any(|l| {
+        let trimmed = l.trim();
+        trimmed.contains("---") && trimmed.contains('|')
+    });
+
+    has_separator && pipe_lines >= 1
+}
+
 /// Format a tool result with improved presentation.
 /// Returns markdown string to be appended to full_response.
 /// `is_discord`: true for Discord (uses ```diff), false for Telegram.
@@ -39,27 +65,29 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
         return String::new();
     }
 
-    let max_len: usize = if is_error { 1500 } else { 1200 };
+    let max_len: usize = 1500;
 
     if is_error {
         let truncated = smart_truncate(content, max_len);
         if truncated.contains('\n') {
             format!("\n❌\n```\n{}\n```\n", truncated)
         } else {
-            format!("\n❌ `{}`\n\n", truncated)
+            format!("\n❌ `{}`\n", truncated)
         }
     } else {
         let is_diff = is_diff_content(content);
+        let is_table = !is_diff && is_table_content(content);
         let truncated = smart_truncate_for_diff(content, max_len, is_diff);
 
         if is_diff {
-            // Discord: ```diff gives colored output (green/red)
-            // Telegram: ```diff is treated same as ``` (no color, but still readable)
             if is_discord {
                 format!("\n```diff\n{}\n```\n", truncated)
             } else {
                 format!("\n```\n{}\n```\n", truncated)
             }
+        } else if is_table {
+            // Tables always in code blocks to preserve alignment
+            format!("\n```\n{}\n```\n", truncated)
         } else if truncated.contains('\n') {
             let lang = detect_language(last_tool_name, &truncated);
             if is_discord && !lang.is_empty() {
@@ -68,7 +96,7 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
                 format!("\n```\n{}\n```\n", truncated)
             }
         } else {
-            format!("\n✅ `{}`\n\n", truncated)
+            format!("\n✅ `{}`\n", truncated)
         }
     }
 }
@@ -76,10 +104,12 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
 /// Format Edit tool use with mini-diff for display.
 /// Returns markdown string.
 pub fn format_edit_tool_use(file_path: &str, old_string: &str, new_string: &str, replace_all: bool, is_discord: bool) -> String {
+    // Extract short filename for display
+    let short_name = file_path.rsplit('/').next().unwrap_or(file_path);
     let header = if replace_all {
-        format!("Edit {} (replace all)", file_path)
+        format!("Edit `{}` (replace all)", short_name)
     } else {
-        format!("Edit {}", file_path)
+        format!("Edit `{}`", short_name)
     };
 
     // Only show diff if the strings are reasonably short
@@ -146,6 +176,21 @@ fn detect_language(tool_name: &str, content: &str) -> &'static str {
             } else if content.contains("SyntaxError") || content.contains("TypeError") || content.contains("node_modules") {
                 "javascript"
             } else if content.contains("Traceback") || content.contains("IndentationError") {
+                "python"
+            } else if content.contains("PASS") && content.contains("FAIL") {
+                // Test output (jest, cargo test, etc.)
+                ""
+            } else {
+                ""
+            }
+        }
+        "Read" => {
+            // Try to detect from file content patterns
+            if content.contains("fn ") && content.contains("let ") {
+                "rust"
+            } else if content.contains("function ") || content.contains("const ") || content.contains("import ") {
+                "javascript"
+            } else if content.contains("def ") && content.contains("self") {
                 "python"
             } else {
                 ""
