@@ -7,24 +7,33 @@ use crate::services::claude;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
-    println!("aimi {} - LLM CLI routing tool", VERSION);
+    println!("aimi {} - AI agent routing tool", VERSION);
     println!();
     println!("USAGE:");
     println!("    aimi [OPTIONS]");
+    println!("    aimi --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... [OPTIONS]");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help              Print help information");
     println!("    -v, --version           Print version information");
     println!("    --prompt <TEXT>         Send prompt to AI and print response");
-    println!("    --base64 <TEXT>         Decode base64 and print (internal use)");
-    println!("    --ccserver <TOKEN>... [--chat-id <ID>]");
-    println!("                            Start Telegram bot server(s)");
-    println!("                            --chat-id restricts access to a specific Telegram chat ID");
-    println!("    --ccserver-discord <TOKEN> [--channel-id <ID>]");
-    println!("                            Start Discord bot server");
-    println!("                            --channel-id restricts access to a specific Discord channel");
+    println!();
+    println!("SERVER MODE:");
+    println!("    --agent <AGENT>         AI agent to use (claude)");
+    println!("    --routing <PLATFORM>    Messaging platform (telegram, discord)");
+    println!("    --token <TOKEN>...      Bot token(s). Telegram supports multiple tokens");
+    println!("    --chat-id <ID>          Restrict to a specific Telegram chat ID");
+    println!("    --channel-id <ID>       Restrict to a specific Discord channel ID");
+    println!();
+    println!("EXAMPLES:");
+    println!("    aimi --agent claude --routing telegram --token <TOKEN>");
+    println!("    aimi --agent claude --routing telegram --token <T1> <T2> --chat-id <ID>");
+    println!("    aimi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
+    println!();
+    println!("INTERNAL:");
+    println!("    --base64 <TEXT>         Decode base64 and print");
     println!("    --sendfile <PATH> --chat <ID> --key <HASH>");
-    println!("                            Send file via Telegram bot (internal use, HASH = token hash)");
+    println!("                            Send file via Telegram bot (HASH = token hash)");
 }
 
 fn print_version() {
@@ -104,7 +113,7 @@ fn handle_prompt(prompt: &str) {
     }
 }
 
-fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
+fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Telegram Bot Server  ", VERSION);
@@ -144,7 +153,7 @@ fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     }
 }
 
-fn handle_ccserver_discord(token: String, allowed_channel_id: Option<u64>) {
+fn handle_discord_server(token: String, allowed_channel_id: Option<u64>) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Discord Bot Server  ", VERSION);
@@ -168,140 +177,142 @@ fn handle_ccserver_discord(token: String, allowed_channel_id: Option<u64>) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let i = 1;
+    if args.len() <= 1 {
+        print_help();
+        return;
+    }
+
+    // Handle standalone commands first
+    match args[1].as_str() {
+        "-h" | "--help" => {
+            print_help();
+            return;
+        }
+        "-v" | "--version" => {
+            print_version();
+            return;
+        }
+        "--prompt" => {
+            if args.len() < 3 {
+                eprintln!("Error: --prompt requires a text argument");
+                eprintln!("Usage: aimi --prompt \"your question\"");
+                return;
+            }
+            handle_prompt(&args[2]);
+            return;
+        }
+        "--base64" => {
+            if args.len() < 3 {
+                std::process::exit(1);
+            }
+            handle_base64(&args[2]);
+            return;
+        }
+        "--sendfile" => {
+            // Parse: --sendfile <PATH> --chat <ID> --key <TOKEN>
+            let mut file_path: Option<String> = None;
+            let mut chat_id: Option<i64> = None;
+            let mut key: Option<String> = None;
+            let mut j = 2;
+            while j < args.len() {
+                match args[j].as_str() {
+                    "--chat" => {
+                        if j + 1 < args.len() {
+                            chat_id = args[j + 1].parse().ok();
+                            j += 2;
+                        } else {
+                            j += 1;
+                        }
+                    }
+                    "--key" => {
+                        if j + 1 < args.len() {
+                            key = Some(args[j + 1].clone());
+                            j += 2;
+                        } else {
+                            j += 1;
+                        }
+                    }
+                    _ if file_path.is_none() && !args[j].starts_with("--") => {
+                        file_path = Some(args[j].clone());
+                        j += 1;
+                    }
+                    _ => { j += 1; }
+                }
+            }
+            match (file_path, chat_id, key) {
+                (Some(fp), Some(cid), Some(k)) => {
+                    handle_sendfile(&fp, cid, &k);
+                }
+                _ => {
+                    eprintln!("Error: --sendfile requires <PATH>, --chat <ID>, and --key <HASH>");
+                    eprintln!("Usage: aimi --sendfile <PATH> --chat <ID> --key <HASH>");
+                }
+            }
+            return;
+        }
+        _ => {}
+    }
+
+    // Parse server mode: --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... [OPTIONS]
+    let mut agent: Option<String> = None;
+    let mut routing: Option<String> = None;
+    let mut tokens: Vec<String> = Vec::new();
+    let mut chat_id: Option<i64> = None;
+    let mut channel_id: Option<u64> = None;
+
+    let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "-h" | "--help" => {
-                print_help();
-                return;
-            }
-            "-v" | "--version" => {
-                print_version();
-                return;
-            }
-            "--prompt" => {
+            "--agent" => {
                 if i + 1 >= args.len() {
-                    eprintln!("Error: --prompt requires a text argument");
-                    eprintln!("Usage: aimi --prompt \"your question\"");
+                    eprintln!("Error: --agent requires a value (e.g., claude)");
                     return;
                 }
-                handle_prompt(&args[i + 1]);
-                return;
+                agent = Some(args[i + 1].clone());
+                i += 2;
             }
-            "--base64" => {
+            "--routing" => {
                 if i + 1 >= args.len() {
-                    std::process::exit(1);
+                    eprintln!("Error: --routing requires a value (e.g., telegram, discord)");
+                    return;
                 }
-                handle_base64(&args[i + 1]);
-                return;
+                routing = Some(args[i + 1].clone());
+                i += 2;
             }
-            "--ccserver" => {
-                let mut tokens: Vec<String> = Vec::new();
-                let mut allowed_chat_id: Option<i64> = None;
-                let mut j = i + 1;
-                while j < args.len() {
-                    match args[j].as_str() {
-                        "--chat-id" => {
-                            if j + 1 < args.len() {
-                                allowed_chat_id = args[j + 1].parse().ok();
-                                if allowed_chat_id.is_none() {
-                                    eprintln!("Error: --chat-id value must be a valid integer");
-                                    return;
-                                }
-                                j += 2;
-                            } else {
-                                eprintln!("Error: --chat-id requires a value");
-                                return;
-                            }
-                        }
-                        arg if arg.starts_with('-') => {
-                            j += 1;
-                        }
-                        _ => {
-                            tokens.push(args[j].clone());
-                            j += 1;
-                        }
-                    }
+            "--token" => {
+                i += 1;
+                while i < args.len() && !args[i].starts_with('-') {
+                    tokens.push(args[i].clone());
+                    i += 1;
                 }
                 if tokens.is_empty() {
-                    eprintln!("Error: --ccserver requires at least one token argument");
-                    eprintln!("Usage: aimi --ccserver <TOKEN> [--chat-id <ID>]");
+                    eprintln!("Error: --token requires at least one value");
                     return;
                 }
-                handle_ccserver(tokens, allowed_chat_id);
-                return;
             }
-            "--ccserver-discord" => {
+            "--chat-id" => {
                 if i + 1 >= args.len() {
-                    eprintln!("Error: --ccserver-discord requires a token argument");
-                    eprintln!("Usage: aimi --ccserver-discord <TOKEN> [--channel-id <ID>]");
+                    eprintln!("Error: --chat-id requires a value");
                     return;
                 }
-                let token = args[i + 1].clone();
-                let mut allowed_channel_id: Option<u64> = None;
-                let mut j = i + 2;
-                while j < args.len() {
-                    match args[j].as_str() {
-                        "--channel-id" => {
-                            if j + 1 < args.len() {
-                                allowed_channel_id = args[j + 1].parse().ok();
-                                if allowed_channel_id.is_none() {
-                                    eprintln!("Error: --channel-id value must be a valid integer");
-                                    return;
-                                }
-                                j += 2;
-                            } else {
-                                eprintln!("Error: --channel-id requires a value");
-                                return;
-                            }
-                        }
-                        _ => { j += 1; }
-                    }
+                chat_id = args[i + 1].parse().ok();
+                if chat_id.is_none() {
+                    eprintln!("Error: --chat-id value must be a valid integer");
+                    return;
                 }
-                handle_ccserver_discord(token, allowed_channel_id);
-                return;
+                i += 2;
             }
-            "--sendfile" => {
-                // Parse: --sendfile <PATH> --chat <ID> --key <TOKEN>
-                let mut file_path: Option<String> = None;
-                let mut chat_id: Option<i64> = None;
-                let mut key: Option<String> = None;
-                let mut j = i + 1;
-                while j < args.len() {
-                    match args[j].as_str() {
-                        "--chat" => {
-                            if j + 1 < args.len() {
-                                chat_id = args[j + 1].parse().ok();
-                                j += 2;
-                            } else {
-                                j += 1;
-                            }
-                        }
-                        "--key" => {
-                            if j + 1 < args.len() {
-                                key = Some(args[j + 1].clone());
-                                j += 2;
-                            } else {
-                                j += 1;
-                            }
-                        }
-                        _ if file_path.is_none() && !args[j].starts_with("--") => {
-                            file_path = Some(args[j].clone());
-                            j += 1;
-                        }
-                        _ => { j += 1; }
-                    }
+            "--channel-id" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --channel-id requires a value");
+                    return;
                 }
-                match (file_path, chat_id, key) {
-                    (Some(fp), Some(cid), Some(k)) => {
-                        handle_sendfile(&fp, cid, &k);
-                    }
-                    _ => {
-                        eprintln!("Error: --sendfile requires <PATH>, --chat <ID>, and --key <HASH>");
-                        eprintln!("Usage: aimi --sendfile <PATH> --chat <ID> --key <HASH>");
-                    }
+                channel_id = args[i + 1].parse().ok();
+                if channel_id.is_none() {
+                    eprintln!("Error: --channel-id value must be a valid integer");
+                    return;
                 }
-                return;
+                i += 2;
             }
             arg => {
                 eprintln!("Unknown option: {}", arg);
@@ -311,6 +322,48 @@ fn main() {
         }
     }
 
-    // No arguments provided
-    print_help();
+    // Validate required server mode flags
+    let agent = match agent {
+        Some(a) => a,
+        None => {
+            eprintln!("Error: --agent is required");
+            eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN>");
+            return;
+        }
+    };
+    let routing = match routing {
+        Some(r) => r,
+        None => {
+            eprintln!("Error: --routing is required");
+            eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN>");
+            return;
+        }
+    };
+    if tokens.is_empty() {
+        eprintln!("Error: --token is required");
+        eprintln!("Usage: aimi --agent {} --routing {} --token <TOKEN>", agent, routing);
+        return;
+    }
+
+    // Dispatch based on agent and routing
+    match agent.as_str() {
+        "claude" => match routing.as_str() {
+            "telegram" => {
+                handle_telegram_server(tokens, chat_id);
+            }
+            "discord" => {
+                if tokens.len() > 1 {
+                    eprintln!("Error: Discord supports only one token");
+                    return;
+                }
+                handle_discord_server(tokens.into_iter().next().unwrap(), channel_id);
+            }
+            other => {
+                eprintln!("Error: unsupported routing '{}'. Supported: telegram, discord", other);
+            }
+        },
+        other => {
+            eprintln!("Error: unsupported agent '{}'. Supported: claude", other);
+        }
+    }
 }
