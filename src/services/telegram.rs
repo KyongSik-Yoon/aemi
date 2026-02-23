@@ -1487,7 +1487,7 @@ async fn handle_text_message(
 
         // Send a reply to the user's original message so they get a notification
         shared_rate_limit_wait(&state_owned, chat_id).await;
-        let _ = bot_owned.send_message(chat_id, "✅")
+        let _ = bot_owned.send_message(chat_id, "✅ Done")
             .reply_parameters(teloxide::types::ReplyParameters::new(user_msg_id))
             .await;
 
