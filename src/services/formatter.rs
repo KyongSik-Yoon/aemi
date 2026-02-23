@@ -4,6 +4,57 @@
 /// to HTML via `markdown_to_telegram_html()` at the final rendering step.
 /// Discord uses markdown natively.
 
+/// Strip ANSI escape sequences from a string.
+/// Handles CSI sequences (e.g. `\x1b[0;32m`), OSC sequences, and simple two-byte escapes.
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // ESC character – consume the escape sequence
+            match chars.peek() {
+                Some('[') => {
+                    // CSI sequence: ESC [ ... final_byte (0x40-0x7E)
+                    chars.next(); // consume '['
+                    while let Some(&c) = chars.peek() {
+                        if c >= '\x40' && c <= '\x7E' {
+                            chars.next(); // consume final byte
+                            break;
+                        }
+                        chars.next(); // consume parameter/intermediate bytes
+                    }
+                }
+                Some(']') => {
+                    // OSC sequence: ESC ] ... ST (ESC \ or BEL)
+                    chars.next(); // consume ']'
+                    while let Some(&c) = chars.peek() {
+                        if c == '\x07' {
+                            chars.next(); // consume BEL
+                            break;
+                        }
+                        if c == '\x1b' {
+                            chars.next(); // consume ESC
+                            if chars.peek() == Some(&'\\') {
+                                chars.next(); // consume '\'
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                Some(_) => {
+                    // Simple two-byte escape (e.g. ESC =, ESC >)
+                    chars.next();
+                }
+                None => {}
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// Detect if content looks like unified diff output.
 pub fn is_diff_content(content: &str) -> bool {
     let lines: Vec<&str> = content.lines().take(40).collect();

@@ -1219,6 +1219,7 @@ async fn handle_text_message(
                                 last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
+                                let content = formatter::strip_ansi(&content);
                                 if is_error {
                                     let ts = chrono::Local::now().format("%H:%M:%S");
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
