@@ -22,26 +22,6 @@ Multi-panel terminal file manager with AI-powered natural language commands.
 
 ## Installation
 
-### Quick Install (Recommended)
-
-```bash
-/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"
-```
-
-Then run:
-
-```bash
-aimi [PATH...]
-```
-
-You can open multiple panels by passing paths:
-
-```bash
-aimi ~/projects ~/downloads ~/documents
-```
-
-### From Source
-
 ```bash
 # Clone the repository
 git clone https://github.com/kstost/aimi.git
@@ -52,6 +32,12 @@ cargo build --release
 
 # Run
 ./target/release/aimi
+```
+
+You can open multiple panels by passing paths:
+
+```bash
+aimi ~/projects ~/downloads ~/documents
 ```
 
 See [build_manual.md](build_manual.md) for detailed build instructions.
@@ -66,12 +52,6 @@ npm install -g @anthropic-ai/claude-code
 
 Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code)
 
-## Documentation
-
-For detailed usage guide, keyboard shortcuts, and tutorials:
-
-**[https://aimi.cokac.com/#/tutorial](https://aimi.cokac.com/#/tutorial)**
-
 ## Supported Platforms
 
 - macOS (Apple Silicon & Intel)
@@ -80,12 +60,6 @@ For detailed usage guide, keyboard shortcuts, and tutorials:
 ## License
 
 MIT License
-
-## Author
-
-cokac <monogatree@gmail.com>
-
-Homepage: https://aimi.cokac.com
 
 ## Disclaimer
 
