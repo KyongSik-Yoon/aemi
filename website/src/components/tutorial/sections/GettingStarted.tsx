@@ -14,23 +14,23 @@ export default function GettingStarted() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir(코깎디아이알)는 터미널에서 동작하는 파일 관리 프로그램입니다.
+            aimi(코깎디아이알)는 터미널에서 동작하는 파일 관리 프로그램입니다.
             Windows의 파일 탐색기나 macOS의 Finder처럼 폴더를 열고, 파일을 복사하고,
             이름을 바꾸는 등의 작업을 키보드만으로 빠르게 할 수 있습니다.
           </p>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            "터미널이 무섭다"고 느끼시는 분도 괜찮습니다. cokacdir는 마우스 없이도 직관적으로 사용할 수 있도록 설계되었습니다. 이 튜토리얼을 따라가면 금방 익숙해질 거예요.
+            "터미널이 무섭다"고 느끼시는 분도 괜찮습니다. aimi는 마우스 없이도 직관적으로 사용할 수 있도록 설계되었습니다. 이 튜토리얼을 따라가면 금방 익숙해질 거예요.
           </p>
         </>
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir is a terminal-based file manager.
+            aimi is a terminal-based file manager.
             Just like Windows File Explorer or macOS Finder, you can open folders, copy files,
             rename items, and more — all with just your keyboard.
           </p>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            Don't worry if the terminal feels intimidating. cokacdir is designed to be intuitive even without a mouse. Follow this tutorial and you'll get the hang of it in no time.
+            Don't worry if the terminal feels intimidating. aimi is designed to be intuitive even without a mouse. Follow this tutorial and you'll get the hang of it in no time.
           </p>
         </>
       )}
@@ -59,7 +59,7 @@ export default function GettingStarted() {
                   <p className="mb-2">아래 명령어를 터미널에 그대로 복사해서 붙여넣고 Enter를 눌러주세요:</p>
                   <div className="bg-bg-elevated border border-zinc-800 rounded-lg p-3 font-mono text-sm">
                     <span className="text-zinc-500">$ </span>
-                    <span className="text-accent-cyan">/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"</span>
+                    <span className="text-accent-cyan">/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"</span>
                   </div>
                   <p className="mt-2 text-zinc-500 text-xs">설치 프로그램이 자동으로 여러분의 운영체제를 감지하고 알맞은 버전을 다운로드합니다.</p>
                 </div>
@@ -69,7 +69,7 @@ export default function GettingStarted() {
               title: '설치 완료를 확인합니다',
               description: (
                 <span>
-                  설치가 끝나면 화면에 완료 메시지가 나타납니다. 이제 <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">cokacdir</code>라고 입력하면 프로그램이 실행됩니다.
+                  설치가 끝나면 화면에 완료 메시지가 나타납니다. 이제 <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">aimi</code>라고 입력하면 프로그램이 실행됩니다.
                 </span>
               ),
             },
@@ -97,7 +97,7 @@ export default function GettingStarted() {
                   <p className="mb-2">Copy and paste this command into your terminal, then press Enter:</p>
                   <div className="bg-bg-elevated border border-zinc-800 rounded-lg p-3 font-mono text-sm">
                     <span className="text-zinc-500">$ </span>
-                    <span className="text-accent-cyan">/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"</span>
+                    <span className="text-accent-cyan">/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"</span>
                   </div>
                   <p className="mt-2 text-zinc-500 text-xs">The installer automatically detects your OS and downloads the appropriate version.</p>
                 </div>
@@ -107,7 +107,7 @@ export default function GettingStarted() {
               title: 'Verify the installation',
               description: (
                 <span>
-                  Once installed, you'll see a completion message. Now you can type <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">cokacdir</code> to launch the program.
+                  Once installed, you'll see a completion message. Now you can type <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">aimi</code> to launch the program.
                 </span>
               ),
             },
@@ -120,18 +120,18 @@ export default function GettingStarted() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-4">
-            자, 이제 처음으로 cokacdir를 실행해봅시다.
+            자, 이제 처음으로 aimi를 실행해봅시다.
           </p>
           <StepByStep steps={[
             {
-              title: 'cokacdir를 입력하고 Enter를 누릅니다',
+              title: 'aimi를 입력하고 Enter를 누릅니다',
               description: (
                 <div>
                   <div className="bg-bg-elevated border border-zinc-800 rounded-lg p-3 font-mono text-sm mb-2">
                     <span className="text-zinc-500">$ </span>
-                    <span className="text-accent-cyan">cokacdir</span>
+                    <span className="text-accent-cyan">aimi</span>
                   </div>
-                  <p>화면이 바뀌면서 현재 폴더의 파일과 폴더 목록이 나타납니다. 이것이 cokacdir의 메인 화면입니다.</p>
+                  <p>화면이 바뀌면서 현재 폴더의 파일과 폴더 목록이 나타납니다. 이것이 aimi의 메인 화면입니다.</p>
                 </div>
               ),
             },
@@ -167,7 +167,7 @@ export default function GettingStarted() {
               title: '종료하기',
               description: (
                 <span>
-                  cokacdir를 끝내려면 <KeyBadge>Q</KeyBadge>를 누르세요. 원래 터미널 화면으로 돌아갑니다.
+                  aimi를 끝내려면 <KeyBadge>Q</KeyBadge>를 누르세요. 원래 터미널 화면으로 돌아갑니다.
                 </span>
               ),
             },
@@ -180,24 +180,24 @@ export default function GettingStarted() {
 
           <TipBox variant="note">
             터미널 화면이 너무 작으면 글자가 깨질 수 있습니다. 터미널 창을 충분히 크게 키워주세요.
-            cokacdir는 터미널 크기에 맞춰 자동으로 화면을 조절합니다.
+            aimi는 터미널 크기에 맞춰 자동으로 화면을 조절합니다.
           </TipBox>
         </>
       ) : (
         <>
           <p className="text-zinc-400 mb-4">
-            Let's launch cokacdir for the first time.
+            Let's launch aimi for the first time.
           </p>
           <StepByStep steps={[
             {
-              title: 'Type cokacdir and press Enter',
+              title: 'Type aimi and press Enter',
               description: (
                 <div>
                   <div className="bg-bg-elevated border border-zinc-800 rounded-lg p-3 font-mono text-sm mb-2">
                     <span className="text-zinc-500">$ </span>
-                    <span className="text-accent-cyan">cokacdir</span>
+                    <span className="text-accent-cyan">aimi</span>
                   </div>
-                  <p>The screen changes and shows a list of files and folders in your current directory. This is the main screen of cokacdir.</p>
+                  <p>The screen changes and shows a list of files and folders in your current directory. This is the main screen of aimi.</p>
                 </div>
               ),
             },
@@ -233,7 +233,7 @@ export default function GettingStarted() {
               title: 'Quit',
               description: (
                 <span>
-                  To exit cokacdir, press <KeyBadge>Q</KeyBadge>. You'll return to the regular terminal.
+                  To exit aimi, press <KeyBadge>Q</KeyBadge>. You'll return to the regular terminal.
                 </span>
               ),
             },
@@ -246,7 +246,7 @@ export default function GettingStarted() {
 
           <TipBox variant="note">
             If the terminal window is too small, the display may break. Make sure your terminal window is large enough.
-            cokacdir automatically adjusts to fit your terminal size.
+            aimi automatically adjusts to fit your terminal size.
           </TipBox>
         </>
       )}

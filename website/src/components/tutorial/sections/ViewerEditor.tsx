@@ -33,7 +33,7 @@ export default function ViewerEditor() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir에는 텍스트 편집기가 내장되어 있어서, 별도 프로그램 없이
+            aimi에는 텍스트 편집기가 내장되어 있어서, 별도 프로그램 없이
             파일을 바로 열어 수정할 수 있습니다.
             구문 강조, 찾기/바꾸기 등 코드 편집에 필요한 기능들을 갖추고 있습니다.
           </p>
@@ -241,7 +241,7 @@ export default function ViewerEditor() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir includes a built-in text editor, so you can open and modify files
+            aimi includes a built-in text editor, so you can open and modify files
             without any external programs.
             It features syntax highlighting, find & replace, and more.
           </p>

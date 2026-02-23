@@ -1,8 +1,8 @@
-# COKACDIR Website
+# AIMI Website
 
-Marketing and documentation website for [COKACDIR](https://github.com/kstost/cokacdir) - a multi-panel terminal file manager written in Rust.
+Marketing and documentation website for [AIMI](https://github.com/kstost/aimi) - a multi-panel terminal file manager written in Rust.
 
-**Live Site:** [https://cokacdir.cokac.com](https://cokacdir.cokac.com)
+**Live Site:** [https://aimi.cokac.com](https://aimi.cokac.com)
 
 ## Tech Stack
 
@@ -157,7 +157,7 @@ The website is configured for static hosting:
 
 2. Deploy the `dist/` directory to your hosting provider.
 
-The `CNAME` file in the parent directory configures the custom domain `cokacdir.cokac.com` for GitHub Pages.
+The `CNAME` file in the parent directory configures the custom domain `aimi.cokac.com` for GitHub Pages.
 
 ## Scripts
 
@@ -169,8 +169,8 @@ The `CNAME` file in the parent directory configures the custom domain `cokacdir.
 
 ## Related
 
-- [COKACDIR Main Repository](https://github.com/kstost/cokacdir) - The Rust file manager
-- [Live Demo](https://cokacdir.cokac.com) - Production website
+- [AIMI Main Repository](https://github.com/kstost/aimi) - The Rust file manager
+- [Live Demo](https://aimi.cokac.com) - Production website
 
 ## License
 

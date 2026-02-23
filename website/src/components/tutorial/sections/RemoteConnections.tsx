@@ -14,7 +14,7 @@ export default function RemoteConnections() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir로 다른 컴퓨터(서버)에 있는 파일도 관리할 수 있습니다.
+            aimi로 다른 컴퓨터(서버)에 있는 파일도 관리할 수 있습니다.
             집 컴퓨터에서 회사 서버의 파일을 보거나, 클라우드 서버의 파일을 관리하는 등의 작업이
             가능합니다.
             이 기능은 SSH라는 원격 접속 기술을 사용합니다.
@@ -30,7 +30,7 @@ export default function RemoteConnections() {
           <p className="text-zinc-400 mb-4 leading-relaxed">
             원격 서버에 접속하려면 "내가 접속 권한이 있는 사람이다"라는 것을 증명해야 합니다.
             이것을 <strong className="text-white">인증(Authentication)</strong>이라고 합니다.
-            cokacdir는 두 가지 인증 방식을 지원합니다.
+            aimi는 두 가지 인증 방식을 지원합니다.
           </p>
 
           {/* 비밀번호 인증 */}
@@ -72,7 +72,7 @@ export default function RemoteConnections() {
               <div className="text-zinc-500 mb-2">개인 키 파일의 기본 위치</div>
               <p className="text-zinc-400 leading-relaxed">
                 개인 키 파일은 보통 내 컴퓨터의 <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.ssh/id_rsa</code> 경로에 저장됩니다.
-                cokacdir의 접속 화면에서도 이 경로가 기본값으로 입력되어 있습니다.
+                aimi의 접속 화면에서도 이 경로가 기본값으로 입력되어 있습니다.
                 다른 위치에 키 파일이 있다면 직접 경로를 입력하면 됩니다.
               </p>
             </div>
@@ -289,7 +289,7 @@ export default function RemoteConnections() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir can also manage files on remote computers (servers).
+            aimi can also manage files on remote computers (servers).
             Browse files on your work server from home, or manage cloud server files —
             all using SSH-based remote access.
           </p>
@@ -304,7 +304,7 @@ export default function RemoteConnections() {
           <p className="text-zinc-400 mb-4 leading-relaxed">
             To connect to a remote server, you need to prove that you have permission to access it.
             This is called <strong className="text-white">authentication</strong>.
-            cokacdir supports two authentication methods.
+            aimi supports two authentication methods.
           </p>
 
           {/* Password auth */}
@@ -345,7 +345,7 @@ export default function RemoteConnections() {
               <div className="text-zinc-500 mb-2">Default Key File Location</div>
               <p className="text-zinc-400 leading-relaxed">
                 Private key files are typically stored at <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.ssh/id_rsa</code> on your computer.
-                This path is pre-filled as the default in cokacdir's connection dialog.
+                This path is pre-filled as the default in aimi's connection dialog.
                 If your key file is elsewhere, simply type the correct path.
               </p>
             </div>

@@ -17,7 +17,7 @@ export default function SettingsConfig() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir의 외관이나 동작 방식을 취향에 맞게 바꿀 수 있습니다.
+            aimi의 외관이나 동작 방식을 취향에 맞게 바꿀 수 있습니다.
             테마(색상), 비교 화면 스타일, 단축키 등을 설정 파일에서 변경할 수 있습니다.
           </p>
 
@@ -61,11 +61,11 @@ export default function SettingsConfig() {
 
           <SectionHeading id="theme-change" level={3}>테마 (색상) 변경</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            cokacdir의 색상 조합을 바꿀 수 있습니다. 기본 테마가 마음에 안 들면 다른 테마로 바꿔보세요.
+            aimi의 색상 조합을 바꿀 수 있습니다. 기본 테마가 마음에 안 들면 다른 테마로 바꿔보세요.
           </p>
           <p className="text-zinc-400 mb-4">
-            테마 파일은 cokacdir를 처음 실행할 때 자동으로 생성됩니다.
-            위치는 <code className={codeStyle}>~/.cokacdir/themes/</code> 폴더입니다.
+            테마 파일은 aimi를 처음 실행할 때 자동으로 생성됩니다.
+            위치는 <code className={codeStyle}>~/.aimi/themes/</code> 폴더입니다.
           </p>
 
           <TipBox>
@@ -76,8 +76,8 @@ export default function SettingsConfig() {
           {/* ── 키바인딩 커스터마이징 ── */}
           <SectionHeading id="keybinding-custom" level={3}>단축키 커스터마이징</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            cokacdir의 모든 단축키를 원하는 키로 바꿀 수 있습니다.
-            설정 파일(<code className={codeStyle}>~/.cokacdir/settings.json</code>)의
+            aimi의 모든 단축키를 원하는 키로 바꿀 수 있습니다.
+            설정 파일(<code className={codeStyle}>~/.aimi/settings.json</code>)의
             {' '}<code className={codeStyle}>keybindings</code> 섹션을 편집하면 됩니다.
           </p>
 
@@ -87,7 +87,7 @@ export default function SettingsConfig() {
               title: 'settings.json 파일을 엽니다',
               description: (
                 <span>
-                  cokacdir에서 <code className={codeStyle}>~/.cokacdir/</code> 폴더로 이동한 뒤
+                  aimi에서 <code className={codeStyle}>~/.aimi/</code> 폴더로 이동한 뒤
                   {' '}<code className={codeStyle}>settings.json</code> 파일을 <KeyBadge>E</KeyBadge>로 열어 편집합니다.
                 </span>
               ),
@@ -299,14 +299,14 @@ export default function SettingsConfig() {
           </TipBox>
 
           <TipBox variant="note">
-            설정은 <code className={codeStyle}>~/.cokacdir/</code> 폴더에
-            저장되어 다음에 cokacdir를 실행할 때도 유지됩니다.
+            설정은 <code className={codeStyle}>~/.aimi/</code> 폴더에
+            저장되어 다음에 aimi를 실행할 때도 유지됩니다.
           </TipBox>
         </>
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            Customize cokacdir's appearance and behavior to your liking.
+            Customize aimi's appearance and behavior to your liking.
             Change themes (colors), diff view styles, keybindings, and more from the settings file.
           </p>
 
@@ -350,11 +350,11 @@ export default function SettingsConfig() {
 
           <SectionHeading id="theme-change" level={3}>Changing Themes (Colors)</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            Change cokacdir's color scheme. If you don't like the default theme, try a different one.
+            Change aimi's color scheme. If you don't like the default theme, try a different one.
           </p>
           <p className="text-zinc-400 mb-4">
-            Theme files are automatically generated when you first run cokacdir.
-            They're located in the <code className={codeStyle}>~/.cokacdir/themes/</code> folder.
+            Theme files are automatically generated when you first run aimi.
+            They're located in the <code className={codeStyle}>~/.aimi/themes/</code> folder.
           </p>
 
           <TipBox>
@@ -365,9 +365,9 @@ export default function SettingsConfig() {
           {/* ── Keybinding Customization ── */}
           <SectionHeading id="keybinding-custom" level={3}>Customizing Keybindings</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            Every keyboard shortcut in cokacdir can be remapped to any key you prefer.
+            Every keyboard shortcut in aimi can be remapped to any key you prefer.
             Edit the <code className={codeStyle}>keybindings</code> section
-            in <code className={codeStyle}>~/.cokacdir/settings.json</code>.
+            in <code className={codeStyle}>~/.aimi/settings.json</code>.
           </p>
 
           <SectionHeading id="keybinding-howto" level={3}>How to Change Keybindings</SectionHeading>
@@ -376,7 +376,7 @@ export default function SettingsConfig() {
               title: 'Open settings.json',
               description: (
                 <span>
-                  Navigate to <code className={codeStyle}>~/.cokacdir/</code> in cokacdir,
+                  Navigate to <code className={codeStyle}>~/.aimi/</code> in aimi,
                   then press <KeyBadge>E</KeyBadge> on <code className={codeStyle}>settings.json</code> to edit it.
                 </span>
               ),
@@ -588,8 +588,8 @@ export default function SettingsConfig() {
           </TipBox>
 
           <TipBox variant="note">
-            Settings are saved in the <code className={codeStyle}>~/.cokacdir/</code> folder
-            and persist across cokacdir sessions.
+            Settings are saved in the <code className={codeStyle}>~/.aimi/</code> folder
+            and persist across aimi sessions.
           </TipBox>
         </>
       )}

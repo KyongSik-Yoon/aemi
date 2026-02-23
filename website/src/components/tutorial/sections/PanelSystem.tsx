@@ -15,7 +15,7 @@ export default function PanelSystem() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             파일을 다른 폴더로 복사하거나 옮기려면, 두 폴더를 동시에 볼 수 있으면 편리하겠죠?
-            cokacdir에서는 화면을 여러 개의 "패널"로 나눌 수 있습니다. 각 패널은 독립적인 파일 탐색기처럼
+            aimi에서는 화면을 여러 개의 "패널"로 나눌 수 있습니다. 각 패널은 독립적인 파일 탐색기처럼
             작동해서, 왼쪽에서는 사진 폴더를, 오른쪽에서는 백업 폴더를 보는 식으로 사용할 수 있습니다.
           </p>
 
@@ -126,7 +126,7 @@ export default function PanelSystem() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             Want to copy or move files to another folder? It's convenient to see both folders at once.
-            In cokacdir, you can split the screen into multiple "panels". Each panel works as an independent file browser,
+            In aimi, you can split the screen into multiple "panels". Each panel works as an independent file browser,
             so you can view your Photos folder on the left and your Backup folder on the right.
           </p>
 

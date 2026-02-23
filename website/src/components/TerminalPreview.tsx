@@ -28,7 +28,7 @@ function ScenarioFiles() {
 
   return (
     <div className="p-3 sm:p-4 font-mono text-sm">
-      <div className="text-center text-accent-cyan mb-2 font-bold text-xs">COKACDIR</div>
+      <div className="text-center text-accent-cyan mb-2 font-bold text-xs">AIMI</div>
       <div className="flex flex-col sm:flex-row gap-2">
         {/* Panel 1 */}
         <div className="flex-1 border border-primary rounded p-2 bg-bg-card/50">
@@ -100,7 +100,7 @@ function ScenarioAI() {
 
   return (
     <div className="p-3 sm:p-4 font-mono text-sm">
-      <div className="text-center text-accent-cyan mb-2 font-bold text-xs">COKACDIR</div>
+      <div className="text-center text-accent-cyan mb-2 font-bold text-xs">AIMI</div>
       {/* Dim background files */}
       <div className="opacity-30 mb-3">
         <div className="space-y-0.5 text-xs">
@@ -212,7 +212,7 @@ export default function TerminalPreview() {
               <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-yellow-500/80" />
               <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-green-500/80" />
             </div>
-            <span className="text-[10px] sm:text-xs text-zinc-500 ml-1 sm:ml-2 font-mono hidden sm:inline">cokacdir — ~/projects</span>
+            <span className="text-[10px] sm:text-xs text-zinc-500 ml-1 sm:ml-2 font-mono hidden sm:inline">aimi — ~/projects</span>
           </div>
           {/* Scene indicator dots */}
           <div className="flex gap-1 sm:gap-1.5">

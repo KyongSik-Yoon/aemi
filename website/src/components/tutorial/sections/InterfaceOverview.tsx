@@ -12,7 +12,7 @@ export default function InterfaceOverview() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir를 실행하면 여러 정보가 한 화면에 표시됩니다. 처음에는 복잡해 보일 수 있지만,
+            aimi를 실행하면 여러 정보가 한 화면에 표시됩니다. 처음에는 복잡해 보일 수 있지만,
             구성을 알고 나면 간단합니다. 화면이 어떻게 나뉘어 있는지 살펴봅시다.
           </p>
 
@@ -102,7 +102,7 @@ export default function InterfaceOverview() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            When you launch cokacdir, you'll see lots of information on one screen. It might look complex at first,
+            When you launch aimi, you'll see lots of information on one screen. It might look complex at first,
             but once you understand the layout, it's simple. Let's take a look at how the screen is organized.
           </p>
 

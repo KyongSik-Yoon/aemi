@@ -15,7 +15,7 @@ export default function SearchFind() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             "이 파일 어디에 뒀더라?" — 파일 이름은 기억나는데 어느 폴더에 있는지 모를 때가 있죠.
-            cokacdir의 검색 기능은 현재 폴더와 모든 하위 폴더를 뒤져서 파일을 찾아줍니다.
+            aimi의 검색 기능은 현재 폴더와 모든 하위 폴더를 뒤져서 파일을 찾아줍니다.
           </p>
 
           <SectionHeading id="how-to-search" level={3}>검색하는 방법</SectionHeading>
@@ -114,7 +114,7 @@ export default function SearchFind() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             "Where did I put that file?" — You remember the name but not the folder.
-            cokacdir's search scans the current folder and all subfolders to find files for you.
+            aimi's search scans the current folder and all subfolders to find files for you.
           </p>
 
           <SectionHeading id="how-to-search" level={3}>How to Search</SectionHeading>

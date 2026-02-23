@@ -14,7 +14,7 @@ export default function AICommands() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir의 가장 특별한 기능 중 하나입니다.
+            aimi의 가장 특별한 기능 중 하나입니다.
             AI에게 일상적인 말로 부탁하면 파일 작업을 대신해줍니다.
             예를 들어 "이 폴더에서 중복 파일을 찾아줘"라고 말하면 AI가 알아서 처리합니다.
           </p>
@@ -133,7 +133,7 @@ export default function AICommands() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            One of cokacdir's most unique features.
+            One of aimi's most unique features.
             Ask the AI in plain language and it handles file operations for you.
             For example, saying "find duplicate files in this folder" will have the AI do just that.
           </p>

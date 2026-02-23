@@ -185,7 +185,7 @@ export default function BookmarksHelp() {
           </div>
 
           <TipBox>
-            북마크는 설정 파일에 자동 저장되어 cokacdir를 종료한 뒤 다시 실행해도 유지됩니다.
+            북마크는 설정 파일에 자동 저장되어 aimi를 종료한 뒤 다시 실행해도 유지됩니다.
             자주 쓰는 폴더 2-3개만 북마크해두면 일상적인 파일 관리가 훨씬 빨라집니다.
           </TipBox>
 
@@ -212,10 +212,10 @@ export default function BookmarksHelp() {
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-6">
             <div className="flex items-center gap-3 mb-2">
               <KeyBadge>Q</KeyBadge>
-              <span className="text-white font-semibold">cokacdir 종료</span>
+              <span className="text-white font-semibold">aimi 종료</span>
             </div>
             <p className="text-zinc-400 text-sm">
-              메인 파일 목록 화면에서 <KeyBadge>Q</KeyBadge>를 누르면 cokacdir가 종료되고
+              메인 파일 목록 화면에서 <KeyBadge>Q</KeyBadge>를 누르면 aimi가 종료되고
               원래 터미널 화면으로 돌아갑니다.
             </p>
           </div>
@@ -399,7 +399,7 @@ export default function BookmarksHelp() {
           </div>
 
           <TipBox>
-            Bookmarks are automatically saved to your settings file and persist across cokacdir sessions.
+            Bookmarks are automatically saved to your settings file and persist across aimi sessions.
             Bookmark just 2-3 frequently used folders and your daily file management becomes much faster.
           </TipBox>
 
@@ -426,10 +426,10 @@ export default function BookmarksHelp() {
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-6">
             <div className="flex items-center gap-3 mb-2">
               <KeyBadge>Q</KeyBadge>
-              <span className="text-white font-semibold">Quit cokacdir</span>
+              <span className="text-white font-semibold">Quit aimi</span>
             </div>
             <p className="text-zinc-400 text-sm">
-              Press <KeyBadge>Q</KeyBadge> from the main file list screen to exit cokacdir
+              Press <KeyBadge>Q</KeyBadge> from the main file list screen to exit aimi
               and return to the regular terminal.
             </p>
           </div>

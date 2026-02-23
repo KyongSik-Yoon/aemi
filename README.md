@@ -1,4 +1,4 @@
-# COKACDIR
+# AIMI
 
 Multi-panel terminal file manager with AI-powered natural language commands.
 
@@ -25,33 +25,33 @@ Multi-panel terminal file manager with AI-powered natural language commands.
 ### Quick Install (Recommended)
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"
+/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"
 ```
 
 Then run:
 
 ```bash
-cokacdir [PATH...]
+aimi [PATH...]
 ```
 
 You can open multiple panels by passing paths:
 
 ```bash
-cokacdir ~/projects ~/downloads ~/documents
+aimi ~/projects ~/downloads ~/documents
 ```
 
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/kstost/cokacdir.git
-cd cokacdir
+git clone https://github.com/kstost/aimi.git
+cd aimi
 
 # Build release version
 cargo build --release
 
 # Run
-./target/release/cokacdir
+./target/release/aimi
 ```
 
 See [build_manual.md](build_manual.md) for detailed build instructions.
@@ -70,7 +70,7 @@ Learn more at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cod
 
 For detailed usage guide, keyboard shortcuts, and tutorials:
 
-**[https://cokacdir.cokac.com/#/tutorial](https://cokacdir.cokac.com/#/tutorial)**
+**[https://aimi.cokac.com/#/tutorial](https://aimi.cokac.com/#/tutorial)**
 
 ## Supported Platforms
 
@@ -85,7 +85,7 @@ MIT License
 
 cokac <monogatree@gmail.com>
 
-Homepage: https://cokacdir.cokac.com
+Homepage: https://aimi.cokac.com
 
 ## Disclaimer
 

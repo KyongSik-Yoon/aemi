@@ -63,7 +63,7 @@ function TerminalDemo() {
             <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
             <div className="w-3 h-3 rounded-full bg-green-500/80" />
           </div>
-          <span className="text-xs text-zinc-500 ml-2 font-mono">cokacdir — AI Command</span>
+          <span className="text-xs text-zinc-500 ml-2 font-mono">aimi — AI Command</span>
         </div>
 
         {/* Terminal body */}

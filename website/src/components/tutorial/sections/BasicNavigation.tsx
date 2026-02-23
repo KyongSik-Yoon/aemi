@@ -38,7 +38,7 @@ export default function BasicNavigation() {
 
           <SectionHeading id="enter-exit" level={3}>폴더 열기와 뒤로 가기</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            이것이 cokacdir에서 가장 많이 쓰는 동작입니다:
+            이것이 aimi에서 가장 많이 쓰는 동작입니다:
           </p>
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-4 space-y-3">
             <div className="flex items-center gap-3">
@@ -160,7 +160,7 @@ export default function BasicNavigation() {
 
           <SectionHeading id="enter-exit" level={3}>Opening Folders and Going Back</SectionHeading>
           <p className="text-zinc-400 mb-4">
-            These are the most-used actions in cokacdir:
+            These are the most-used actions in aimi:
           </p>
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-4 space-y-3">
             <div className="flex items-center gap-3">

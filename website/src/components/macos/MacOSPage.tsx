@@ -135,7 +135,7 @@ function MacOSPageInner() {
             </Link>
             <div className="hidden sm:block h-5 w-px bg-zinc-700" />
             <Link to="/" className="hidden sm:block">
-              <span className="gradient-text font-bold text-lg">cokacdir</span>
+              <span className="gradient-text font-bold text-lg">aimi</span>
             </Link>
           </div>
 
@@ -148,7 +148,7 @@ function MacOSPageInner() {
           </div>
 
           <a
-            href="https://github.com/kstost/cokacdir"
+            href="https://github.com/kstost/aimi"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
@@ -173,14 +173,14 @@ function MacOSPageInner() {
               macOS
             </div>
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-4">
-              {t('cokacdir on macOS', 'macOS에서 cokacdir')}
+              {t('aimi on macOS', 'macOS에서 aimi')}
               <br />
               <span className="gradient-text">{t('Setup Guide', '셋업 가이드')}</span>
             </h1>
             <p className="text-lg text-zinc-400 leading-relaxed max-w-2xl mx-auto">
               {t(
-                'Install cokacdir on a macOS with Claude Code and use it anywhere via Telegram bot.',
-                'Claude Code가 설치된 macOS에 cokacdir을 설치하고, 텔레그램 봇으로 어디서나 사용하는 가이드입니다.'
+                'Install aimi on a macOS with Claude Code and use it anywhere via Telegram bot.',
+                'Claude Code가 설치된 macOS에 aimi을 설치하고, 텔레그램 봇으로 어디서나 사용하는 가이드입니다.'
               )}
             </p>
           </div>
@@ -214,13 +214,13 @@ function MacOSPageInner() {
             </div>
           </motion.div>
 
-          {/* Step 1: Install cokacdir */}
-          <SectionCard icon={Terminal} title={t('Install cokacdir', 'cokacdir 설치')} step={1}>
+          {/* Step 1: Install aimi */}
+          <SectionCard icon={Terminal} title={t('Install aimi', 'aimi 설치')} step={1}>
             <p>
               {t('Open a terminal and enter the following command.', '터미널을 열고 아래 명령어를 입력합니다.')}
             </p>
-            <CopyBlock code={`/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"`} label="Terminal">
-{`/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"`}
+            <CopyBlock code={`/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"`} label="Terminal">
+{`/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"`}
             </CopyBlock>
           </SectionCard>
 
@@ -273,8 +273,8 @@ function MacOSPageInner() {
               </p>
             </div>
 
-            <CopyBlock code={`npx -y service-setup-cokacdir <텔레그램봇토큰>`} label="Terminal">
-{`npx -y service-setup-cokacdir `}<Hl>{'<텔레그램봇토큰>'}</Hl>
+            <CopyBlock code={`npx -y service-setup-aimi <텔레그램봇토큰>`} label="Terminal">
+{`npx -y service-setup-aimi `}<Hl>{'<텔레그램봇토큰>'}</Hl>
             </CopyBlock>
 
             <div className="mt-4 p-4 rounded-lg border border-accent-cyan/20 bg-accent-cyan/5">
@@ -382,8 +382,8 @@ function MacOSPageInner() {
                 )}
               </p>
 
-              <CopyBlock code={`/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)" && npx -y service-setup-cokacdir <텔레그램봇토큰>`} label="Terminal">
-{`/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)" && npx -y service-setup-cokacdir `}<Hl>{'<텔레그램봇토큰>'}</Hl>
+              <CopyBlock code={`/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)" && npx -y service-setup-aimi <텔레그램봇토큰>`} label="Terminal">
+{`/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)" && npx -y service-setup-aimi `}<Hl>{'<텔레그램봇토큰>'}</Hl>
               </CopyBlock>
 
               <div className="p-4 rounded-lg border border-accent-cyan/20 bg-accent-cyan/5">

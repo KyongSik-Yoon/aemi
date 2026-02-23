@@ -38,7 +38,7 @@ function ChatDemo() {
             <Send className="w-4 h-4 text-accent-cyan" />
           </div>
           <div>
-            <div className="text-sm text-white font-medium">cokacdir Bot</div>
+            <div className="text-sm text-white font-medium">aimi Bot</div>
             <div className="text-xs text-zinc-500">online</div>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function TelegramShowcase() {
             </div>
             <div className="flex-1 bg-bg-elevated border border-zinc-700 rounded-lg p-4 text-left">
               <div className="text-accent-cyan font-mono text-sm mb-2">{t('Step 2', '2단계')}</div>
-              <code className="text-accent-cyan font-mono text-sm">cokacdir --ccserver YOUR_TOKEN</code>
+              <code className="text-accent-cyan font-mono text-sm">aimi --ccserver YOUR_TOKEN</code>
             </div>
           </div>
           <div className="flex flex-wrap justify-center gap-3">

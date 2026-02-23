@@ -198,7 +198,7 @@ export default function FileOperations() {
             </div>
           </div>
           <TipBox>
-            암호화 키는 처음 사용 시 자동으로 생성되어 <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.cokacdir/</code>에 저장됩니다.
+            암호화 키는 처음 사용 시 자동으로 생성되어 <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.aimi/</code>에 저장됩니다.
             이 키 파일을 분실하면 암호화된 파일을 복구할 수 없으니 반드시 백업하세요.
           </TipBox>
 
@@ -269,12 +269,12 @@ export default function FileOperations() {
             </div>
             <p className="text-zinc-400 text-sm leading-relaxed">
               <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">@</code><strong className="text-zinc-300"> 있음</strong> —
-              프로그램을 띄우고 <strong className="text-zinc-300">cokacdir로 즉시 복귀</strong>합니다.
+              프로그램을 띄우고 <strong className="text-zinc-300">aimi로 즉시 복귀</strong>합니다.
               프로그램이 끝날 때까지 기다리지 않습니다. (예: evince, feh, vlc, 백그라운드 스크립트 등)
               <br />
               <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">@</code><strong className="text-zinc-300"> 없음</strong> —
               화면을 프로그램에 넘기고, <strong className="text-zinc-300">프로그램이 끝날 때까지 대기</strong>합니다.
-              종료 후 cokacdir로 돌아옵니다. (예: vim, nano, less 등)
+              종료 후 aimi로 돌아옵니다. (예: vim, nano, less 등)
             </p>
           </div>
 
@@ -297,7 +297,7 @@ export default function FileOperations() {
           <TipBox>
             핸들러 설정은 확장자 단위로 적용됩니다.
             예를 들어 .jpg 파일에 핸들러를 설정하면, 모든 .jpg 파일에 동일하게 적용됩니다.
-            설정은 자동 저장되어 cokacdir를 재시작해도 유지됩니다.
+            설정은 자동 저장되어 aimi를 재시작해도 유지됩니다.
           </TipBox>
         </>
       ) : (
@@ -487,7 +487,7 @@ export default function FileOperations() {
             </div>
           </div>
           <TipBox>
-            The encryption key is automatically generated on first use and stored in <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.cokacdir/</code>.
+            The encryption key is automatically generated on first use and stored in <code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.aimi/</code>.
             Be sure to back up this key file — if lost, encrypted files cannot be recovered.
           </TipBox>
 
@@ -558,12 +558,12 @@ export default function FileOperations() {
             </div>
             <p className="text-zinc-400 text-sm leading-relaxed">
               <strong className="text-zinc-300">With </strong><code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">@</code> —
-              launches the program and <strong className="text-zinc-300">returns to cokacdir immediately</strong>.
+              launches the program and <strong className="text-zinc-300">returns to aimi immediately</strong>.
               Does not wait for the program to finish. (e.g., evince, feh, vlc, background scripts)
               <br />
               <strong className="text-zinc-300">Without </strong><code className="text-accent-cyan font-mono bg-bg-elevated px-1 py-0.5 rounded">@</code> —
               hands the screen to the program and <strong className="text-zinc-300">waits until it finishes</strong>.
-              cokacdir resumes after the program exits. (e.g., vim, nano, less)
+              aimi resumes after the program exits. (e.g., vim, nano, less)
             </p>
           </div>
 
@@ -586,7 +586,7 @@ export default function FileOperations() {
           <TipBox>
             Handlers are set per file extension.
             For example, setting a handler on a .jpg file applies to all .jpg files.
-            Settings are saved automatically and persist across cokacdir sessions.
+            Settings are saved automatically and persist across aimi sessions.
           </TipBox>
         </>
       )}

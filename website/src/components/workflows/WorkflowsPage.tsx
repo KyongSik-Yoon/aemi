@@ -434,7 +434,7 @@ function WorkflowsPageInner() {
             </Link>
             <div className="hidden sm:block h-5 w-px bg-zinc-700" />
             <Link to="/" className="hidden sm:block">
-              <span className="gradient-text font-bold text-lg">cokacdir</span>
+              <span className="gradient-text font-bold text-lg">aimi</span>
             </Link>
           </div>
 
@@ -447,7 +447,7 @@ function WorkflowsPageInner() {
           </div>
 
           <a
-            href="https://github.com/kstost/cokacdir"
+            href="https://github.com/kstost/aimi"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
@@ -560,7 +560,7 @@ function WorkflowsPageInner() {
                         <Send className="w-4 h-4 text-accent-cyan" />
                       </div>
                       <div>
-                        <div className="text-sm text-white font-medium">cokacdir Bot</div>
+                        <div className="text-sm text-white font-medium">aimi Bot</div>
                         <div className="text-xs text-zinc-500">online</div>
                       </div>
                     </div>
@@ -650,8 +650,8 @@ function WorkflowsPageInner() {
           </h3>
           <p className="text-zinc-400 text-sm mb-6 max-w-lg mx-auto">
             {t(
-              'Set up your own cokacdir Telegram bot and start controlling Claude Code from anywhere.',
-              '나만의 cokacdir 텔레그램 봇을 설정하고 어디서든 Claude Code를 제어하세요.'
+              'Set up your own aimi Telegram bot and start controlling Claude Code from anywhere.',
+              '나만의 aimi 텔레그램 봇을 설정하고 어디서든 Claude Code를 제어하세요.'
             )}
           </p>
           <div className="flex flex-wrap justify-center gap-3">

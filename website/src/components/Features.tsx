@@ -20,7 +20,7 @@ interface Pillar {
 function InstallCommand() {
   const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
-  const cmd = '/bin/bash -c "$(curl -fsSL https://cokacdir.cokac.com/install.sh)"'
+  const cmd = '/bin/bash -c "$(curl -fsSL https://aimi.cokac.com/install.sh)"'
 
   const handleCopy = () => {
     navigator.clipboard.writeText(cmd)
@@ -128,8 +128,8 @@ export default function Features() {
           </h2>
           <p className="text-zinc-400 text-sm sm:text-lg max-w-2xl mx-auto">
             {t(
-              'cokacdir is also a full-featured terminal file manager. Navigate, edit, and version-control with ease.',
-              'cokacdir는 본격적인 터미널 파일 관리자이기도 합니다. 탐색, 편집, 버전 관리를 손쉽게.'
+              'aimi is also a full-featured terminal file manager. Navigate, edit, and version-control with ease.',
+              'aimi는 본격적인 터미널 파일 관리자이기도 합니다. 탐색, 편집, 버전 관리를 손쉽게.'
             )}
           </p>
           <InstallCommand />

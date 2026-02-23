@@ -66,7 +66,7 @@ function HeroChatDemo() {
             <Send className="w-4 h-4 text-accent-cyan" />
           </div>
           <div>
-            <div className="text-sm text-white font-medium">cokacdir Bot</div>
+            <div className="text-sm text-white font-medium">aimi Bot</div>
             <div className="text-xs text-zinc-500">online</div>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.1 }}
           className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold mb-4 sm:mb-6"
         >
-          <span className="gradient-text">cokacdir</span>
+          <span className="gradient-text">aimi</span>
         </motion.h1>
 
         {/* Tagline */}

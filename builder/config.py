@@ -1,5 +1,5 @@
 """
-Build configuration for COKACDIR Rust project.
+Build configuration for AIMI Rust project.
 """
 from dataclasses import dataclass, field
 from pathlib import Path

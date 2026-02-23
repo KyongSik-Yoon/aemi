@@ -13,7 +13,7 @@ export default function TelegramBot() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir의 AI 기능과 파일 관리 기능을 <strong className="text-white">Telegram 메신저</strong>를 통해 원격으로 사용할 수 있습니다.
+            aimi의 AI 기능과 파일 관리 기능을 <strong className="text-white">Telegram 메신저</strong>를 통해 원격으로 사용할 수 있습니다.
             외출 중에 스마트폰으로 서버의 파일을 확인하거나, AI에게 질문하거나, 쉘 명령어를 실행하는 것이 가능합니다.
           </p>
 
@@ -82,7 +82,7 @@ export default function TelegramBot() {
                   Bot의 고유한 사용자명을 입력합니다. 반드시 <code className="text-accent-cyan font-mono bg-bg-card px-1.5 py-0.5 rounded">bot</code>으로 끝나야 합니다.
                   이미 사용 중인 이름이면 다른 이름을 시도하세요.
                   <code className="block text-zinc-500 font-mono text-sm bg-bg-elevated px-3 py-2 rounded mt-2">
-                    my_cokacdir_bot
+                    my_aimi_bot
                   </code>
                 </span>
               )
@@ -96,7 +96,7 @@ export default function TelegramBot() {
                   <code className="block text-accent-cyan font-mono text-sm bg-bg-elevated px-3 py-2 rounded mt-2 mb-2">
                     123456789:ABCdefGHIjklMNOpqrsTUVwxyz
                   </code>
-                  이 토큰을 <strong className="text-zinc-300">길게 눌러서 복사</strong>해 두세요. 다음 단계에서 cokacdir에 등록할 때 사용합니다.
+                  이 토큰을 <strong className="text-zinc-300">길게 눌러서 복사</strong>해 두세요. 다음 단계에서 aimi에 등록할 때 사용합니다.
                 </span>
               )
             },
@@ -134,12 +134,12 @@ export default function TelegramBot() {
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-20">나:</span>
-                <span className="text-zinc-300">my_cokacdir_bot</span>
+                <span className="text-zinc-300">my_aimi_bot</span>
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-20">BotFather:</span>
                 <span className="text-zinc-400">
-                  Done! Congratulations on your new bot. You will find it at t.me/my_cokacdir_bot.<br/>
+                  Done! Congratulations on your new bot. You will find it at t.me/my_aimi_bot.<br/>
                   Use this token to access the HTTP API:<br/>
                   <code className="text-accent-cyan font-mono bg-bg-elevated px-1.5 py-0.5 rounded">123456789:ABCdefGHIjklMNOpqrsTUVwxyz</code>
                   <br/>Keep your token secure and store it safely.
@@ -162,7 +162,7 @@ export default function TelegramBot() {
           {/* ========== 플랫폼별 준비사항 ========== */}
           <SectionHeading id="telegram-setup" level={3}>서버 설정 및 시작</SectionHeading>
           <p className="text-zinc-400 mb-4 leading-relaxed">
-            Bot 서버는 cokacdir가 설치된 컴퓨터에서 실행됩니다.
+            Bot 서버는 aimi가 설치된 컴퓨터에서 실행됩니다.
             운영체제에 따라 준비 방법이 다르므로, 해당하는 플랫폼의 안내를 따라주세요.
           </p>
 
@@ -180,7 +180,7 @@ export default function TelegramBot() {
               </p>
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
                 <div className="text-zinc-500 mb-1"># 서버 시작</div>
-                <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
               </div>
               <p className="text-zinc-500 text-xs mt-2">
                 macOS의 경로 예시: <code className="font-mono">/Users/username/Documents</code>
@@ -200,7 +200,7 @@ export default function TelegramBot() {
               </p>
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
                 <div className="text-zinc-500 mb-1"># 서버 시작</div>
-                <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
               </div>
               <p className="text-zinc-500 text-xs mt-2">
                 Linux의 경로 예시: <code className="font-mono">/home/username/projects</code>
@@ -223,7 +223,7 @@ export default function TelegramBot() {
                 Windows (WSL 필수)
               </h4>
               <p className="text-zinc-400 text-sm mb-3 leading-relaxed">
-                cokacdir는 Unix 기반 프로그램이므로, Windows에서는 <strong className="text-white">WSL (Windows Subsystem for Linux)</strong>을 통해 실행해야 합니다.
+                aimi는 Unix 기반 프로그램이므로, Windows에서는 <strong className="text-white">WSL (Windows Subsystem for Linux)</strong>을 통해 실행해야 합니다.
                 WSL은 Windows 안에서 Linux 환경을 실행할 수 있게 해주는 공식 기능입니다.
               </p>
 
@@ -242,14 +242,14 @@ export default function TelegramBot() {
               </div>
 
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm mb-3">
-                <div className="text-zinc-400 font-semibold mb-2">WSL에서 cokacdir 실행:</div>
+                <div className="text-zinc-400 font-semibold mb-2">WSL에서 aimi 실행:</div>
                 <p className="text-zinc-400 mb-2 leading-relaxed">
                   시작 메뉴에서 <strong className="text-zinc-300">Ubuntu</strong> (또는 설치한 Linux 배포판)를 실행합니다.
-                  열리는 터미널이 Linux 환경입니다. 여기서 cokacdir를 설치하고 Bot 서버를 실행합니다.
+                  열리는 터미널이 Linux 환경입니다. 여기서 aimi를 설치하고 Bot 서버를 실행합니다.
                 </p>
                 <div className="font-mono">
                   <div className="text-zinc-500 mb-1"># WSL 터미널에서 실행</div>
-                  <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                  <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
                 </div>
               </div>
 
@@ -280,7 +280,7 @@ export default function TelegramBot() {
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-4">
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono mb-3">
               <div className="text-zinc-500 mb-1"># 백그라운드 실행 (macOS, Linux, WSL 공통)</div>
-              <div className="text-accent-cyan">nohup cokacdir --ccserver YOUR_BOT_TOKEN &amp;</div>
+              <div className="text-accent-cyan">nohup aimi --ccserver YOUR_BOT_TOKEN &amp;</div>
             </div>
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono mb-3">
               <div className="text-zinc-500 mb-1"># 실행 중인 Bot 서버 확인</div>
@@ -288,13 +288,13 @@ export default function TelegramBot() {
             </div>
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
               <div className="text-zinc-500 mb-1"># Bot 서버 종료</div>
-              <div className="text-accent-cyan">pkill -f "cokacdir --ccserver"</div>
+              <div className="text-accent-cyan">pkill -f "aimi --ccserver"</div>
             </div>
           </div>
 
           <TipBox>
             여러 봇을 동시에 운영하려면 토큰을 여러 개 전달하세요:
-            <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">cokacdir --ccserver TOKEN1 TOKEN2</code>
+            <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">aimi --ccserver TOKEN1 TOKEN2</code>
           </TipBox>
 
           {/* ========== 사용 가능한 명령어 ========== */}
@@ -315,7 +315,7 @@ export default function TelegramBot() {
               </p>
               <p className="text-zinc-400 text-sm leading-relaxed mt-2">
                 경로 없이 <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">/start</code>만 입력하면
-                <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.cokacdir/workspace/</code> 아래에 임시 작업 디렉토리가 자동 생성됩니다.
+                <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.aimi/workspace/</code> 아래에 임시 작업 디렉토리가 자동 생성됩니다.
                 경로를 몰라도 바로 시작할 수 있습니다.
               </p>
               <p className="text-zinc-400 text-sm leading-relaxed mt-2">
@@ -570,7 +570,7 @@ export default function TelegramBot() {
           </div>
 
           <TipBox>
-            도구 설정은 <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.cokacdir/bot_settings.json</code>에 자동 저장되므로
+            도구 설정은 <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.aimi/bot_settings.json</code>에 자동 저장되므로
             봇을 재시작해도 유지됩니다.
           </TipBox>
 
@@ -598,7 +598,7 @@ export default function TelegramBot() {
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-12">Bot:</span>
-                <span className="text-zinc-400">Session started at /home/user/.cokacdir/workspace/a1b2c3.</span>
+                <span className="text-zinc-400">Session started at /home/user/.aimi/workspace/a1b2c3.</span>
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-12">나:</span>
@@ -850,7 +850,7 @@ export default function TelegramBot() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            You can use cokacdir's AI features and file management remotely through <strong className="text-white">Telegram messenger</strong>.
+            You can use aimi's AI features and file management remotely through <strong className="text-white">Telegram messenger</strong>.
             Check server files from your smartphone while on the go, ask AI questions, or run shell commands.
           </p>
 
@@ -919,7 +919,7 @@ export default function TelegramBot() {
                   Enter a unique username for your bot. It must end with <code className="text-accent-cyan font-mono bg-bg-card px-1.5 py-0.5 rounded">bot</code>.
                   If the name is already taken, try a different one.
                   <code className="block text-zinc-500 font-mono text-sm bg-bg-elevated px-3 py-2 rounded mt-2">
-                    my_cokacdir_bot
+                    my_aimi_bot
                   </code>
                 </span>
               )
@@ -933,7 +933,7 @@ export default function TelegramBot() {
                   <code className="block text-accent-cyan font-mono text-sm bg-bg-elevated px-3 py-2 rounded mt-2 mb-2">
                     123456789:ABCdefGHIjklMNOpqrsTUVwxyz
                   </code>
-                  <strong className="text-zinc-300">Long-press to copy</strong> this token. You'll use it in the next step to register with cokacdir.
+                  <strong className="text-zinc-300">Long-press to copy</strong> this token. You'll use it in the next step to register with aimi.
                 </span>
               )
             },
@@ -971,12 +971,12 @@ export default function TelegramBot() {
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-20">You:</span>
-                <span className="text-zinc-300">my_cokacdir_bot</span>
+                <span className="text-zinc-300">my_aimi_bot</span>
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-20">BotFather:</span>
                 <span className="text-zinc-400">
-                  Done! Congratulations on your new bot. You will find it at t.me/my_cokacdir_bot.<br/>
+                  Done! Congratulations on your new bot. You will find it at t.me/my_aimi_bot.<br/>
                   Use this token to access the HTTP API:<br/>
                   <code className="text-accent-cyan font-mono bg-bg-elevated px-1.5 py-0.5 rounded">123456789:ABCdefGHIjklMNOpqrsTUVwxyz</code>
                   <br/>Keep your token secure and store it safely.
@@ -999,7 +999,7 @@ export default function TelegramBot() {
           {/* ========== Setup and Start ========== */}
           <SectionHeading id="telegram-setup" level={3}>Setup and Start</SectionHeading>
           <p className="text-zinc-400 mb-4 leading-relaxed">
-            The Bot server runs on the computer where cokacdir is installed.
+            The Bot server runs on the computer where aimi is installed.
             Setup differs slightly by platform, so follow the instructions for your operating system.
           </p>
 
@@ -1016,7 +1016,7 @@ export default function TelegramBot() {
               </p>
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
                 <div className="text-zinc-500 mb-1"># Start server</div>
-                <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
               </div>
               <p className="text-zinc-500 text-xs mt-2">
                 macOS path example: <code className="font-mono">/Users/username/Documents</code>
@@ -1035,7 +1035,7 @@ export default function TelegramBot() {
               </p>
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
                 <div className="text-zinc-500 mb-1"># Start server</div>
-                <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
               </div>
               <p className="text-zinc-500 text-xs mt-2">
                 Linux path example: <code className="font-mono">/home/username/projects</code>
@@ -1057,7 +1057,7 @@ export default function TelegramBot() {
                 Windows (WSL Required)
               </h4>
               <p className="text-zinc-400 text-sm mb-3 leading-relaxed">
-                cokacdir is a Unix-based program, so on Windows you need <strong className="text-white">WSL (Windows Subsystem for Linux)</strong>.
+                aimi is a Unix-based program, so on Windows you need <strong className="text-white">WSL (Windows Subsystem for Linux)</strong>.
                 WSL is an official Windows feature that runs a Linux environment inside Windows.
               </p>
 
@@ -1076,14 +1076,14 @@ export default function TelegramBot() {
               </div>
 
               <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm mb-3">
-                <div className="text-zinc-400 font-semibold mb-2">Running cokacdir in WSL:</div>
+                <div className="text-zinc-400 font-semibold mb-2">Running aimi in WSL:</div>
                 <p className="text-zinc-400 mb-2 leading-relaxed">
                   Open <strong className="text-zinc-300">Ubuntu</strong> (or your installed Linux distro) from the Start menu.
-                  The terminal that opens is a Linux environment. Install cokacdir here and run the Bot server.
+                  The terminal that opens is a Linux environment. Install aimi here and run the Bot server.
                 </p>
                 <div className="font-mono">
                   <div className="text-zinc-500 mb-1"># Run in WSL terminal</div>
-                  <div className="text-accent-cyan">cokacdir --ccserver YOUR_BOT_TOKEN</div>
+                  <div className="text-accent-cyan">aimi --ccserver YOUR_BOT_TOKEN</div>
                 </div>
               </div>
 
@@ -1114,7 +1114,7 @@ export default function TelegramBot() {
           <div className="bg-bg-card border border-zinc-800 rounded-lg p-4 mb-4">
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono mb-3">
               <div className="text-zinc-500 mb-1"># Background execution (macOS, Linux, WSL)</div>
-              <div className="text-accent-cyan">nohup cokacdir --ccserver YOUR_BOT_TOKEN &amp;</div>
+              <div className="text-accent-cyan">nohup aimi --ccserver YOUR_BOT_TOKEN &amp;</div>
             </div>
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono mb-3">
               <div className="text-zinc-500 mb-1"># Check if Bot server is running</div>
@@ -1122,13 +1122,13 @@ export default function TelegramBot() {
             </div>
             <div className="bg-bg-elevated border border-zinc-700 rounded p-3 text-sm font-mono">
               <div className="text-zinc-500 mb-1"># Stop the Bot server</div>
-              <div className="text-accent-cyan">pkill -f "cokacdir --ccserver"</div>
+              <div className="text-accent-cyan">pkill -f "aimi --ccserver"</div>
             </div>
           </div>
 
           <TipBox>
             To run multiple bots simultaneously, pass multiple tokens:
-            <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">cokacdir --ccserver TOKEN1 TOKEN2</code>
+            <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">aimi --ccserver TOKEN1 TOKEN2</code>
           </TipBox>
 
           {/* ========== Available Commands ========== */}
@@ -1149,7 +1149,7 @@ export default function TelegramBot() {
               <p className="text-zinc-400 text-sm leading-relaxed mt-2">
                 If you type <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">/start</code> without a path,
                 a temporary workspace is automatically created under
-                <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.cokacdir/workspace/</code>.
+                <code className="text-zinc-300 font-mono bg-bg-elevated px-1 py-0.5 rounded">~/.aimi/workspace/</code>.
                 You can get started immediately without specifying a directory.
               </p>
               <p className="text-zinc-400 text-sm leading-relaxed mt-2">
@@ -1393,7 +1393,7 @@ export default function TelegramBot() {
           </div>
 
           <TipBox>
-            Tool settings are automatically saved to <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.cokacdir/bot_settings.json</code> and
+            Tool settings are automatically saved to <code className="text-accent-cyan font-mono bg-bg-card px-1 py-0.5 rounded">~/.aimi/bot_settings.json</code> and
             persist across bot restarts.
           </TipBox>
 
@@ -1421,7 +1421,7 @@ export default function TelegramBot() {
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-12">Bot:</span>
-                <span className="text-zinc-400">Session started at /home/user/.cokacdir/workspace/a1b2c3.</span>
+                <span className="text-zinc-400">Session started at /home/user/.aimi/workspace/a1b2c3.</span>
               </div>
               <div className="flex gap-3">
                 <span className="text-zinc-500 flex-shrink-0 w-12">You:</span>

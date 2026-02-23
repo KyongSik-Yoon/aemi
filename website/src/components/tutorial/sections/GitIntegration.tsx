@@ -14,7 +14,7 @@ export default function GitIntegration() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             Git은 프로그래머들이 코드의 변경 이력을 관리하는 도구입니다.
-            Git을 사용 중이라면, cokacdir에서 바로 커밋 기록을 보고 브랜치를 확인할 수 있습니다.
+            Git을 사용 중이라면, aimi에서 바로 커밋 기록을 보고 브랜치를 확인할 수 있습니다.
           </p>
 
           <TipBox variant="note">
@@ -111,7 +111,7 @@ export default function GitIntegration() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             Git is a version control tool used by developers to track code changes.
-            If you use Git, cokacdir lets you view commit history and browse branches directly.
+            If you use Git, aimi lets you view commit history and browse branches directly.
           </p>
 
           <TipBox variant="note">

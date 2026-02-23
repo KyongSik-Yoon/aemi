@@ -14,7 +14,7 @@ export default function ImageViewer() {
       {lang === 'ko' ? (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir는 터미널 안에서 바로 이미지를 볼 수 있습니다.
+            aimi는 터미널 안에서 바로 이미지를 볼 수 있습니다.
             사진 폴더를 탐색하면서 일일이 다른 프로그램으로 열지 않아도
             어떤 이미지인지 빠르게 확인할 수 있습니다.
             PNG, JPG, GIF, BMP, WebP 등 일반적인 이미지 형식을 지원합니다.
@@ -107,7 +107,7 @@ export default function ImageViewer() {
       ) : (
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
-            cokacdir can display images right in the terminal.
+            aimi can display images right in the terminal.
             Browse through a photo folder and quickly preview images without opening a separate app.
             Supports common formats: PNG, JPG, GIF, BMP, WebP, and more.
           </p>

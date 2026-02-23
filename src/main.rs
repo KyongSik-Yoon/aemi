@@ -7,10 +7,10 @@ use crate::services::claude;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
-    println!("cokacdir {} - LLM CLI routing tool", VERSION);
+    println!("aimi {} - LLM CLI routing tool", VERSION);
     println!();
     println!("USAGE:");
-    println!("    cokacdir [OPTIONS]");
+    println!("    aimi [OPTIONS]");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help              Print help information");
@@ -28,7 +28,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("cokacdir {}", VERSION);
+    println!("aimi {}", VERSION);
 }
 
 fn handle_base64(encoded: &str) {
@@ -107,7 +107,7 @@ fn handle_prompt(prompt: &str) {
 fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let title = format!("  cokacdir v{}  |  Telegram Bot Server  ", VERSION);
+    let title = format!("  aimi v{}  |  Telegram Bot Server  ", VERSION);
     let width = title.chars().count();
     println!();
     println!("  ┌{}┐", "─".repeat(width));
@@ -147,7 +147,7 @@ fn handle_ccserver(tokens: Vec<String>, allowed_chat_id: Option<i64>) {
 fn handle_ccserver_discord(token: String, allowed_channel_id: Option<u64>) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let title = format!("  cokacdir v{}  |  Discord Bot Server  ", VERSION);
+    let title = format!("  aimi v{}  |  Discord Bot Server  ", VERSION);
     let width = title.chars().count();
     println!();
     println!("  ┌{}┐", "─".repeat(width));
@@ -182,7 +182,7 @@ fn main() {
             "--prompt" => {
                 if i + 1 >= args.len() {
                     eprintln!("Error: --prompt requires a text argument");
-                    eprintln!("Usage: cokacdir --prompt \"your question\"");
+                    eprintln!("Usage: aimi --prompt \"your question\"");
                     return;
                 }
                 handle_prompt(&args[i + 1]);
@@ -225,7 +225,7 @@ fn main() {
                 }
                 if tokens.is_empty() {
                     eprintln!("Error: --ccserver requires at least one token argument");
-                    eprintln!("Usage: cokacdir --ccserver <TOKEN> [--chat-id <ID>]");
+                    eprintln!("Usage: aimi --ccserver <TOKEN> [--chat-id <ID>]");
                     return;
                 }
                 handle_ccserver(tokens, allowed_chat_id);
@@ -234,7 +234,7 @@ fn main() {
             "--ccserver-discord" => {
                 if i + 1 >= args.len() {
                     eprintln!("Error: --ccserver-discord requires a token argument");
-                    eprintln!("Usage: cokacdir --ccserver-discord <TOKEN> [--channel-id <ID>]");
+                    eprintln!("Usage: aimi --ccserver-discord <TOKEN> [--channel-id <ID>]");
                     return;
                 }
                 let token = args[i + 1].clone();
@@ -298,7 +298,7 @@ fn main() {
                     }
                     _ => {
                         eprintln!("Error: --sendfile requires <PATH>, --chat <ID>, and --key <HASH>");
-                        eprintln!("Usage: cokacdir --sendfile <PATH> --chat <ID> --key <HASH>");
+                        eprintln!("Usage: aimi --sendfile <PATH> --chat <ID> --key <HASH>");
                     }
                 }
                 return;

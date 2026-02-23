@@ -135,7 +135,7 @@ function EC2PageInner() {
             </Link>
             <div className="hidden sm:block h-5 w-px bg-zinc-700" />
             <Link to="/" className="hidden sm:block">
-              <span className="gradient-text font-bold text-lg">cokacdir</span>
+              <span className="gradient-text font-bold text-lg">aimi</span>
             </Link>
           </div>
 
@@ -148,7 +148,7 @@ function EC2PageInner() {
           </div>
 
           <a
-            href="https://github.com/kstost/cokacdir"
+            href="https://github.com/kstost/aimi"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
@@ -179,8 +179,8 @@ function EC2PageInner() {
             </h1>
             <p className="text-lg text-zinc-400 leading-relaxed max-w-2xl mx-auto">
               {t(
-                'A guide to setting up a cokacdir & Claude Code environment on AWS EC2 and using it anywhere via Telegram bot.',
-                'AWS EC2 위에 cokacdir & Claude Code 환경을 만들고, 텔레그램 봇으로 어디서나 사용하는 가이드입니다.'
+                'A guide to setting up a aimi & Claude Code environment on AWS EC2 and using it anywhere via Telegram bot.',
+                'AWS EC2 위에 aimi & Claude Code 환경을 만들고, 텔레그램 봇으로 어디서나 사용하는 가이드입니다.'
               )}
             </p>
           </div>
@@ -329,8 +329,8 @@ function EC2PageInner() {
                   <>credential 폴더를 우클릭 → <strong className="text-zinc-200">Services</strong> → <strong className="text-zinc-200">New Terminal at Folder</strong></>
                 )}
               </p>
-              <CopyBlock code={`export PEM=secret.pem\nexport IP=0.0.0.0\nexport TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz\nexport URL=https://raw.githubusercontent.com/kstost/service-setup-cokacdir/refs/heads/main/basic_setup_ec2.sh\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-cokacdir $TOKEN && claude\\""`} label="macOS Terminal">
-{`export PEM=`}<Hl>secret.pem</Hl>{`\nexport IP=`}<Hl>0.0.0.0</Hl>{`\nexport TOKEN=`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`\nexport URL=https://raw.githubusercontent.com/kstost/service-setup-cokacdir/refs/heads/main/basic_setup_ec2.sh\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-cokacdir $TOKEN && claude\\""`}
+              <CopyBlock code={`export PEM=secret.pem\nexport IP=0.0.0.0\nexport TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz\nexport URL=https://raw.githubusercontent.com/kstost/service-setup-aimi/refs/heads/main/basic_setup_ec2.sh\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-aimi $TOKEN && claude\\""`} label="macOS Terminal">
+{`export PEM=`}<Hl>secret.pem</Hl>{`\nexport IP=`}<Hl>0.0.0.0</Hl>{`\nexport TOKEN=`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`\nexport URL=https://raw.githubusercontent.com/kstost/service-setup-aimi/refs/heads/main/basic_setup_ec2.sh\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-aimi $TOKEN && claude\\""`}
               </CopyBlock>
             </div>
 
@@ -346,8 +346,8 @@ function EC2PageInner() {
                   <>credential 폴더를 우클릭 → <strong className="text-zinc-200">터미널에서 열기</strong></>
                 )}
               </p>
-              <CopyBlock code={`$PEM = "secret.pem"; \`\n$IP = "0.0.0.0"; \`\n$TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"; \`\n$URL = "https://raw.githubusercontent.com/kstost/service-setup-cokacdir/refs/heads/main/basic_setup_ec2.sh"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-cokacdir $TOKEN && claude'"`} label="PowerShell">
-{`$PEM = "`}<Hl>secret.pem</Hl>{`"; \`\n$IP = "`}<Hl>0.0.0.0</Hl>{`"; \`\n$TOKEN = "`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`"; \`\n$URL = "https://raw.githubusercontent.com/kstost/service-setup-cokacdir/refs/heads/main/basic_setup_ec2.sh"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-cokacdir $TOKEN && claude'"`}
+              <CopyBlock code={`$PEM = "secret.pem"; \`\n$IP = "0.0.0.0"; \`\n$TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"; \`\n$URL = "https://raw.githubusercontent.com/kstost/service-setup-aimi/refs/heads/main/basic_setup_ec2.sh"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-aimi $TOKEN && claude'"`} label="PowerShell">
+{`$PEM = "`}<Hl>secret.pem</Hl>{`"; \`\n$IP = "`}<Hl>0.0.0.0</Hl>{`"; \`\n$TOKEN = "`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`"; \`\n$URL = "https://raw.githubusercontent.com/kstost/service-setup-aimi/refs/heads/main/basic_setup_ec2.sh"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'source <(curl -sL $URL) > /dev/null 2>&1 && npx -y service-setup-aimi $TOKEN && claude'"`}
               </CopyBlock>
             </div>
 
@@ -462,8 +462,8 @@ function EC2PageInner() {
                   <Apple className="w-5 h-5 text-zinc-400" />
                   <h4 className="text-white font-semibold">macOS</h4>
                 </div>
-                <CopyBlock code={`export PEM=secret.pem\nexport IP=0.0.0.0\nexport TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"curl -fsSL https://cokacdir.cokac.com/install.sh | /bin/bash && npx -y service-setup-cokacdir $TOKEN\\""`} label="macOS Terminal">
-{`export PEM=`}<Hl>secret.pem</Hl>{`\nexport IP=`}<Hl>0.0.0.0</Hl>{`\nexport TOKEN=`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"curl -fsSL https://cokacdir.cokac.com/install.sh | /bin/bash && npx -y service-setup-cokacdir $TOKEN\\""`}
+                <CopyBlock code={`export PEM=secret.pem\nexport IP=0.0.0.0\nexport TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"curl -fsSL https://aimi.cokac.com/install.sh | /bin/bash && npx -y service-setup-aimi $TOKEN\\""`} label="macOS Terminal">
+{`export PEM=`}<Hl>secret.pem</Hl>{`\nexport IP=`}<Hl>0.0.0.0</Hl>{`\nexport TOKEN=`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`\nssh -t -i "$PEM" ubuntu@$IP "bash -ic \\"curl -fsSL https://aimi.cokac.com/install.sh | /bin/bash && npx -y service-setup-aimi $TOKEN\\""`}
                 </CopyBlock>
               </div>
 
@@ -473,8 +473,8 @@ function EC2PageInner() {
                   <Monitor className="w-5 h-5 text-zinc-400" />
                   <h4 className="text-white font-semibold">Windows</h4>
                 </div>
-                <CopyBlock code={`$PEM = "secret.pem"; \`\n$IP = "0.0.0.0"; \`\n$TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'curl -fsSL https://cokacdir.cokac.com/install.sh | /bin/bash && npx -y service-setup-cokacdir $TOKEN'"`} label="PowerShell">
-{`$PEM = "`}<Hl>secret.pem</Hl>{`"; \`\n$IP = "`}<Hl>0.0.0.0</Hl>{`"; \`\n$TOKEN = "`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'curl -fsSL https://cokacdir.cokac.com/install.sh | /bin/bash && npx -y service-setup-cokacdir $TOKEN'"`}
+                <CopyBlock code={`$PEM = "secret.pem"; \`\n$IP = "0.0.0.0"; \`\n$TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'curl -fsSL https://aimi.cokac.com/install.sh | /bin/bash && npx -y service-setup-aimi $TOKEN'"`} label="PowerShell">
+{`$PEM = "`}<Hl>secret.pem</Hl>{`"; \`\n$IP = "`}<Hl>0.0.0.0</Hl>{`"; \`\n$TOKEN = "`}<Hl>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</Hl>{`"; \`\nssh -t -i $PEM ubuntu@$IP "bash -ic 'curl -fsSL https://aimi.cokac.com/install.sh | /bin/bash && npx -y service-setup-aimi $TOKEN'"`}
                 </CopyBlock>
               </div>
 

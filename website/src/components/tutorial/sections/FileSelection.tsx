@@ -15,7 +15,7 @@ export default function FileSelection() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             파일을 복사하거나 삭제하려면 먼저 "어떤 파일을?" 정해야 합니다.
-            cokacdir에서는 파일을 하나씩 또는 여러 개를 한꺼번에 선택할 수 있습니다.
+            aimi에서는 파일을 하나씩 또는 여러 개를 한꺼번에 선택할 수 있습니다.
             Windows에서 파일을 클릭해서 체크하는 것과 비슷한 개념입니다.
           </p>
 
@@ -109,7 +109,7 @@ export default function FileSelection() {
         <>
           <p className="text-zinc-400 mb-6 leading-relaxed">
             Before you can copy or delete files, you need to decide "which files?".
-            In cokacdir, you can select files one by one or multiple at once.
+            In aimi, you can select files one by one or multiple at once.
             It's similar to clicking checkboxes on files in Windows.
           </p>
 
