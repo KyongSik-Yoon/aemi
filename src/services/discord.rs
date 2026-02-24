@@ -1222,7 +1222,7 @@ async fn handle_text_message(
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
                                 }
                                 let file_hint = if last_file_path.is_empty() { None } else { Some(last_file_path.as_str()) };
-                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true, file_hint);
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, file_hint);
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
@@ -1675,7 +1675,7 @@ fn format_tool_input(name: &str, input: &str) -> String {
             let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
             let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
             let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all, true)
+            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all)
         }
         "Glob" => {
             let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");

@@ -156,9 +156,8 @@ pub fn is_table_content(content: &str) -> bool {
 
 /// Format a tool result with improved presentation.
 /// Returns markdown string to be appended to full_response.
-/// `is_discord`: true for Discord (uses ```diff), false for Telegram.
 /// `file_hint`: optional file path used to detect language from extension (e.g. "foo.rs" → "rust").
-pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, is_discord: bool, file_hint: Option<&str>) -> String {
+pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, file_hint: Option<&str>) -> String {
     if content.is_empty() && !is_error {
         return String::new();
     }
@@ -191,11 +190,7 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
         let truncated = smart_truncate_for_diff(content, max_len, is_diff);
 
         if is_diff {
-            if is_discord {
-                format!("\n```diff\n{}\n```\n", truncated)
-            } else {
-                format!("\n```\n{}\n```\n", truncated)
-            }
+            format!("\n```diff\n{}\n```\n", truncated)
         } else if is_table {
             // Tables always in code blocks to preserve alignment
             format!("\n```\n{}\n```\n", truncated)
@@ -207,7 +202,7 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
             } else {
                 detect_language(last_tool_name, &truncated)
             };
-            if is_discord && !lang.is_empty() {
+            if !lang.is_empty() {
                 format!("\n```{}\n{}\n```\n", lang, truncated)
             } else {
                 format!("\n```\n{}\n```\n", truncated)
@@ -220,7 +215,7 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
 
 /// Format Edit tool use with mini-diff for display.
 /// Returns markdown string.
-pub fn format_edit_tool_use(file_path: &str, old_string: &str, new_string: &str, replace_all: bool, is_discord: bool) -> String {
+pub fn format_edit_tool_use(file_path: &str, old_string: &str, new_string: &str, replace_all: bool) -> String {
     // Extract short filename for display
     let short_name = file_path.rsplit('/').next().unwrap_or(file_path);
     let header = if replace_all {
@@ -237,11 +232,7 @@ pub fn format_edit_tool_use(file_path: &str, old_string: &str, new_string: &str,
 
     let diff_text = build_edit_diff(old_string, new_string, 12);
 
-    if is_discord {
-        format!("{}\n```diff\n{}\n```", header, diff_text)
-    } else {
-        format!("{}\n```\n{}\n```", header, diff_text)
-    }
+    format!("{}\n```diff\n{}\n```", header, diff_text)
 }
 
 /// Build a mini-diff view from Edit tool's old_string and new_string.
@@ -523,51 +514,43 @@ mod tests {
 
     #[test]
     fn test_format_tool_result_empty() {
-        assert_eq!(format_tool_result("", false, "Read", true, None), "");
+        assert_eq!(format_tool_result("", false, "Read", None), "");
     }
 
     #[test]
     fn test_format_tool_result_strips_ansi() {
         let input = "\x1b[32mok\x1b[0m";
-        let result = format_tool_result(input, false, "Bash", true, None);
+        let result = format_tool_result(input, false, "Bash", None);
         assert!(!result.contains("\x1b"), "ANSI codes should be stripped");
         assert!(result.contains("ok"));
     }
 
     #[test]
     fn test_format_tool_result_error_single_line() {
-        let result = format_tool_result("file not found", true, "Read", true, None);
+        let result = format_tool_result("file not found", true, "Read", None);
         assert!(result.contains("❌"));
         assert!(result.contains("file not found"));
     }
 
     #[test]
-    fn test_format_tool_result_diff_discord() {
+    fn test_format_tool_result_diff_uses_lang_hint() {
         let diff = "@@ -1,2 +1,3 @@\n-old\n+new\n+added";
-        let result = format_tool_result(diff, false, "Bash", true, None);
-        assert!(result.contains("```diff"), "Discord diff should use ```diff");
-    }
-
-    #[test]
-    fn test_format_tool_result_diff_telegram() {
-        let diff = "@@ -1,2 +1,3 @@\n-old\n+new\n+added";
-        let result = format_tool_result(diff, false, "Bash", false, None);
-        assert!(result.contains("```\n"), "Telegram diff should use plain ```");
-        assert!(!result.contains("```diff"), "Telegram should not use ```diff");
+        let result = format_tool_result(diff, false, "Bash", None);
+        assert!(result.contains("```diff"), "diff should use ```diff language hint");
     }
 
     #[test]
     fn test_format_tool_result_multiline_in_code_block() {
         // Plain multiline — no line-number format, no file hint
         let content = "line1\nline2\nline3";
-        let result = format_tool_result(content, false, "Bash", true, None);
+        let result = format_tool_result(content, false, "Bash", None);
         assert!(result.contains("```"), "Multi-line should be in code block");
         assert!(result.contains("line1\nline2\nline3"));
     }
 
     #[test]
     fn test_format_tool_result_single_line_checkmark() {
-        let result = format_tool_result("done", false, "Bash", true, None);
+        let result = format_tool_result("done", false, "Bash", None);
         assert!(result.contains("✅"));
         assert!(result.contains("`done`"));
     }
@@ -575,7 +558,7 @@ mod tests {
     #[test]
     fn test_format_tool_result_read_reformats_line_numbers() {
         let input = "     1→fn main() {}\n     2→}";
-        let result = format_tool_result(input, false, "Read", true, Some("main.rs"));
+        let result = format_tool_result(input, false, "Read", Some("main.rs"));
         // Line numbers should be reformatted
         assert!(result.contains("1: fn main() {}"), "line numbers should be reformatted");
         // Language hint from extension should be applied
@@ -585,7 +568,7 @@ mod tests {
     #[test]
     fn test_format_tool_result_file_hint_sets_lang() {
         let content = "class Foo:\n    pass\n    return 1";
-        let result = format_tool_result(content, false, "Read", true, Some("foo.py"));
+        let result = format_tool_result(content, false, "Read", Some("foo.py"));
         assert!(result.contains("```python"), "file hint .py should give python lang");
     }
 
@@ -593,7 +576,7 @@ mod tests {
     fn test_format_tool_result_edit_reformats_line_numbers() {
         // Edit tool results also contain cat-n style output with line numbers
         let input = "     10→    val profileId: Long = 0,\n     11→    val nickname: String = \"\",\n     12→)";
-        let result = format_tool_result(input, false, "Edit", true, Some("ProfileModels.kt"));
+        let result = format_tool_result(input, false, "Edit", Some("ProfileModels.kt"));
         assert!(result.contains("10: "), "Edit tool result should reformat line numbers");
         assert!(!result.contains("→"), "Arrow should be replaced");
         assert!(result.contains("```kotlin"), "should use kotlin language hint from .kt extension");
@@ -603,7 +586,7 @@ mod tests {
     fn test_format_tool_result_read_with_trailing_metadata() {
         // Read result with system reminder appended
         let input = "     1→import foo\n     2→import bar\n     3→\n<system-reminder>metadata</system-reminder>";
-        let result = format_tool_result(input, false, "Read", true, Some("test.kt"));
+        let result = format_tool_result(input, false, "Read", Some("test.kt"));
         assert!(result.contains("1: import foo"), "line numbers should be reformatted despite trailing metadata");
         assert!(!result.contains("system-reminder"), "trailing metadata should be dropped");
     }
