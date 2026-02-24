@@ -70,31 +70,35 @@ pub fn detect_language_from_extension(path: &str) -> &'static str {
 /// Try to convert Claude Code Read tool line-number format to cleaner `N: code` style.
 /// Claude Code outputs lines as `     N→code` (U+2192 arrow). Returns None if the
 /// content doesn't match that pattern (i.e. not a Read tool result).
+///
+/// Resilient to trailing non-matching lines (e.g. system reminders appended by
+/// the API). As long as the first lines match the `N→` pattern, those are
+/// reformatted and any remaining non-matching tail is dropped.
 fn reformat_read_line_numbers(content: &str) -> Option<String> {
     const ARROW: char = '→'; // U+2192
     let mut result = String::with_capacity(content.len());
-    let mut first = true;
+    let mut matched = 0usize;
 
     for line in content.lines() {
         let trimmed = line.trim_start();
         if let Some(arrow_pos) = trimmed.find(ARROW) {
             let num_part = &trimmed[..arrow_pos];
             if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
-                if !first {
+                if matched > 0 {
                     result.push('\n');
                 }
-                first = false;
+                matched += 1;
                 result.push_str(num_part);
                 result.push_str(": ");
                 result.push_str(&trimmed[arrow_pos + ARROW.len_utf8()..]);
                 continue;
             }
         }
-        // Line didn't match — not Read tool output
-        return None;
+        // Non-matching line: stop reformatting (trailing metadata / system tags)
+        break;
     }
 
-    if result.is_empty() { None } else { Some(result) }
+    if matched >= 2 { Some(result) } else { None }
 }
 
 /// Detect if content looks like unified diff output.
@@ -173,8 +177,9 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, i
             format!("\n❌ `{}`\n", truncated)
         }
     } else {
-        // For Read tool results, reformat "     N→code" line numbers to "N: code"
-        let reformatted = if last_tool_name == "Read" {
+        // Reformat "     N→code" line numbers to "N: code" for tools that return
+        // file content with line numbers (Read results, Edit/Write result snippets).
+        let reformatted = if matches!(last_tool_name, "Read" | "Edit" | "Write") {
             reformat_read_line_numbers(content)
         } else {
             None
@@ -491,6 +496,29 @@ mod tests {
         assert!(reformat_read_line_numbers("").is_none());
     }
 
+    #[test]
+    fn test_reformat_line_numbers_single_line_not_enough() {
+        // Only 1 matching line is not enough (need >= 2)
+        let input = "     1→only one line";
+        assert!(reformat_read_line_numbers(input).is_none());
+    }
+
+    #[test]
+    fn test_reformat_line_numbers_with_trailing_metadata() {
+        // Simulates system-reminder or other metadata appended after file content
+        let input = "     1→fn main() {}\n     2→}\n<system-reminder>some metadata</system-reminder>";
+        let result = reformat_read_line_numbers(input).unwrap();
+        assert_eq!(result, "1: fn main() {}\n2: }");
+    }
+
+    #[test]
+    fn test_reformat_line_numbers_with_trailing_text() {
+        // Simulates "... (N more lines)" truncation or other trailing text
+        let input = "     10→    val name: String,\n     11→    val age: Int,\n... (20 more lines)";
+        let result = reformat_read_line_numbers(input).unwrap();
+        assert_eq!(result, "10:     val name: String,\n11:     val age: Int,");
+    }
+
     // --- format_tool_result ---
 
     #[test]
@@ -559,5 +587,24 @@ mod tests {
         let content = "class Foo:\n    pass\n    return 1";
         let result = format_tool_result(content, false, "Read", true, Some("foo.py"));
         assert!(result.contains("```python"), "file hint .py should give python lang");
+    }
+
+    #[test]
+    fn test_format_tool_result_edit_reformats_line_numbers() {
+        // Edit tool results also contain cat-n style output with line numbers
+        let input = "     10→    val profileId: Long = 0,\n     11→    val nickname: String = \"\",\n     12→)";
+        let result = format_tool_result(input, false, "Edit", true, Some("ProfileModels.kt"));
+        assert!(result.contains("10: "), "Edit tool result should reformat line numbers");
+        assert!(!result.contains("→"), "Arrow should be replaced");
+        assert!(result.contains("```kotlin"), "should use kotlin language hint from .kt extension");
+    }
+
+    #[test]
+    fn test_format_tool_result_read_with_trailing_metadata() {
+        // Read result with system reminder appended
+        let input = "     1→import foo\n     2→import bar\n     3→\n<system-reminder>metadata</system-reminder>";
+        let result = format_tool_result(input, false, "Read", true, Some("test.kt"));
+        assert!(result.contains("1: import foo"), "line numbers should be reformatted despite trailing metadata");
+        assert!(!result.contains("system-reminder"), "trailing metadata should be dropped");
     }
 }
