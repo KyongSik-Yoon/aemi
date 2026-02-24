@@ -40,6 +40,12 @@ aimi --agent gemini --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 # Start Discord bot server with Codex
 aimi --agent codex --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
+# Start Telegram bot server with OpenCode
+aimi --agent opencode --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+
+# Start Discord bot server with OpenCode
+aimi --agent opencode --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+
 # Run multiple Telegram bots simultaneously
 aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
 ```
@@ -73,6 +79,7 @@ See [build_manual.md](build_manual.md) for detailed build instructions including
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available | - |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Available | - |
 | [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Available | - |
+| [OpenCode](https://opencode.ai) | `--agent opencode` | Available | - |
 
 ### Prerequisites per Agent
 
@@ -81,6 +88,7 @@ Each agent requires its own CLI tool to be installed:
 - **Claude**: `npm install -g @anthropic-ai/claude-code`
 - **Gemini**: `npm install -g @google/gemini-cli`
 - **Codex**: `npm install -g @openai/codex`
+- **OpenCode**: `npm install -g opencode` (or see [opencode.ai](https://opencode.ai/docs/) for other methods)
 
 ### Integration Feasibility
 
@@ -116,6 +124,19 @@ Each agent CLI provides a non-interactive mode and structured JSON output, makin
 > Codex CLI uses a different event model (`item.started`/`item.completed` lifecycle) compared to Claude/Gemini,
 > but maps cleanly to `StreamMessage` via `thread.started`→`Init`, `agent_message`→`Text`, `command_execution`→`ToolUse`/`ToolResult`.
 
+#### OpenCode CLI
+
+- **Non-interactive mode**: `opencode run "prompt"` — uses `run` subcommand
+- **JSON output**: `opencode run --format json "prompt"` → JSONL event stream to stdout
+- **Event types**: `step_start`, `step_finish`, `text`, `tool_use`, `reasoning`, `error`
+- **Tool state tracking**: `tool_use` events include `state.status` (`pending`, `running`, `completed`, `error`)
+- **Session resume**: `opencode run --session <SESSION_ID> "prompt"` / `--continue` for last session
+- **Model selection**: `--model provider/model` for flexible LLM provider switching
+- **File attachment**: `--file <path>` for attaching files to the prompt
+
+> OpenCode uses a part-based event model where `tool_use` events carry state transitions (`pending`→`running`→`completed`).
+> Maps to `StreamMessage` via `text`→`Text`, `tool_use(running)`→`ToolUse`, `tool_use(completed)`→`ToolResult`, `step_finish`→`Done`.
+
 ### Implementation Status
 
 - [x] **Extract shared types** — `StreamMessage`, `CancelToken`, `AgentResponse` in `src/services/agent.rs`
@@ -124,6 +145,7 @@ Each agent CLI provides a non-interactive mode and structured JSON output, makin
 - [x] **Agent dispatch in bots** — `telegram.rs` and `discord.rs` branch on agent type
 - [x] **Update routing in `main.rs`** — `--agent gemini` accepted alongside `claude`
 - [x] **Add `src/services/codex.rs`** — Codex agent with `exec --json --full-auto`, session resume support
+- [x] **Add `src/services/opencode.rs`** — OpenCode agent with `run --format json`, session resume support
 
 ## Supported Platforms
 
