@@ -10,7 +10,9 @@ use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 use sha2::{Sha256, Digest};
 
-use crate::services::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
+use crate::services::agent::{CancelToken, StreamMessage};
+use crate::services::claude::{self, DEFAULT_ALLOWED_TOOLS};
+use crate::services::gemini;
 use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
 use crate::services::formatter;
 
@@ -58,6 +60,8 @@ struct SharedData {
     api_timestamps: HashMap<ChatId, tokio::time::Instant>,
     /// If set, only messages from this chat ID are allowed (--chat-id parameter)
     allowed_chat_id: Option<i64>,
+    /// Agent type: "claude" or "gemini"
+    agent_type: String,
 }
 
 type SharedState = Arc<Mutex<SharedData>>;
@@ -201,7 +205,7 @@ fn risk_badge(destructive: bool) -> &'static str {
 }
 
 /// Entry point: start the Telegram bot with long polling
-pub async fn run_bot(token: &str, allowed_chat_id: Option<i64>) {
+pub async fn run_bot(token: &str, allowed_chat_id: Option<i64>, agent_type: &str) {
     let bot = Bot::new(token);
     let bot_settings = load_bot_settings(token);
 
@@ -221,6 +225,7 @@ pub async fn run_bot(token: &str, allowed_chat_id: Option<i64>) {
         stop_message_ids: HashMap::new(),
         api_timestamps: HashMap::new(),
         allowed_chat_id,
+        agent_type: agent_type.to_string(),
     }));
 
     println!("  ✓ Bot connected — Listening for messages");
@@ -1147,17 +1152,34 @@ async fn handle_text_message(
     let current_path_clone = current_path.clone();
     let cancel_token_clone = cancel_token.clone();
 
-    // Run Claude in a blocking thread
+    // Get agent type from state
+    let agent_type = {
+        let data = state.lock().await;
+        data.agent_type.clone()
+    };
+
+    // Run agent in a blocking thread
     tokio::task::spawn_blocking(move || {
-        let result = claude::execute_command_streaming(
-            &context_prompt,
-            session_id_clone.as_deref(),
-            &current_path_clone,
-            tx.clone(),
-            Some(&system_prompt_owned),
-            Some(&allowed_tools),
-            Some(cancel_token_clone),
-        );
+        let result = match agent_type.as_str() {
+            "gemini" => gemini::execute_command_streaming(
+                &context_prompt,
+                session_id_clone.as_deref(),
+                &current_path_clone,
+                tx.clone(),
+                Some(&system_prompt_owned),
+                Some(&allowed_tools),
+                Some(cancel_token_clone),
+            ),
+            _ => claude::execute_command_streaming(
+                &context_prompt,
+                session_id_clone.as_deref(),
+                &current_path_clone,
+                tx.clone(),
+                Some(&system_prompt_owned),
+                Some(&allowed_tools),
+                Some(cancel_token_clone),
+            ),
+        };
 
         if let Err(e) = result {
             let _ = tx.send(StreamMessage::Error { message: e });

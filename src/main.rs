@@ -113,7 +113,7 @@ fn handle_prompt(prompt: &str) {
     }
 }
 
-fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64) {
+fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64, agent: &str) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Telegram Bot Server  ", VERSION);
@@ -124,24 +124,27 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64) {
     println!("  └{}┘", "─".repeat(width));
     println!();
 
+    println!("  ▸ Agent        : {}", agent);
     println!("  ▸ Chat ID filter : {}", allowed_chat_id);
 
     if tokens.len() == 1 {
         println!("  ▸ Bot instance : 1");
         println!("  ▸ Status       : Connecting...");
         println!();
-        rt.block_on(services::telegram::run_bot(&tokens[0], Some(allowed_chat_id)));
+        rt.block_on(services::telegram::run_bot(&tokens[0], Some(allowed_chat_id), agent));
     } else {
         println!("  ▸ Bot instances : {}", tokens.len());
         println!("  ▸ Status        : Connecting...");
         println!();
+        let agent_owned = agent.to_string();
         rt.block_on(async {
             let mut handles = Vec::new();
             for (i, token) in tokens.into_iter().enumerate() {
                 let chat_id = allowed_chat_id;
+                let agent = agent_owned.clone();
                 handles.push(tokio::spawn(async move {
                     println!("  ✓ Bot #{} connected", i + 1);
-                    services::telegram::run_bot(&token, Some(chat_id)).await;
+                    services::telegram::run_bot(&token, Some(chat_id), &agent).await;
                 }));
             }
             for handle in handles {
@@ -151,7 +154,7 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64) {
     }
 }
 
-fn handle_discord_server(token: String, allowed_channel_id: u64) {
+fn handle_discord_server(token: String, allowed_channel_id: u64, agent: &str) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let title = format!("  aimi v{}  |  Discord Bot Server  ", VERSION);
@@ -162,12 +165,13 @@ fn handle_discord_server(token: String, allowed_channel_id: u64) {
     println!("  └{}┘", "─".repeat(width));
     println!();
 
+    println!("  ▸ Agent          : {}", agent);
     println!("  ▸ Channel ID filter : {}", allowed_channel_id);
 
     println!("  ▸ Bot instance : 1");
     println!("  ▸ Status       : Connecting...");
     println!();
-    rt.block_on(services::discord::run_bot(&token, Some(allowed_channel_id)));
+    rt.block_on(services::discord::run_bot(&token, Some(allowed_channel_id), agent));
 }
 
 fn main() {
@@ -343,17 +347,17 @@ fn main() {
 
     // Dispatch based on agent and routing
     match agent.as_str() {
-        "claude" => match routing.as_str() {
+        "claude" | "gemini" => match routing.as_str() {
             "telegram" => {
                 let chat_id = match chat_id {
                     Some(id) => id,
                     None => {
                         eprintln!("Error: --chat-id is required for Telegram routing (security)");
-                        eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN> --chat-id <ID>");
+                        eprintln!("Usage: aimi --agent {} --routing telegram --token <TOKEN> --chat-id <ID>", agent);
                         return;
                     }
                 };
-                handle_telegram_server(tokens, chat_id);
+                handle_telegram_server(tokens, chat_id, &agent);
             }
             "discord" => {
                 if tokens.len() > 1 {
@@ -364,18 +368,18 @@ fn main() {
                     Some(id) => id,
                     None => {
                         eprintln!("Error: --channel-id is required for Discord routing (security)");
-                        eprintln!("Usage: aimi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
+                        eprintln!("Usage: aimi --agent {} --routing discord --token <TOKEN> --channel-id <ID>", agent);
                         return;
                     }
                 };
-                handle_discord_server(tokens.into_iter().next().unwrap(), channel_id);
+                handle_discord_server(tokens.into_iter().next().unwrap(), channel_id, &agent);
             }
             other => {
                 eprintln!("Error: unsupported routing '{}'. Supported: telegram, discord", other);
             }
         },
         other => {
-            eprintln!("Error: unsupported agent '{}'. Supported: claude", other);
+            eprintln!("Error: unsupported agent '{}'. Supported: claude, gemini", other);
         }
     }
 }

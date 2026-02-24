@@ -22,11 +22,17 @@ This project is a fork of [kstost/cokacdir](https://github.com/kstost/cokacdir).
 # Query Claude Code directly
 aimi --prompt "explain this code"
 
-# Start Telegram bot server (--chat-id required)
+# Start Telegram bot server with Claude (--chat-id required)
 aimi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+
+# Start Telegram bot server with Gemini
+aimi --agent gemini --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server (--channel-id required)
 aimi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+
+# Start Discord bot server with Gemini
+aimi --agent gemini --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Run multiple Telegram bots simultaneously
 aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
@@ -36,11 +42,7 @@ aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat
 
 ### Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be installed
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
+- Install the CLI tool for the agent you want to use (see [Agent Types](#agent-types))
 
 ### Build from source
 
@@ -57,6 +59,64 @@ cargo build --release
 ```
 
 See [build_manual.md](build_manual.md) for detailed build instructions including cross-compilation.
+
+## Agent Types
+
+| Agent | CLI Flag | Status | Priority |
+|-------|----------|--------|----------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available | - |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Available | - |
+| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned | Next |
+
+### Prerequisites per Agent
+
+Each agent requires its own CLI tool to be installed:
+
+- **Claude**: `npm install -g @anthropic-ai/claude-code`
+- **Gemini**: `npm install -g @google/gemini-cli`
+- **Codex**: `npm install -g @openai/codex` (planned)
+
+### Integration Feasibility
+
+Each agent CLI provides a non-interactive mode and structured JSON output, making subprocess integration possible.
+
+#### Gemini CLI (Priority 1)
+
+- **Non-interactive mode**: `gemini -p "prompt"` — identical pattern to Claude's `-p` flag
+- **JSON output**: `--output-format json` (single JSON) / `--output-format stream-json` (JSONL stream)
+- **JSON structure**: `{ "response": "...", "stats": {...}, "error": null }`
+- **Stream-json events**: `init`, `message`, `tool_use`, `tool_result`, `error`, `result`
+- **Stability**: Stable release channel (nightly → preview → stable), latest stable v0.29.x
+- **Stdin piping**: Supported (`echo "text" | gemini`)
+- **Auth for subprocess**: `GEMINI_API_KEY` env var (avoids interactive OAuth)
+- **Limitations**: Non-interactive mode restricts tool execution (WriteFile, shell commands require `--yolo/-y`)
+- **Session continuity**: Not supported in non-interactive mode (single-turn only)
+- **Exit codes**: `0` (success), `1` (error), `42` (input error), `53` (turn limit exceeded)
+- **Note**: `-p` flag is deprecated in favor of positional arg (`gemini "prompt"`), but still works
+
+> Gemini CLI has the lowest integration barrier due to its CLI interface being nearly identical to Claude Code.
+> Stream-json event types (`init`, `message`, `tool_use`, `tool_result`) map directly to Claude's `StreamMessage` enum.
+
+#### Codex CLI (Priority 2)
+
+- **Non-interactive mode**: `codex exec "prompt"` — uses `exec` subcommand instead of `-p` flag
+- **JSON output**: `codex exec --json "prompt"` → JSONL event stream to stdout
+- **Event types**: `thread.started`, `turn.started`, `turn.completed`, `item.*`, `error`
+- **Stability**: **Alpha** (v0.105.0-alpha.16 as of 2025-02) — APIs may change without notice
+- **Stdin piping**: Supported (`cat prompt.md | codex exec -`)
+- **Session resume**: `codex exec resume --last "prompt"` / `codex exec resume <SESSION_ID>`
+- **Extra**: `--output-schema` for schema-constrained responses
+
+> Codex CLI has a clean subprocess interface, but its alpha status means breaking changes are likely. Will integrate after it stabilizes.
+
+### Implementation Status
+
+- [x] **Extract shared types** — `StreamMessage`, `CancelToken`, `AgentResponse` in `src/services/agent.rs`
+- [x] **Add `src/services/gemini.rs`** — Gemini agent with `-p` and `--output-format stream-json`
+- [x] **Map StreamMessage** — Gemini JSON events → `StreamMessage` enum (`message`→`Text`, `tool_use`→`ToolUse`, `result`→`Done`)
+- [x] **Agent dispatch in bots** — `telegram.rs` and `discord.rs` branch on agent type
+- [x] **Update routing in `main.rs`** — `--agent gemini` accepted alongside `claude`
+- [ ] **Add `src/services/codex.rs`** — Codex agent with `exec --json` (after Codex stabilizes)
 
 ## Supported Platforms
 
