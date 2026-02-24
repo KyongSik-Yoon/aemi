@@ -1158,6 +1158,7 @@ async fn handle_text_message(
         let mut new_session_id: Option<String> = None;
         let mut spin_idx: usize = 0;
         let mut last_tool_name = String::new();
+        let mut last_file_path = String::new();
 
         while !done {
             if cancel_token.cancelled.load(Ordering::Relaxed) {
@@ -1202,6 +1203,17 @@ async fn handle_text_message(
                                 } else {
                                     full_response.push_str(&format!("\n> ⚙️ {}\n", summary));
                                 }
+                                // Extract file path for language detection in subsequent ToolResult
+                                if matches!(name.as_str(), "Read" | "Write" | "Edit") {
+                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) {
+                                        last_file_path = v.get("file_path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                    }
+                                } else {
+                                    last_file_path.clear();
+                                }
                                 last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
@@ -1209,7 +1221,8 @@ async fn handle_text_message(
                                     let ts = chrono::Local::now().format("%H:%M:%S");
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
                                 }
-                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true);
+                                let file_hint = if last_file_path.is_empty() { None } else { Some(last_file_path.as_str()) };
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true, file_hint);
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
