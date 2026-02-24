@@ -79,12 +79,17 @@ Each agent CLI provides a non-interactive mode and structured JSON output, makin
 - **Non-interactive mode**: `gemini -p "prompt"` — identical pattern to Claude's `-p` flag
 - **JSON output**: `--output-format json` (single JSON) / `--output-format stream-json` (JSONL stream)
 - **JSON structure**: `{ "response": "...", "stats": {...}, "error": null }`
-- **Stability**: Stable release channel available (nightly → preview → stable)
+- **Stream-json events**: `init`, `message`, `tool_use`, `tool_result`, `error`, `result`
+- **Stability**: Stable release channel (nightly → preview → stable), latest stable v0.29.x
 - **Stdin piping**: Supported (`echo "text" | gemini`)
+- **Auth for subprocess**: `GEMINI_API_KEY` env var (avoids interactive OAuth)
 - **Limitations**: Non-interactive mode restricts tool execution (WriteFile, shell commands require `--yolo/-y`)
 - **Session continuity**: Not supported in non-interactive mode (single-turn only)
+- **Exit codes**: `0` (success), `1` (error), `42` (input error), `53` (turn limit exceeded)
+- **Note**: `-p` flag is deprecated in favor of positional arg (`gemini "prompt"`), but still works
 
 > Gemini CLI has the lowest integration barrier due to its CLI interface being nearly identical to Claude Code.
+> Stream-json event types (`init`, `message`, `tool_use`, `tool_result`) map directly to Claude's `StreamMessage` enum.
 
 #### Codex CLI (Priority 2)
 
