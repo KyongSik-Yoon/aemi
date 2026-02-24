@@ -1,6 +1,6 @@
 [package]
 name = "aimi"
-version = "0.4.36"
+version = "0.0.1"
 edition = "2021"
 authors = ["cokac <monogatree@gmail.com>"]
 description = "LLM CLI routing tool with Telegram and Discord bot integration"
