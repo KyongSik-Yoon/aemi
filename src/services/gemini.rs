@@ -69,6 +69,7 @@ fn debug_log(msg: &str) {
 }
 
 /// Check if Gemini CLI is available
+#[allow(dead_code)]
 pub fn is_gemini_available() -> bool {
     #[cfg(not(unix))]
     {
@@ -82,6 +83,7 @@ pub fn is_gemini_available() -> bool {
 }
 
 /// Execute a command using Gemini CLI (non-streaming)
+#[allow(dead_code)]
 pub fn execute_command(
     prompt: &str,
     working_dir: &str,
@@ -159,6 +161,7 @@ pub fn execute_command(
 }
 
 /// Parse Gemini CLI JSON output: { "response": "...", "stats": {...}, "error": null }
+#[allow(dead_code)]
 fn parse_gemini_json_output(output: &str) -> AgentResponse {
     if let Ok(json) = serde_json::from_str::<Value>(output.trim()) {
         // Check for error field

@@ -69,6 +69,7 @@ fn debug_log(msg: &str) {
 }
 
 /// Check if OpenCode CLI is available
+#[allow(dead_code)]
 pub fn is_opencode_available() -> bool {
     #[cfg(not(unix))]
     {
@@ -82,6 +83,7 @@ pub fn is_opencode_available() -> bool {
 }
 
 /// Execute a command using OpenCode CLI (non-streaming)
+#[allow(dead_code)]
 pub fn execute_command(
     prompt: &str,
     session_id: Option<&str>,
@@ -162,6 +164,7 @@ pub fn execute_command(
 }
 
 /// Parse OpenCode CLI JSONL output: extract sessionID and last text content
+#[allow(dead_code)]
 fn parse_opencode_jsonl_output(output: &str) -> AgentResponse {
     let mut session_id: Option<String> = None;
     let mut last_text: Option<String> = None;

@@ -69,6 +69,7 @@ fn debug_log(msg: &str) {
 }
 
 /// Check if Codex CLI is available
+#[allow(dead_code)]
 pub fn is_codex_available() -> bool {
     #[cfg(not(unix))]
     {
@@ -82,6 +83,7 @@ pub fn is_codex_available() -> bool {
 }
 
 /// Execute a command using Codex CLI (non-streaming)
+#[allow(dead_code)]
 pub fn execute_command(
     prompt: &str,
     session_id: Option<&str>,
@@ -162,6 +164,7 @@ pub fn execute_command(
 }
 
 /// Parse Codex CLI JSONL output: extract thread_id and last agent_message text
+#[allow(dead_code)]
 fn parse_codex_jsonl_output(output: &str) -> AgentResponse {
     let mut thread_id: Option<String> = None;
     let mut last_text: Option<String> = None;
