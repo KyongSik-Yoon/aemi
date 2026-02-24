@@ -1189,14 +1189,15 @@ async fn handle_text_message(
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
                                 // For multi-line summaries (e.g. Edit with inline diff), only put
-                                // the first line in the blockquote. If the full summary goes into
-                                // "> ⚙️ ...", subsequent lines (including ```diff blocks) fall
-                                // outside the blockquote context and Discord mis-renders them.
+                                // the first line in the blockquote. The rest (e.g. ```diff block)
+                                // goes after a blank line so Discord exits the blockquote context
+                                // and applies syntax highlighting to the code block.
                                 if let Some(nl_pos) = summary.find('\n') {
                                     let first_line = &summary[..nl_pos];
                                     let rest = &summary[nl_pos + 1..];
                                     full_response.push_str(&format!("\n> ⚙️ {}\n", first_line));
                                     if !rest.is_empty() {
+                                        full_response.push('\n');
                                         full_response.push_str(rest);
                                         full_response.push('\n');
                                     }
@@ -1222,7 +1223,7 @@ async fn handle_text_message(
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
                                 }
                                 let file_hint = if last_file_path.is_empty() { None } else { Some(last_file_path.as_str()) };
-                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true, file_hint);
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, file_hint);
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
@@ -1346,6 +1347,7 @@ async fn handle_text_message(
         }
 
         let full_response = normalize_empty_lines(&full_response);
+        let full_response = fix_diff_code_blocks(&full_response);
 
         rate_limit_wait(&state_owned, channel_id).await;
         if full_response.len() <= DISCORD_MSG_LIMIT {
@@ -1599,6 +1601,135 @@ async fn send_long_message_raw(
     Ok(())
 }
 
+/// Fix code blocks that contain diff content but use a non-diff language hint.
+/// Discord only applies +/- coloring (green/red) when the code block uses ```diff.
+/// Claude sometimes wraps diff-like content in ```kotlin, ```rust, etc.
+fn fix_diff_code_blocks(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut pos = 0;
+
+    while pos < bytes.len() {
+        // Look for code fence opening: ``` at start of line (possibly after whitespace)
+        if let Some(fence_start) = find_code_fence(bytes, pos) {
+            let fence_line_end = memchr_newline(bytes, fence_start);
+            let backticks_end = fence_start + count_backticks(bytes, fence_start);
+            let lang_hint = text[backticks_end..fence_line_end].trim();
+            let backtick_count = backticks_end - fence_start;
+
+            // Find the closing fence
+            if let Some(close_start) = find_closing_fence(bytes, fence_line_end, backtick_count) {
+                let block_content = &text[fence_line_end..close_start];
+                let block_content = block_content.strip_prefix('\n').unwrap_or(block_content);
+                let close_line_end = memchr_newline(bytes, close_start);
+
+                // Only fix blocks with a non-diff language hint that contain diff content
+                if !lang_hint.is_empty() && lang_hint != "diff" && formatter::is_diff_content(block_content) {
+                    // Copy everything before this fence
+                    result.push_str(&text[pos..fence_start]);
+                    // Write corrected fence with diff hint
+                    for _ in 0..backtick_count {
+                        result.push('`');
+                    }
+                    result.push_str("diff");
+                    // Copy from end of fence line to end of closing fence line
+                    result.push_str(&text[fence_line_end..close_line_end]);
+                    pos = close_line_end;
+                } else {
+                    // No change needed, copy through closing fence
+                    result.push_str(&text[pos..close_line_end]);
+                    pos = close_line_end;
+                }
+            } else {
+                // No closing fence found, copy the fence line as-is
+                result.push_str(&text[pos..fence_line_end]);
+                pos = fence_line_end;
+            }
+        } else {
+            // No more code fences, copy rest of text
+            result.push_str(&text[pos..]);
+            break;
+        }
+    }
+
+    result
+}
+
+/// Find the next code fence (```) starting from `from`, at start of a line.
+fn find_code_fence(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i < bytes.len() {
+        // Must be at start of line (i==0 or preceded by \n)
+        if i == 0 || bytes[i - 1] == b'\n' {
+            // Skip optional leading whitespace
+            let mut j = i;
+            while j < bytes.len() && bytes[j] == b' ' {
+                j += 1;
+            }
+            if j + 2 < bytes.len() && bytes[j] == b'`' && bytes[j + 1] == b'`' && bytes[j + 2] == b'`' {
+                return Some(j);
+            }
+        }
+        // Advance to next line
+        match bytes[i..].iter().position(|&b| b == b'\n') {
+            Some(nl) => i += nl + 1,
+            None => break,
+        }
+    }
+    None
+}
+
+fn count_backticks(bytes: &[u8], from: usize) -> usize {
+    let mut count = 0;
+    while from + count < bytes.len() && bytes[from + count] == b'`' {
+        count += 1;
+    }
+    count
+}
+
+fn memchr_newline(bytes: &[u8], from: usize) -> usize {
+    match bytes[from..].iter().position(|&b| b == b'\n') {
+        Some(nl) => from + nl + 1,
+        None => bytes.len(),
+    }
+}
+
+fn find_closing_fence(bytes: &[u8], from: usize, backtick_count: usize) -> Option<usize> {
+    let mut i = from;
+    // Skip past opening line
+    if i < bytes.len() && bytes[i] == b'\n' {
+        i += 1;
+    }
+    while i < bytes.len() {
+        // Must be at start of line
+        let line_start = i;
+        // Skip optional leading whitespace
+        while i < bytes.len() && bytes[i] == b' ' {
+            i += 1;
+        }
+        // Check for backticks
+        let bt_start = i;
+        let bt_count = count_backticks(bytes, i);
+        if bt_count >= backtick_count {
+            // Check rest of line is empty (or just whitespace)
+            let rest_start = bt_start + bt_count;
+            let line_end = bytes[rest_start..].iter().position(|&b| b == b'\n')
+                .map(|p| rest_start + p)
+                .unwrap_or(bytes.len());
+            let rest = &bytes[rest_start..line_end];
+            if rest.iter().all(|&b| b == b' ' || b == b'\t') {
+                return Some(line_start);
+            }
+        }
+        // Advance to next line
+        match bytes[i..].iter().position(|&b| b == b'\n') {
+            Some(nl) => i += nl + 1,
+            None => break,
+        }
+    }
+    None
+}
+
 /// Normalize consecutive empty lines to maximum of one
 fn normalize_empty_lines(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -1675,7 +1806,7 @@ fn format_tool_input(name: &str, input: &str) -> String {
             let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
             let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
             let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all, true)
+            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all)
         }
         "Glob" => {
             let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
@@ -1874,5 +2005,58 @@ mod tests {
         let input = "a\n\nb";
         let result = normalize_empty_lines(input);
         assert_eq!(result, "a\n\nb");
+    }
+
+    // --- fix_diff_code_blocks ---
+
+    #[test]
+    fn test_fix_diff_blocks_kotlin_to_diff() {
+        // Code block tagged as kotlin but content is diff → should become ```diff
+        let input = "text\n```kotlin\n- old line 1\n- old line 2\n+ new line 1\n+ new line 2\n```\nmore";
+        let result = fix_diff_code_blocks(input);
+        assert!(result.contains("```diff\n"), "should change kotlin to diff: {}", result);
+        assert!(!result.contains("```kotlin"), "should not contain kotlin hint");
+    }
+
+    #[test]
+    fn test_fix_diff_blocks_already_diff() {
+        // Code block already tagged as diff → no change
+        let input = "```diff\n- old\n+ new\n+ added\n+ more\n```";
+        let result = fix_diff_code_blocks(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_fix_diff_blocks_no_diff_content() {
+        // Regular kotlin code → no change
+        let input = "```kotlin\nval x = 1\nval y = 2\nfun main() {}\n```";
+        let result = fix_diff_code_blocks(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_fix_diff_blocks_plain_no_lang() {
+        // No language hint → no change (even if content is diff-like)
+        let input = "```\n- old\n+ new\n- more old\n+ more new\n```";
+        let result = fix_diff_code_blocks(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_fix_diff_blocks_preserves_surrounding() {
+        let input = "before text\n```rust\n@@ -1,3 +1,4 @@\n- removed\n+ added\n context\n```\nafter text";
+        let result = fix_diff_code_blocks(input);
+        assert!(result.starts_with("before text\n"), "should preserve before text");
+        assert!(result.ends_with("\nafter text"), "should preserve after text");
+        assert!(result.contains("```diff\n"), "should change rust to diff");
+    }
+
+    #[test]
+    fn test_fix_diff_blocks_multiple_blocks() {
+        let input = "```kotlin\nval x = 1\n```\n```rust\n@@ -1,2 +1,2 @@\n- old\n+ new\n```\n```python\nprint()\n```";
+        let result = fix_diff_code_blocks(input);
+        assert!(result.contains("```kotlin\n"), "kotlin block should be unchanged");
+        assert!(result.contains("```diff\n"), "rust block with diff content should become diff");
+        assert!(result.contains("```python\n"), "python block should be unchanged");
     }
 }
