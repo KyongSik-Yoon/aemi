@@ -15,7 +15,7 @@ use crate::services::formatter;
 use crate::services::utils::{truncate_str, normalize_empty_lines};
 use crate::services::bot_common;
 
-use super::{ChatSession, SharedState, TELEGRAM_MSG_LIMIT, token_hash};
+use super::{SharedState, TELEGRAM_MSG_LIMIT, token_hash};
 use super::messages::{shared_rate_limit_wait, send_long_message};
 use super::markdown::markdown_to_telegram_html;
 

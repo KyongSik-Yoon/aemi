@@ -275,8 +275,13 @@ pub fn find_closing_single(chars: &[char], start: usize, marker: char) -> Option
     let mut i = start;
     while i < len {
         if chars[i] == marker {
-            // Don't match empty or double marker
-            if i > start && (i + 1 >= len || chars[i + 1] != marker) {
+            // Skip double markers entirely
+            if i + 1 < len && chars[i + 1] == marker {
+                i += 2;
+                continue;
+            }
+            // Don't match empty
+            if i > start {
                 return Some(i);
             }
         }

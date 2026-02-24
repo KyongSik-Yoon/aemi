@@ -7,8 +7,6 @@ use teloxide::types::ParseMode;
 
 use crate::services::session::{HistoryItem, HistoryType};
 use crate::services::bot_common::{self, ALL_TOOLS, normalize_tool_name, tool_info, risk_badge};
-use crate::services::formatter;
-
 use super::{ChatSession, SharedState, token_hash};
 use super::messages::{shared_rate_limit_wait, send_long_message, html_escape};
 

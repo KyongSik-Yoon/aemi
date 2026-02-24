@@ -16,7 +16,7 @@ use crate::services::formatter;
 use crate::services::utils::{truncate_str, normalize_empty_lines};
 use crate::services::bot_common;
 
-use super::{ChannelSession, SharedState, DISCORD_MSG_LIMIT, discord_token_hash};
+use super::{SharedState, DISCORD_MSG_LIMIT, discord_token_hash};
 use super::messages::{rate_limit_wait, send_long_message_raw};
 use super::formatting::fix_diff_code_blocks;
 
