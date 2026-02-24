@@ -95,11 +95,9 @@ pub fn execute_command(
         "--full-auto".to_string(),
     ];
 
-    // Session resume support
-    if let Some(sid) = session_id {
-        args.push("--resume".to_string());
-        args.push(sid.to_string());
-    }
+    // Note: Codex CLI does not support --resume for session continuity.
+    // session_id is accepted for API compatibility but not passed to the CLI.
+    let _ = session_id;
 
     // Prompt as positional argument (last)
     args.push(prompt.to_string());
@@ -262,11 +260,10 @@ IMPORTANT: Format your responses using Markdown for better readability:
         "--full-auto".to_string(),
     ];
 
-    // Session resume support
-    if let Some(sid) = session_id {
-        debug_log(&format!("Resuming session: {}", sid));
-        args.push("--resume".to_string());
-        args.push(sid.to_string());
+    // Note: Codex CLI does not support --resume for session continuity.
+    // Session tracking is handled at the aimi level only.
+    if session_id.is_some() {
+        debug_log("Session ID available but Codex CLI does not support --resume, skipping");
     }
 
     // Prompt as positional argument (must be last)
@@ -303,6 +300,9 @@ IMPORTANT: Format your responses using Markdown for better readability:
 
     // Note: Codex uses positional arg for prompt, NOT stdin.
     // No stdin write needed.
+
+    // Take stderr handle before reading stdout so we can report CLI errors
+    let stderr_handle = child.stderr.take();
 
     // Read stdout line by line for streaming
     let stdout = child.stdout.take()
@@ -397,7 +397,17 @@ IMPORTANT: Format your responses using Markdown for better readability:
     }
 
     if !status.success() {
-        return Err(format!("Process exited with code {:?}", status.code()));
+        // Read stderr for actual error details from the CLI
+        let stderr_msg = stderr_handle.and_then(|h| {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut BufReader::new(h), &mut buf).ok()?;
+            let trimmed = buf.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
+        return Err(match stderr_msg {
+            Some(msg) => msg,
+            None => format!("Process exited with code {:?}", status.code()),
+        });
     }
 
     debug_log("=== codex execute_command_streaming END (success) ===");

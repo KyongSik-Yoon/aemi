@@ -299,6 +299,9 @@ IMPORTANT: Format your responses using Markdown for better readability:
         *token.child_pid.lock().unwrap() = Some(child.id());
     }
 
+    // Take stderr handle before reading stdout so we can report CLI errors
+    let stderr_handle = child.stderr.take();
+
     // Read stdout line by line for streaming
     let stdout = child.stdout.take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
@@ -401,7 +404,17 @@ IMPORTANT: Format your responses using Markdown for better readability:
     }
 
     if !status.success() {
-        return Err(format!("Process exited with code {:?}", status.code()));
+        // Read stderr for actual error details from the CLI
+        let stderr_msg = stderr_handle.and_then(|h| {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut BufReader::new(h), &mut buf).ok()?;
+            let trimmed = buf.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
+        return Err(match stderr_msg {
+            Some(msg) => msg,
+            None => format!("Process exited with code {:?}", status.code()),
+        });
     }
 
     debug_log("=== opencode execute_command_streaming END (success) ===");

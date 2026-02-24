@@ -1669,12 +1669,12 @@ fn fix_diff_code_blocks(text: &str) -> String {
                 if !lang_hint.is_empty() && lang_hint != "diff" && formatter::is_diff_content(block_content) {
                     // Copy everything before this fence
                     result.push_str(&text[pos..fence_start]);
-                    // Write corrected fence with diff hint
+                    // Write corrected fence with diff hint + newline
                     for _ in 0..backtick_count {
                         result.push('`');
                     }
-                    result.push_str("diff");
-                    // Copy from end of fence line to end of closing fence line
+                    result.push_str("diff\n");
+                    // Copy from content start to end of closing fence line
                     result.push_str(&text[fence_line_end..close_line_end]);
                     pos = close_line_end;
                 } else {

@@ -88,8 +88,10 @@ pub fn execute_command(
     prompt: &str,
     working_dir: &str,
 ) -> AgentResponse {
+    // Gemini CLI: -p/--prompt takes the prompt text as its argument value (not stdin)
     let args = vec![
         "-p".to_string(),
+        prompt.to_string(),
         "--output-format".to_string(),
         "json".to_string(),
         "--yolo".to_string(),
@@ -107,10 +109,9 @@ pub fn execute_command(
         }
     };
 
-    let mut child = match Command::new(gemini_bin)
+    let child = match Command::new(gemini_bin)
         .args(&args)
         .current_dir(working_dir)
-        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -125,11 +126,6 @@ pub fn execute_command(
             };
         }
     };
-
-    // Write prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(prompt.as_bytes());
-    }
 
     // Wait for output
     match child.wait_with_output() {
@@ -252,8 +248,10 @@ IMPORTANT: Format your responses using Markdown for better readability:
         Some(sp) => format!("[System Instructions]\n{}\n\n[User Message]\n{}", sp, prompt),
     };
 
+    // Gemini CLI: -p/--prompt takes the prompt text as its argument value (not stdin)
     let args = vec![
         "-p".to_string(),
+        effective_prompt,
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--yolo".to_string(),
@@ -272,7 +270,6 @@ IMPORTANT: Format your responses using Markdown for better readability:
     let mut child = Command::new(gemini_bin)
         .args(&args)
         .current_dir(working_dir)
-        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -287,29 +284,16 @@ IMPORTANT: Format your responses using Markdown for better readability:
         *token.child_pid.lock().unwrap() = Some(child.id());
     }
 
-    // Write prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        debug_log(&format!("Writing prompt to stdin ({} bytes)...", effective_prompt.len()));
-        let _ = stdin.write_all(effective_prompt.as_bytes());
-        // stdin is dropped here, which closes it - this signals end of input to gemini
-    }
+    // Take stderr handle before reading stdout so we can report CLI errors
+    let stderr_handle = child.stderr.take();
 
     // Read stdout line by line for streaming
     let stdout = child.stdout.take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
     let reader = BufReader::new(stdout);
 
-    // Generate a synthetic session ID for aimi-level session tracking
-    let synthetic_session_id = format!("gemini-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
-
-    // Send Init message with synthetic session ID
-    let _ = sender.send(StreamMessage::Init {
-        session_id: synthetic_session_id.clone(),
-    });
-
+    let mut captured_session_id: Option<String> = None;
+    let mut sent_init = false;
     let mut final_result: Option<String> = None;
     let mut line_count = 0;
 
@@ -345,6 +329,12 @@ IMPORTANT: Format your responses using Markdown for better readability:
 
         if let Ok(json) = serde_json::from_str::<Value>(&line) {
             if let Some(msg) = parse_stream_message(&json) {
+                // Capture session_id from Init
+                if let StreamMessage::Init { ref session_id } = msg {
+                    captured_session_id = Some(session_id.clone());
+                    sent_init = true;
+                }
+
                 // Track final result
                 if let StreamMessage::Done { ref result, .. } = msg {
                     final_result = Some(result.clone());
@@ -372,17 +362,36 @@ IMPORTANT: Format your responses using Markdown for better readability:
     let status = child.wait().map_err(|e| format!("Process error: {}", e))?;
     debug_log(&format!("Process finished, exit_code: {:?}", status.code()));
 
+    // If we never got an Init, send a synthetic one
+    if !sent_init {
+        let synthetic_id = format!("gemini-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis());
+        let _ = sender.send(StreamMessage::Init { session_id: synthetic_id });
+    }
+
     // If we didn't get a proper Done message, send one now
     if final_result.is_none() {
         let _ = sender.send(StreamMessage::Done {
             result: String::new(),
-            session_id: Some(synthetic_session_id),
+            session_id: captured_session_id,
         });
     }
 
     if !status.success() {
         // Gemini exit codes: 1=error, 42=input error, 53=turn limit
-        return Err(format!("Process exited with code {:?}", status.code()));
+        // Read stderr for actual error details from the CLI
+        let stderr_msg = stderr_handle.and_then(|h| {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut BufReader::new(h), &mut buf).ok()?;
+            let trimmed = buf.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
+        return Err(match stderr_msg {
+            Some(msg) => msg,
+            None => format!("Process exited with code {:?}", status.code()),
+        });
     }
 
     debug_log("=== gemini execute_command_streaming END (success) ===");
@@ -391,84 +400,74 @@ IMPORTANT: Format your responses using Markdown for better readability:
 
 /// Parse a Gemini stream-json line into a StreamMessage.
 ///
-/// Gemini stream-json events:
-/// - init: session metadata
-/// - message (role=assistant): text chunks
-/// - tool_use: tool call requests
-/// - tool_result: tool execution output
-/// - result: final outcome with stats
-/// - error: non-fatal warnings
+/// Gemini CLI (TerminaI) stream-json events:
+/// - init: {"type":"init","session_id":"...","model":"..."}
+/// - message: {"type":"message","role":"assistant","content":"...","delta":true}
+/// - tool_use: {"type":"tool_use","tool_name":"...","tool_id":"...","parameters":{...}}
+/// - tool_result: {"type":"tool_result","tool_id":"...","status":"success|error","output":"..."}
+/// - result: {"type":"result","status":"success|error","error":{...},"stats":{...}}
 fn parse_stream_message(json: &Value) -> Option<StreamMessage> {
     let msg_type = json.get("type")?.as_str()?;
 
     match msg_type {
         "init" => {
-            // Gemini init event — we already sent a synthetic Init,
-            // but if Gemini provides one, use it for logging
-            debug_log("Gemini init event received");
-            None // Already sent synthetic Init
+            // {"type":"init","timestamp":"...","session_id":"...","model":"..."}
+            let session_id = json.get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            debug_log(&format!("Gemini init: session_id={}", session_id));
+            Some(StreamMessage::Init { session_id })
         }
         "message" => {
-            // {"type":"message","role":"assistant","content":[{"type":"text","text":"..."}]}
+            // {"type":"message","role":"assistant","content":"text here","delta":true}
             let role = json.get("role").and_then(|v| v.as_str()).unwrap_or("");
             if role != "assistant" {
                 return None;
             }
 
-            if let Some(content) = json.get("content").and_then(|v| v.as_array()) {
-                for item in content {
-                    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    if item_type == "text" {
-                        let text = item.get("text")?.as_str()?.to_string();
-                        return Some(StreamMessage::Text { content: text });
-                    }
+            // Gemini CLI sends content as a plain string (not an array)
+            if let Some(text) = json.get("content").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    return Some(StreamMessage::Text { content: text.to_string() });
                 }
-            }
-            // Fallback: check for top-level "text" field
-            if let Some(text) = json.get("text").and_then(|v| v.as_str()) {
-                return Some(StreamMessage::Text { content: text.to_string() });
             }
             None
         }
         "tool_use" => {
-            // {"type":"tool_use","name":"shell","input":{"command":"ls"}}
-            let name = json.get("name")?.as_str()?.to_string();
-            let input = json.get("input")
+            // {"type":"tool_use","tool_name":"run_terminal_command","tool_id":"...","parameters":{...}}
+            let name = json.get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let input = json.get("parameters")
                 .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
                 .unwrap_or_default();
             Some(StreamMessage::ToolUse { name, input })
         }
         "tool_result" => {
-            // {"type":"tool_result","content":"...","is_error":false}
-            let content = if let Some(s) = json.get("content").and_then(|v| v.as_str()) {
-                s.to_string()
-            } else if let Some(arr) = json.get("content").and_then(|v| v.as_array()) {
-                arr.iter()
-                    .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                String::new()
-            };
-            let is_error = json.get("is_error")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            Some(StreamMessage::ToolResult { content, is_error })
-        }
-        "result" => {
-            // {"type":"result","response":"...","stats":{...}}
-            let result = json.get("response")
+            // {"type":"tool_result","tool_id":"...","status":"success","output":"..."}
+            let status = json.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let is_error = status != "success";
+            let content = json.get("output")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            Some(StreamMessage::Done { result, session_id: None })
+            Some(StreamMessage::ToolResult { content, is_error })
         }
-        "error" => {
-            let message = json.get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error")
-                .to_string();
-            Some(StreamMessage::Error { message })
+        "result" => {
+            // {"type":"result","status":"success|error","error":{...},"stats":{...}}
+            let status = json.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if status == "error" {
+                let error_msg = json.get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error")
+                    .to_string();
+                Some(StreamMessage::Error { message: error_msg })
+            } else {
+                Some(StreamMessage::Done { result: String::new(), session_id: None })
+            }
         }
         _ => None
     }
@@ -504,12 +503,23 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_stream_message_text() {
+    fn test_parse_stream_init() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}]}"#
+            r#"{"type":"init","timestamp":"2026-02-24T09:21:14.289Z","session_id":"c1fd9e90-3060","model":"auto-gemini-3"}"#
         ).unwrap();
         match parse_stream_message(&json) {
-            Some(StreamMessage::Text { content }) => assert_eq!(content, "Hello"),
+            Some(StreamMessage::Init { session_id }) => assert_eq!(session_id, "c1fd9e90-3060"),
+            _ => panic!("Expected Init message"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stream_message_text() {
+        let json: Value = serde_json::from_str(
+            r#"{"type":"message","timestamp":"2026-02-24T09:21:25.050Z","role":"assistant","content":"Hello world","delta":true}"#
+        ).unwrap();
+        match parse_stream_message(&json) {
+            Some(StreamMessage::Text { content }) => assert_eq!(content, "Hello world"),
             _ => panic!("Expected Text message"),
         }
     }
@@ -517,11 +527,11 @@ mod tests {
     #[test]
     fn test_parse_stream_message_tool_use() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"tool_use","name":"shell","input":{"command":"ls -la"}}"#
+            r#"{"type":"tool_use","timestamp":"2026-02-24T09:21:31.169Z","tool_name":"run_terminal_command","tool_id":"run_terminal_command-123","parameters":{"command":"ls -la","description":"List files"}}"#
         ).unwrap();
         match parse_stream_message(&json) {
             Some(StreamMessage::ToolUse { name, input }) => {
-                assert_eq!(name, "shell");
+                assert_eq!(name, "run_terminal_command");
                 assert!(input.contains("ls -la"));
             }
             _ => panic!("Expected ToolUse message"),
@@ -529,13 +539,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_stream_message_tool_result() {
+    fn test_parse_stream_message_tool_result_success() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"tool_result","content":"file.txt","is_error":false}"#
+            r#"{"type":"tool_result","timestamp":"2026-02-24T09:21:26.415Z","tool_id":"tool-123","status":"success","output":"file.txt\ndir/"}"#
         ).unwrap();
         match parse_stream_message(&json) {
             Some(StreamMessage::ToolResult { content, is_error }) => {
-                assert_eq!(content, "file.txt");
+                assert_eq!(content, "file.txt\ndir/");
                 assert!(!is_error);
             }
             _ => panic!("Expected ToolResult message"),
@@ -543,13 +553,27 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_stream_message_result() {
+    fn test_parse_stream_message_tool_result_error() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"result","response":"All done!","stats":{}}"#
+            r#"{"type":"tool_result","tool_id":"tool-456","status":"error","output":"command not found"}"#
+        ).unwrap();
+        match parse_stream_message(&json) {
+            Some(StreamMessage::ToolResult { content, is_error }) => {
+                assert_eq!(content, "command not found");
+                assert!(is_error);
+            }
+            _ => panic!("Expected ToolResult message with error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stream_message_result_success() {
+        let json: Value = serde_json::from_str(
+            r#"{"type":"result","timestamp":"2026-02-24T09:22:00.000Z","status":"success","stats":{"total_tokens":100}}"#
         ).unwrap();
         match parse_stream_message(&json) {
             Some(StreamMessage::Done { result, session_id }) => {
-                assert_eq!(result, "All done!");
+                assert!(result.is_empty());
                 assert!(session_id.is_none());
             }
             _ => panic!("Expected Done message"),
@@ -557,13 +581,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_stream_message_error() {
+    fn test_parse_stream_message_result_error() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"error","message":"Rate limit exceeded"}"#
+            r#"{"type":"result","status":"error","error":{"type":"Error","message":"[API Error: quota exceeded]"},"stats":{"total_tokens":100}}"#
         ).unwrap();
         match parse_stream_message(&json) {
             Some(StreamMessage::Error { message }) => {
-                assert_eq!(message, "Rate limit exceeded");
+                assert_eq!(message, "[API Error: quota exceeded]");
             }
             _ => panic!("Expected Error message"),
         }
@@ -572,7 +596,7 @@ mod tests {
     #[test]
     fn test_parse_stream_message_user_message_ignored() {
         let json: Value = serde_json::from_str(
-            r#"{"type":"message","role":"user","content":[{"type":"text","text":"ignored"}]}"#
+            r#"{"type":"message","role":"user","content":"hello"}"#
         ).unwrap();
         assert!(parse_stream_message(&json).is_none());
     }
