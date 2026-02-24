@@ -858,15 +858,16 @@ async fn handle_shell_command(
             let mut parts = Vec::new();
 
             if !stdout.is_empty() {
-                let trimmed = stdout.trim_end();
-                if formatter::is_diff_content(trimmed) {
-                    parts.push(format!("```diff\n{}\n```", trimmed));
+                let clean = formatter::strip_ansi_codes(stdout.trim_end());
+                if formatter::is_diff_content(&clean) {
+                    parts.push(format!("```diff\n{}\n```", clean));
                 } else {
-                    parts.push(format!("```\n{}\n```", trimmed));
+                    parts.push(format!("```\n{}\n```", clean));
                 }
             }
             if !stderr.is_empty() {
-                parts.push(format!("stderr:\n```\n{}\n```", stderr.trim_end()));
+                let clean_err = formatter::strip_ansi_codes(stderr.trim_end());
+                parts.push(format!("stderr:\n```\n{}\n```", clean_err));
             }
             if parts.is_empty() {
                 parts.push(format!("(exit code: {})", exit_code));
@@ -1096,7 +1097,12 @@ async fn handle_text_message(
          - Use `inline code` for file names, commands, and short values.\n\
          - Use code blocks (```language) for multi-line code. Always specify the language hint.\n\
          - Prefer summarized output over raw dumps. Show key results, not everything.\n\
-         - Do NOT use headers (## Title) unless the response is very long — they are visually heavy on Discord.\n\n\
+         - Do NOT use headers (## Title) unless the response is very long — they are visually heavy on Discord.\n\
+         - CRITICAL: When showing diff or patch output, ALWAYS wrap it in ```diff ... ``` code blocks.\n\
+           Raw diff lines starting with - or + outside a code block become Discord bullet points.\n\
+         - CRITICAL: When showing grep/search results, file listings, or command output with multiple lines,\n\
+           ALWAYS wrap them in ``` ... ``` code blocks.\n\
+         - Never output raw terminal/shell output as plain text — always use a code block.\n\n\
          IMPORTANT: The user is on Discord and CANNOT interact with any interactive prompts, dialogs, or confirmation requests. \
          All tools that require user interaction (such as AskUserQuestion, EnterPlanMode, ExitPlanMode) will NOT work. \
          Never use tools that expect user interaction. If you need clarification, just ask in plain text.\n\
@@ -1152,6 +1158,7 @@ async fn handle_text_message(
         let mut new_session_id: Option<String> = None;
         let mut spin_idx: usize = 0;
         let mut last_tool_name = String::new();
+        let mut last_file_path = String::new();
 
         while !done {
             if cancel_token.cancelled.load(Ordering::Relaxed) {
@@ -1181,8 +1188,32 @@ async fn handle_text_message(
                                 let summary = format_tool_input(&name, &input);
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
-                                // Compact tool indicator: use > blockquote for less visual weight
-                                full_response.push_str(&format!("\n> ⚙️ {}\n", summary));
+                                // For multi-line summaries (e.g. Edit with inline diff), only put
+                                // the first line in the blockquote. If the full summary goes into
+                                // "> ⚙️ ...", subsequent lines (including ```diff blocks) fall
+                                // outside the blockquote context and Discord mis-renders them.
+                                if let Some(nl_pos) = summary.find('\n') {
+                                    let first_line = &summary[..nl_pos];
+                                    let rest = &summary[nl_pos + 1..];
+                                    full_response.push_str(&format!("\n> ⚙️ {}\n", first_line));
+                                    if !rest.is_empty() {
+                                        full_response.push_str(rest);
+                                        full_response.push('\n');
+                                    }
+                                } else {
+                                    full_response.push_str(&format!("\n> ⚙️ {}\n", summary));
+                                }
+                                // Extract file path for language detection in subsequent ToolResult
+                                if matches!(name.as_str(), "Read" | "Write" | "Edit") {
+                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) {
+                                        last_file_path = v.get("file_path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                    }
+                                } else {
+                                    last_file_path.clear();
+                                }
                                 last_tool_name = name;
                             }
                             StreamMessage::ToolResult { content, is_error } => {
@@ -1190,7 +1221,8 @@ async fn handle_text_message(
                                     let ts = chrono::Local::now().format("%H:%M:%S");
                                     println!("  [{ts}]   ✗ Error: {}", truncate_str(&content, 80));
                                 }
-                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true);
+                                let file_hint = if last_file_path.is_empty() { None } else { Some(last_file_path.as_str()) };
+                                let formatted = formatter::format_tool_result(&content, is_error, &last_tool_name, true, file_hint);
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
@@ -1484,6 +1516,28 @@ async fn send_long_message(
     send_long_message_raw(&ctx.http, channel_id, text, state).await
 }
 
+/// Detect if a text chunk ends inside an unclosed code block.
+/// Returns the language hint (e.g. "diff", "rust") if a block is open, or None if not.
+/// Parses line-by-line so it correctly handles nested/multiple code blocks.
+fn unclosed_code_block_lang(text: &str) -> Option<String> {
+    let mut open_lang: Option<String> = None;
+    for line in text.lines() {
+        // Code fence lines start with ``` (optionally preceded by spaces)
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            if open_lang.is_some() {
+                // Closing fence
+                open_lang = None;
+            } else {
+                // Opening fence — capture language hint
+                let lang = trimmed[3..].trim().to_string();
+                open_lang = Some(lang);
+            }
+        }
+    }
+    open_lang
+}
+
 /// Send a long message using raw HTTP (for use in spawned tasks)
 async fn send_long_message_raw(
     http: &serenity::http::Http,
@@ -1508,18 +1562,17 @@ async fn send_long_message_raw(
 
         let safe_end = floor_char_boundary(remaining, DISCORD_MSG_LIMIT);
 
-        // Try to split at a newline for cleaner breaks
-        let split_at = remaining[..safe_end]
-            .rfind('\n')
-            .unwrap_or(safe_end);
+        // Try to split at a newline for cleaner breaks; avoid zero-length chunk
+        let split_at = match remaining[..safe_end].rfind('\n') {
+            Some(0) | None => safe_end,
+            Some(pos) => pos,
+        };
 
-        // Handle code block continuity across splits
         let (chunk, rest) = remaining.split_at(split_at);
 
-        // Check for unclosed code blocks and find the language hint
-        let backtick_count = chunk.matches("```").count();
-        let chunk_to_send = if backtick_count % 2 != 0 {
-            // Unclosed code block - close it
+        // Check whether the chunk ends inside an unclosed code block
+        let open_lang = unclosed_code_block_lang(chunk);
+        let chunk_to_send = if open_lang.is_some() {
             format!("{}\n```", chunk)
         } else {
             chunk.to_string()
@@ -1530,36 +1583,14 @@ async fn send_long_message_raw(
 
         remaining = rest.strip_prefix('\n').unwrap_or(rest);
 
-        // If we closed a code block, reopen it in the next chunk
-        if backtick_count % 2 != 0 {
-            // Find the language hint from the last opening ``` in the chunk
-            let lang_hint = chunk.rmatch_indices("```").next()
-                .and_then(|(pos, _)| {
-                    let after = &chunk[pos + 3..];
-                    let lang_end = after.find('\n').unwrap_or(after.len());
-                    let lang = after[..lang_end].trim();
-                    if !lang.is_empty() && lang.len() < 20 && lang.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '+') {
-                        Some(lang.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default();
-
-            remaining = remaining.strip_prefix("```").unwrap_or(remaining);
-            // Strip the language hint line too if present
-            if !lang_hint.is_empty() {
-                remaining = remaining.strip_prefix(&lang_hint).unwrap_or(remaining);
-                remaining = remaining.strip_prefix('\n').unwrap_or(remaining);
-            }
-            // We'll prepend ``` with language hint if there's more content
+        // If we force-closed an open code block, reopen it in the next message
+        if let Some(lang_hint) = open_lang {
             if !remaining.is_empty() {
-                let reopened = if !lang_hint.is_empty() {
-                    format!("```{}\n{}", lang_hint, remaining)
-                } else {
+                let reopened = if lang_hint.is_empty() {
                     format!("```\n{}", remaining)
+                } else {
+                    format!("```{}\n{}", lang_hint, remaining)
                 };
-                // Recursively handle the rest
                 return Box::pin(send_long_message_raw(http, channel_id, &reopened, state)).await;
             }
         }
@@ -1764,5 +1795,84 @@ fn format_tool_input(name: &str, input: &str) -> String {
         _ => {
             format!("{} {}", name, truncate_str(input, 200))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- unclosed_code_block_lang ---
+
+    #[test]
+    fn test_no_code_block() {
+        assert_eq!(unclosed_code_block_lang("just plain text\nno fences here"), None);
+    }
+
+    #[test]
+    fn test_closed_code_block() {
+        let text = "```rust\nfn main() {}\n```";
+        assert_eq!(unclosed_code_block_lang(text), None);
+    }
+
+    #[test]
+    fn test_open_code_block_with_lang() {
+        let text = "some text\n```diff\n- old line\n+ new line";
+        assert_eq!(unclosed_code_block_lang(text), Some("diff".to_string()));
+    }
+
+    #[test]
+    fn test_open_code_block_no_lang() {
+        let text = "prefix\n```\ncontent here";
+        assert_eq!(unclosed_code_block_lang(text), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_blocks_last_open() {
+        // Two complete blocks then one open
+        let text = "```rust\nfn a() {}\n```\n```python\nprint()\n```\n```diff\n+added";
+        assert_eq!(unclosed_code_block_lang(text), Some("diff".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_blocks_all_closed() {
+        let text = "```rust\nfn a() {}\n```\n```python\nprint()\n```";
+        assert_eq!(unclosed_code_block_lang(text), None);
+    }
+
+    #[test]
+    fn test_empty_text() {
+        assert_eq!(unclosed_code_block_lang(""), None);
+    }
+
+    // --- truncate_str ---
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_at_newline() {
+        let s = "line1\nline2\nline3";
+        // max_len = 10 → cuts at "line1\nline" → rfind('\n') = 5 → "line1"
+        let result = truncate_str(s, 10);
+        assert_eq!(result, "line1");
+    }
+
+    // --- normalize_empty_lines ---
+
+    #[test]
+    fn test_normalize_collapses_blank_lines() {
+        let input = "a\n\n\n\nb";
+        let result = normalize_empty_lines(input);
+        assert_eq!(result, "a\n\nb");
+    }
+
+    #[test]
+    fn test_normalize_single_blank_preserved() {
+        let input = "a\n\nb";
+        let result = normalize_empty_lines(input);
+        assert_eq!(result, "a\n\nb");
     }
 }
