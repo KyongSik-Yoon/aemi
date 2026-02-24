@@ -14,6 +14,7 @@ use crate::services::agent::{CancelToken, StreamMessage};
 use crate::services::claude::{self, DEFAULT_ALLOWED_TOOLS};
 use crate::services::gemini;
 use crate::services::codex;
+use crate::services::opencode;
 use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
 use crate::services::formatter;
 
@@ -1172,6 +1173,15 @@ async fn handle_text_message(
                 Some(cancel_token_clone),
             ),
             "codex" => codex::execute_command_streaming(
+                &context_prompt,
+                session_id_clone.as_deref(),
+                &current_path_clone,
+                tx.clone(),
+                Some(&system_prompt_owned),
+                Some(&allowed_tools),
+                Some(cancel_token_clone),
+            ),
+            "opencode" => opencode::execute_command_streaming(
                 &context_prompt,
                 session_id_clone.as_deref(),
                 &current_path_clone,
