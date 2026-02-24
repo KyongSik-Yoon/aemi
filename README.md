@@ -36,11 +36,7 @@ aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat
 
 ### Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be installed
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
+- Install the CLI tool for the agent you want to use (see [Agent Types](#agent-types))
 
 ### Build from source
 
@@ -57,6 +53,24 @@ cargo build --release
 ```
 
 See [build_manual.md](build_manual.md) for detailed build instructions including cross-compilation.
+
+## Agent Types
+
+Currently supported:
+
+| Agent | CLI Flag | Status |
+|-------|----------|--------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available |
+| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Planned |
+
+### Prerequisites per Agent
+
+Each agent requires its own CLI tool to be installed:
+
+- **Claude**: `npm install -g @anthropic-ai/claude-code`
+- **Codex**: `npm install -g @openai/codex` (planned)
+- **Gemini**: `npm install -g @anthropic-ai/gemini-cli` → TBD (planned)
 
 ## Supported Platforms
 
