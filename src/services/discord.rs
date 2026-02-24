@@ -1779,10 +1779,12 @@ fn format_tool_input(name: &str, input: &str) -> String {
         "Bash" => {
             let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
             let cmd = v.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            // Use only first line to avoid breaking inline backticks with heredocs/multi-line commands
+            let cmd_first_line = cmd.lines().next().unwrap_or(cmd);
             if !desc.is_empty() {
-                format!("{}: `{}`", desc, truncate_str(cmd, 150))
+                format!("{}: `{}`", desc, truncate_str(cmd_first_line, 150))
             } else {
-                format!("`{}`", truncate_str(cmd, 200))
+                format!("`{}`", truncate_str(cmd_first_line, 200))
             }
         }
         "Read" => {
