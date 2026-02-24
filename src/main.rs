@@ -347,7 +347,7 @@ fn main() {
 
     // Dispatch based on agent and routing
     match agent.as_str() {
-        "claude" | "gemini" => match routing.as_str() {
+        "claude" | "gemini" | "codex" => match routing.as_str() {
             "telegram" => {
                 let chat_id = match chat_id {
                     Some(id) => id,
@@ -379,7 +379,7 @@ fn main() {
             }
         },
         other => {
-            eprintln!("Error: unsupported agent '{}'. Supported: claude, gemini", other);
+            eprintln!("Error: unsupported agent '{}'. Supported: claude, gemini, codex", other);
         }
     }
 }
