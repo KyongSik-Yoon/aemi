@@ -22,11 +22,17 @@ This project is a fork of [kstost/cokacdir](https://github.com/kstost/cokacdir).
 # Query Claude Code directly
 aimi --prompt "explain this code"
 
-# Start Telegram bot server (--chat-id required)
+# Start Telegram bot server with Claude (--chat-id required)
 aimi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+
+# Start Telegram bot server with Gemini
+aimi --agent gemini --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server (--channel-id required)
 aimi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+
+# Start Discord bot server with Gemini
+aimi --agent gemini --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Run multiple Telegram bots simultaneously
 aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
@@ -59,15 +65,15 @@ See [build_manual.md](build_manual.md) for detailed build instructions including
 | Agent | CLI Flag | Status | Priority |
 |-------|----------|--------|----------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available | - |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Planned | 1st |
-| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned | 2nd |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Available | - |
+| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned | Next |
 
 ### Prerequisites per Agent
 
 Each agent requires its own CLI tool to be installed:
 
 - **Claude**: `npm install -g @anthropic-ai/claude-code`
-- **Gemini**: `npm install -g @google/gemini-cli` (planned)
+- **Gemini**: `npm install -g @google/gemini-cli`
 - **Codex**: `npm install -g @openai/codex` (planned)
 
 ### Integration Feasibility
@@ -103,13 +109,14 @@ Each agent CLI provides a non-interactive mode and structured JSON output, makin
 
 > Codex CLI has a clean subprocess interface, but its alpha status means breaking changes are likely. Will integrate after it stabilizes.
 
-### Implementation Plan
+### Implementation Status
 
-1. **Create Agent trait** — abstract `execute_command`, `execute_command_streaming`, `resolve_binary` into a common interface
-2. **Add `src/services/gemini.rs`** — implement Gemini agent with `-p` and `--output-format stream-json`
-3. **Map StreamMessage** — convert Gemini's JSON events to existing `StreamMessage` enum
-4. **Add `src/services/codex.rs`** — implement Codex agent with `exec --json` (after Codex stabilizes)
-5. **Update routing in `main.rs`** — add `"gemini"` and `"codex"` match arms
+- [x] **Extract shared types** — `StreamMessage`, `CancelToken`, `AgentResponse` in `src/services/agent.rs`
+- [x] **Add `src/services/gemini.rs`** — Gemini agent with `-p` and `--output-format stream-json`
+- [x] **Map StreamMessage** — Gemini JSON events → `StreamMessage` enum (`message`→`Text`, `tool_use`→`ToolUse`, `result`→`Done`)
+- [x] **Agent dispatch in bots** — `telegram.rs` and `discord.rs` branch on agent type
+- [x] **Update routing in `main.rs`** — `--agent gemini` accepted alongside `claude`
+- [ ] **Add `src/services/codex.rs`** — Codex agent with `exec --json` (after Codex stabilizes)
 
 ## Supported Platforms
 
