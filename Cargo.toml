@@ -1,13 +1,13 @@
 [package]
 name = "aimi"
-version = "0.0.1"
+version = "0.0.3"
 edition = "2021"
-authors = ["cokac <monogatree@gmail.com>"]
+authors = ["sam <sam@jennifersoft.com>"]
 description = "LLM CLI routing tool with Telegram and Discord bot integration"
 license = "MIT"
-repository = "https://github.com/kstost/aimi"
-homepage = "https://aimi.cokac.com"
-keywords = ["cli", "ai", "llm", "telegram", "discord"]
+repository = "https://github.com/KyongSik-Yoon/aimi"
+homepage = "https://www.jennifersoft.com"
+keywords = ["cli", "ai", "llm", "telegram", "discord", "claude", "codeX", "gemini", "opencode"]
 categories = ["command-line-utilities"]
 
 [dependencies]
