@@ -1,73 +1,13 @@
-use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader, Write};
+use std::process::Stdio;
+use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
-use std::sync::OnceLock;
-use std::fs::OpenOptions;
 use regex::Regex;
 use serde_json::Value;
 
 pub use super::agent::{StreamMessage, CancelToken, AgentResponse};
 
-/// Cached path to the claude binary.
-/// Once resolved, reused for all subsequent calls.
-static CLAUDE_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-/// Resolve the path to the claude binary.
-/// First tries `which claude`, then falls back to `bash -lc "which claude"`
-/// (for non-interactive SSH sessions where ~/.profile isn't loaded).
-fn resolve_claude_path() -> Option<String> {
-    // Try direct `which claude` first
-    if let Ok(output) = Command::new("which").arg("claude").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    // Fallback: use login shell to resolve PATH
-    if let Ok(output) = Command::new("bash")
-        .args(["-lc", "which claude"])
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
-/// Get the cached claude binary path, resolving it on first call.
-fn get_claude_path() -> Option<&'static str> {
-    CLAUDE_PATH.get_or_init(|| resolve_claude_path()).as_deref()
-}
-
-/// Debug logging helper (only active when AIMI_DEBUG=1)
-fn debug_log(msg: &str) {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    let enabled = ENABLED.get_or_init(|| {
-        std::env::var("AIMI_DEBUG").map(|v| v == "1").unwrap_or(false)
-    });
-    if !*enabled { return; }
-    if let Some(home) = dirs::home_dir() {
-        let debug_dir = home.join(".aimi").join("debug");
-        let _ = std::fs::create_dir_all(&debug_dir);
-        let log_path = debug_dir.join("claude.log");
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-        {
-            let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-            let _ = writeln!(file, "[{}] {}", timestamp, msg);
-        }
-    }
-}
+// Generate resolve_binary_path(), get_binary_path(), debug_log() for "claude"
+define_ai_service_helpers!("claude");
 
 /// Type alias for backward compatibility
 pub type ClaudeResponse = AgentResponse;
@@ -152,7 +92,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
         args.push(sid.to_string());
     }
 
-    let claude_bin = match get_claude_path() {
+    let claude_bin = match get_binary_path() {
         Some(path) => path,
         None => {
             return ClaudeResponse {
@@ -269,7 +209,7 @@ pub fn is_claude_available() -> bool {
 
     #[cfg(unix)]
     {
-        get_claude_path().is_some()
+        get_binary_path().is_some()
     }
 }
 
@@ -363,7 +303,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
         args.push(sid.to_string());
     }
 
-    let claude_bin = get_claude_path()
+    let claude_bin = get_binary_path()
         .ok_or_else(|| {
             debug_log("ERROR: Claude CLI not found");
             "Claude CLI not found. Is Claude CLI installed?".to_string()

@@ -4,6 +4,8 @@
 /// to HTML via `markdown_to_telegram_html()` at the final rendering step.
 /// Discord uses markdown natively.
 
+use crate::services::utils::floor_char_boundary;
+
 /// Strip ANSI terminal escape codes from a string.
 /// Handles `ESC[...m` color/style sequences that appear in command output.
 pub fn strip_ansi_codes(s: &str) -> String {
@@ -354,15 +356,171 @@ fn smart_truncate(s: &str, max_len: usize) -> String {
     format!("{}...", result)
 }
 
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
+/// Format tool input JSON into a human-readable summary.
+/// `short_names`: if true, file paths show only the filename (for Discord); if false, show full path (for Telegram).
+pub fn format_tool_input(name: &str, input: &str, short_names: bool) -> String {
+    use crate::services::utils::truncate_str;
+
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
+        return format!("{} {}", name, truncate_str(input, 200));
+    };
+
+    match name {
+        "Bash" => {
+            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let cmd = v.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let cmd_first_line = cmd.lines().next().unwrap_or(cmd);
+            if !desc.is_empty() {
+                format!("{}: `{}`", desc, truncate_str(cmd_first_line, 150))
+            } else {
+                format!("`{}`", truncate_str(cmd_first_line, 200))
+            }
+        }
+        "Read" => {
+            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            if short_names {
+                let short = fp.rsplit('/').next().unwrap_or(fp);
+                format!("Read `{}`", short)
+            } else {
+                format!("Read {}", fp)
+            }
+        }
+        "Write" => {
+            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let lines = content.lines().count();
+            let display_path = if short_names {
+                let short = fp.rsplit('/').next().unwrap_or(fp);
+                format!("`{}`", short)
+            } else {
+                fp.to_string()
+            };
+            if lines > 0 {
+                format!("Write {} ({} lines)", display_path, lines)
+            } else {
+                format!("Write {}", display_path)
+            }
+        }
+        "Edit" => {
+            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+            let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+            let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
+            format_edit_tool_use(fp, old_str, new_str, replace_all)
+        }
+        "Glob" => {
+            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if !path.is_empty() {
+                format!("Glob {} in {}", pattern, path)
+            } else {
+                format!("Glob {}", pattern)
+            }
+        }
+        "Grep" => {
+            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let output_mode = v.get("output_mode").and_then(|v| v.as_str()).unwrap_or("");
+            if !path.is_empty() {
+                if !output_mode.is_empty() {
+                    format!("Grep \"{}\" in {} ({})", pattern, path, output_mode)
+                } else {
+                    format!("Grep \"{}\" in {}", pattern, path)
+                }
+            } else {
+                format!("Grep \"{}\"", pattern)
+            }
+        }
+        "NotebookEdit" => {
+            let nb_path = v.get("notebook_path").and_then(|v| v.as_str()).unwrap_or("");
+            let cell_id = v.get("cell_id").and_then(|v| v.as_str()).unwrap_or("");
+            if !cell_id.is_empty() {
+                format!("Notebook {} ({})", nb_path, cell_id)
+            } else {
+                format!("Notebook {}", nb_path)
+            }
+        }
+        "WebSearch" => {
+            let query = v.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Search: {}", query)
+        }
+        "WebFetch" => {
+            let url = v.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Fetch {}", url)
+        }
+        "Task" => {
+            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let subagent_type = v.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("");
+            if !subagent_type.is_empty() {
+                format!("Task [{}]: {}", subagent_type, desc)
+            } else {
+                format!("Task: {}", desc)
+            }
+        }
+        "TaskOutput" => {
+            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Get task output: {}", task_id)
+        }
+        "TaskStop" => {
+            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Stop task: {}", task_id)
+        }
+        "TodoWrite" => {
+            if let Some(todos) = v.get("todos").and_then(|v| v.as_array()) {
+                let pending = todos.iter().filter(|t| {
+                    t.get("status").and_then(|s| s.as_str()) == Some("pending")
+                }).count();
+                let in_progress = todos.iter().filter(|t| {
+                    t.get("status").and_then(|s| s.as_str()) == Some("in_progress")
+                }).count();
+                let completed = todos.iter().filter(|t| {
+                    t.get("status").and_then(|s| s.as_str()) == Some("completed")
+                }).count();
+                format!("Todo: {} pending, {} in progress, {} completed", pending, in_progress, completed)
+            } else {
+                "Update todos".to_string()
+            }
+        }
+        "Skill" => {
+            let skill = v.get("skill").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Skill: {}", skill)
+        }
+        "AskUserQuestion" => {
+            if let Some(questions) = v.get("questions").and_then(|v| v.as_array()) {
+                if let Some(q) = questions.first() {
+                    let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+                    truncate_str(question, 200)
+                } else {
+                    "Ask user question".to_string()
+                }
+            } else {
+                "Ask user question".to_string()
+            }
+        }
+        "ExitPlanMode" => "Exit plan mode".to_string(),
+        "EnterPlanMode" => "Enter plan mode".to_string(),
+        "TaskCreate" => {
+            let subject = v.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Create task: {}", subject)
+        }
+        "TaskUpdate" => {
+            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
+            let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if !status.is_empty() {
+                format!("Update task {}: {}", task_id, status)
+            } else {
+                format!("Update task {}", task_id)
+            }
+        }
+        "TaskGet" => {
+            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Get task: {}", task_id)
+        }
+        "TaskList" => "List tasks".to_string(),
+        _ => {
+            format!("{} {}", name, truncate_str(input, 200))
+        }
     }
-    let mut i = index;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }
 
 #[cfg(test)]
@@ -589,5 +747,158 @@ mod tests {
         let result = format_tool_result(input, false, "Read", Some("test.kt"));
         assert!(result.contains("1: import foo"), "line numbers should be reformatted despite trailing metadata");
         assert!(!result.contains("system-reminder"), "trailing metadata should be dropped");
+    }
+
+    // --- is_table_content ---
+
+    #[test]
+    fn test_is_table_markdown() {
+        let table = "| Name | Age |\n|------|-----|\n| Alice | 30 |";
+        assert!(is_table_content(table));
+    }
+
+    #[test]
+    fn test_is_table_just_pipes() {
+        let table = "| col1 | col2 | col3 |\n| val1 | val2 | val3 |";
+        assert!(is_table_content(table));
+    }
+
+    #[test]
+    fn test_is_table_not_table() {
+        let text = "just regular text\nnothing tabular";
+        assert!(!is_table_content(text));
+    }
+
+    #[test]
+    fn test_is_table_single_line() {
+        assert!(!is_table_content("| single |"));
+    }
+
+    // --- format_edit_tool_use ---
+
+    #[test]
+    fn test_format_edit_basic() {
+        let result = format_edit_tool_use("/src/main.rs", "old code", "new code", false);
+        assert!(result.contains("Edit `main.rs`"));
+        assert!(result.contains("```diff"));
+        assert!(result.contains("- old code"));
+        assert!(result.contains("+ new code"));
+    }
+
+    #[test]
+    fn test_format_edit_replace_all() {
+        let result = format_edit_tool_use("/src/main.rs", "old", "new", true);
+        assert!(result.contains("replace all"));
+    }
+
+    #[test]
+    fn test_format_edit_empty_strings() {
+        let result = format_edit_tool_use("/src/main.rs", "", "", false);
+        assert!(result.contains("Edit `main.rs`"));
+    }
+
+    // --- build_edit_diff ---
+
+    #[test]
+    fn test_build_edit_diff_basic() {
+        let result = build_edit_diff("old line", "new line", 12);
+        assert!(result.contains("- old line"));
+        assert!(result.contains("+ new line"));
+    }
+
+    #[test]
+    fn test_build_edit_diff_multiline() {
+        let result = build_edit_diff("line1\nline2", "line3\nline4", 12);
+        assert!(result.contains("- line1"));
+        assert!(result.contains("- line2"));
+        assert!(result.contains("+ line3"));
+        assert!(result.contains("+ line4"));
+    }
+
+    // --- detect_language ---
+
+    #[test]
+    fn test_detect_language_bash_rust_error() {
+        let content = "error[E0308]: mismatched types";
+        assert_eq!(detect_language("Bash", content), "rust");
+    }
+
+    #[test]
+    fn test_detect_language_bash_python_error() {
+        let content = "Traceback (most recent call last):";
+        assert_eq!(detect_language("Bash", content), "python");
+    }
+
+    #[test]
+    fn test_detect_language_bash_js_error() {
+        let content = "SyntaxError: Unexpected token";
+        assert_eq!(detect_language("Bash", content), "javascript");
+    }
+
+    #[test]
+    fn test_detect_language_read_rust() {
+        let content = "fn main() {\n    let x = 1;\n}";
+        assert_eq!(detect_language("Read", content), "rust");
+    }
+
+    #[test]
+    fn test_detect_language_unknown() {
+        assert_eq!(detect_language("Unknown", "some text"), "");
+    }
+
+    // --- smart_truncate ---
+
+    #[test]
+    fn test_smart_truncate_short() {
+        assert_eq!(smart_truncate("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_smart_truncate_at_newline() {
+        let s = "line1\nline2\nline3";
+        let result = smart_truncate(s, 10);
+        assert_eq!(result, "line1...");
+    }
+
+    #[test]
+    fn test_smart_truncate_no_newline() {
+        let s = "a".repeat(20);
+        let result = smart_truncate(&s, 10);
+        assert!(result.ends_with("..."));
+    }
+
+    // --- smart_truncate_for_diff ---
+
+    #[test]
+    fn test_smart_truncate_for_diff_short() {
+        let s = "short text";
+        assert_eq!(smart_truncate_for_diff(s, 100, false), "short text");
+    }
+
+    #[test]
+    fn test_smart_truncate_for_diff_long_diff() {
+        let lines: Vec<String> = (0..100).map(|i| format!("+ line {}", i)).collect();
+        let diff = lines.join("\n");
+        let result = smart_truncate_for_diff(&diff, 50, true);
+        assert!(result.contains("... (truncated)"));
+    }
+
+    // --- floor_char_boundary ---
+
+    #[test]
+    fn test_floor_char_boundary_ascii() {
+        assert_eq!(floor_char_boundary("hello", 3), 3);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_beyond() {
+        assert_eq!(floor_char_boundary("hi", 10), 2);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        let s = "한글"; // each char is 3 bytes
+        assert_eq!(floor_char_boundary(s, 1), 0);
+        assert_eq!(floor_char_boundary(s, 3), 3);
     }
 }
