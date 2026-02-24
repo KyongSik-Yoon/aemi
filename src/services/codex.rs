@@ -1,72 +1,12 @@
-use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader, Write};
+use std::process::Stdio;
+use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
-use std::sync::OnceLock;
-use std::fs::OpenOptions;
 use serde_json::Value;
 
 pub use super::agent::{StreamMessage, CancelToken, AgentResponse};
 
-/// Cached path to the codex binary.
-/// Once resolved, reused for all subsequent calls.
-static CODEX_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-/// Resolve the path to the codex binary.
-/// First tries `which codex`, then falls back to `bash -lc "which codex"`
-/// (for non-interactive SSH sessions where ~/.profile isn't loaded).
-fn resolve_codex_path() -> Option<String> {
-    // Try direct `which codex` first
-    if let Ok(output) = Command::new("which").arg("codex").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    // Fallback: use login shell to resolve PATH
-    if let Ok(output) = Command::new("bash")
-        .args(["-lc", "which codex"])
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
-/// Get the cached codex binary path, resolving it on first call.
-fn get_codex_path() -> Option<&'static str> {
-    CODEX_PATH.get_or_init(|| resolve_codex_path()).as_deref()
-}
-
-/// Debug logging helper (only active when AIMI_DEBUG=1)
-fn debug_log(msg: &str) {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    let enabled = ENABLED.get_or_init(|| {
-        std::env::var("AIMI_DEBUG").map(|v| v == "1").unwrap_or(false)
-    });
-    if !*enabled { return; }
-    if let Some(home) = dirs::home_dir() {
-        let debug_dir = home.join(".aimi").join("debug");
-        let _ = std::fs::create_dir_all(&debug_dir);
-        let log_path = debug_dir.join("codex.log");
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-        {
-            let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-            let _ = writeln!(file, "[{}] {}", timestamp, msg);
-        }
-    }
-}
+// Generate resolve_binary_path(), get_binary_path(), debug_log() for "codex"
+define_ai_service_helpers!("codex");
 
 /// Check if Codex CLI is available
 #[allow(dead_code)]
@@ -78,7 +18,7 @@ pub fn is_codex_available() -> bool {
 
     #[cfg(unix)]
     {
-        get_codex_path().is_some()
+        get_binary_path().is_some()
     }
 }
 
@@ -102,7 +42,7 @@ pub fn execute_command(
     // Prompt as positional argument (last)
     args.push(prompt.to_string());
 
-    let codex_bin = match get_codex_path() {
+    let codex_bin = match get_binary_path() {
         Some(path) => path,
         None => {
             return AgentResponse {
@@ -269,7 +209,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
     // Prompt as positional argument (must be last)
     args.push(effective_prompt);
 
-    let codex_bin = get_codex_path()
+    let codex_bin = get_binary_path()
         .ok_or_else(|| {
             debug_log("ERROR: Codex CLI not found");
             "Codex CLI not found. Is Codex CLI installed?".to_string()

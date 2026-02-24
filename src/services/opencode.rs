@@ -1,72 +1,12 @@
-use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader, Write};
+use std::process::Stdio;
+use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
-use std::sync::OnceLock;
-use std::fs::OpenOptions;
 use serde_json::Value;
 
 pub use super::agent::{StreamMessage, CancelToken, AgentResponse};
 
-/// Cached path to the opencode binary.
-/// Once resolved, reused for all subsequent calls.
-static OPENCODE_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-/// Resolve the path to the opencode binary.
-/// First tries `which opencode`, then falls back to `bash -lc "which opencode"`
-/// (for non-interactive SSH sessions where ~/.profile isn't loaded).
-fn resolve_opencode_path() -> Option<String> {
-    // Try direct `which opencode` first
-    if let Ok(output) = Command::new("which").arg("opencode").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    // Fallback: use login shell to resolve PATH
-    if let Ok(output) = Command::new("bash")
-        .args(["-lc", "which opencode"])
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
-/// Get the cached opencode binary path, resolving it on first call.
-fn get_opencode_path() -> Option<&'static str> {
-    OPENCODE_PATH.get_or_init(|| resolve_opencode_path()).as_deref()
-}
-
-/// Debug logging helper (only active when AIMI_DEBUG=1)
-fn debug_log(msg: &str) {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    let enabled = ENABLED.get_or_init(|| {
-        std::env::var("AIMI_DEBUG").map(|v| v == "1").unwrap_or(false)
-    });
-    if !*enabled { return; }
-    if let Some(home) = dirs::home_dir() {
-        let debug_dir = home.join(".aimi").join("debug");
-        let _ = std::fs::create_dir_all(&debug_dir);
-        let log_path = debug_dir.join("opencode.log");
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-        {
-            let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-            let _ = writeln!(file, "[{}] {}", timestamp, msg);
-        }
-    }
-}
+// Generate resolve_binary_path(), get_binary_path(), debug_log() for "opencode"
+define_ai_service_helpers!("opencode");
 
 /// Check if OpenCode CLI is available
 #[allow(dead_code)]
@@ -78,7 +18,7 @@ pub fn is_opencode_available() -> bool {
 
     #[cfg(unix)]
     {
-        get_opencode_path().is_some()
+        get_binary_path().is_some()
     }
 }
 
@@ -104,7 +44,7 @@ pub fn execute_command(
     // Prompt as positional argument (last)
     args.push(prompt.to_string());
 
-    let opencode_bin = match get_opencode_path() {
+    let opencode_bin = match get_binary_path() {
         Some(path) => path,
         None => {
             return AgentResponse {
@@ -270,7 +210,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
     // Prompt as positional argument (must be last)
     args.push(effective_prompt);
 
-    let opencode_bin = get_opencode_path()
+    let opencode_bin = get_binary_path()
         .ok_or_else(|| {
             debug_log("ERROR: OpenCode CLI not found");
             "OpenCode CLI not found. Is OpenCode CLI installed?".to_string()

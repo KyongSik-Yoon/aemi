@@ -15,8 +15,10 @@ use crate::services::claude::{self, DEFAULT_ALLOWED_TOOLS};
 use crate::services::gemini;
 use crate::services::codex;
 use crate::services::opencode;
-use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::session::{self, HistoryItem, HistoryType};
 use crate::services::formatter;
+use crate::services::utils::{floor_char_boundary, truncate_str, normalize_empty_lines};
+use crate::services::bot_common::{self, BotSettings, ALL_TOOLS, normalize_tool_name, tool_info, risk_badge};
 
 /// Per-chat session state
 struct ChatSession {
@@ -28,26 +30,6 @@ struct ChatSession {
     pending_uploads: Vec<String>,
     /// Set to true by /clear to prevent a racing polling loop from re-populating history.
     cleared: bool,
-}
-
-/// Bot-level settings persisted to disk
-#[derive(Clone)]
-struct BotSettings {
-    allowed_tools: Vec<String>,
-    /// chat_id (string) → last working directory path
-    last_sessions: HashMap<String, String>,
-    /// Telegram user ID of the registered owner (imprinting auth)
-    owner_user_id: Option<u64>,
-}
-
-impl Default for BotSettings {
-    fn default() -> Self {
-        Self {
-            allowed_tools: DEFAULT_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect(),
-            last_sessions: HashMap::new(),
-            owner_user_id: None,
-        }
-    }
 }
 
 /// Shared state: per-chat sessions + bot settings
@@ -79,79 +61,9 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(&result[..8]) // 16 hex chars
 }
 
-/// Path to bot settings file: ~/.aimi/bot_settings.json
-fn bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".aimi").join("bot_settings.json"))
-}
-
-/// Load bot settings from bot_settings.json
-fn load_bot_settings(token: &str) -> BotSettings {
-    let Some(path) = bot_settings_path() else {
-        return BotSettings::default();
-    };
-    let Ok(content) = fs::read_to_string(&path) else {
-        return BotSettings::default();
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return BotSettings::default();
-    };
-    let key = token_hash(token);
-    let Some(entry) = json.get(&key) else {
-        return BotSettings::default();
-    };
-    let owner_user_id = entry.get("owner_user_id").and_then(|v| v.as_u64());
-    let Some(tools_arr) = entry.get("allowed_tools").and_then(|v| v.as_array()) else {
-        return BotSettings { owner_user_id, ..BotSettings::default() };
-    };
-    let tools: Vec<String> = tools_arr
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    if tools.is_empty() {
-        return BotSettings { owner_user_id, ..BotSettings::default() };
-    }
-    let last_sessions = entry.get("last_sessions")
-        .and_then(|v| v.as_object())
-        .map(|obj| {
-            obj.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
-    BotSettings { allowed_tools: tools, last_sessions, owner_user_id }
-}
-
-/// Save bot settings to bot_settings.json
-fn save_bot_settings(token: &str, settings: &BotSettings) {
-    let Some(path) = bot_settings_path() else { return };
-    // Ensure directory exists
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    // Load existing JSON or start fresh
-    let mut json: serde_json::Value = if let Ok(content) = fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    let key = token_hash(token);
-    let mut entry = serde_json::json!({
-        "token": token,
-        "allowed_tools": settings.allowed_tools,
-        "last_sessions": settings.last_sessions,
-    });
-    if let Some(owner_id) = settings.owner_user_id {
-        entry["owner_user_id"] = serde_json::json!(owner_id);
-    }
-    json[key] = entry;
-    if let Ok(s) = serde_json::to_string_pretty(&json) {
-        let _ = fs::write(&path, s);
-    }
-}
-
 /// Resolve a bot token from its hash by searching bot_settings.json
 pub fn resolve_token_by_hash(hash: &str) -> Option<String> {
-    let path = bot_settings_path()?;
+    let path = bot_common::bot_settings_path()?;
     let content = fs::read_to_string(&path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
     let obj = json.as_object()?;
@@ -159,57 +71,10 @@ pub fn resolve_token_by_hash(hash: &str) -> Option<String> {
     entry.get("token").and_then(|v| v.as_str()).map(String::from)
 }
 
-/// Normalize tool name: first letter uppercase, rest lowercase
-fn normalize_tool_name(name: &str) -> String {
-    let lower = name.to_lowercase();
-    let mut chars = lower.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
-/// All available tools with (description, is_destructive)
-const ALL_TOOLS: &[(&str, &str, bool)] = &[
-    ("Bash",            "Execute shell commands",                          true),
-    ("Read",            "Read file contents from the filesystem",          false),
-    ("Edit",            "Perform find-and-replace edits in files",         true),
-    ("Write",           "Create or overwrite files",                       true),
-    ("Glob",            "Find files by name pattern",                      false),
-    ("Grep",            "Search file contents with regex",                 false),
-    ("Task",            "Launch autonomous sub-agents for complex tasks",  true),
-    ("TaskOutput",      "Retrieve output from background tasks",           false),
-    ("TaskStop",        "Stop a running background task",                  false),
-    ("WebFetch",        "Fetch and process web page content",              true),
-    ("WebSearch",       "Search the web for up-to-date information",       true),
-    ("NotebookEdit",    "Edit Jupyter notebook cells",                     true),
-    ("Skill",           "Invoke slash-command skills",                     false),
-    ("TaskCreate",      "Create a structured task in the task list",       false),
-    ("TaskGet",         "Retrieve task details by ID",                     false),
-    ("TaskUpdate",      "Update task status or details",                   false),
-    ("TaskList",        "List all tasks and their status",                 false),
-    ("AskUserQuestion", "Ask the user a question (interactive)",           false),
-    ("EnterPlanMode",   "Enter planning mode (interactive)",               false),
-    ("ExitPlanMode",    "Exit planning mode (interactive)",                false),
-];
-
-/// Tool info: (description, is_destructive)
-fn tool_info(name: &str) -> (&'static str, bool) {
-    ALL_TOOLS.iter()
-        .find(|(n, _, _)| *n == name)
-        .map(|(_, desc, destr)| (*desc, *destr))
-        .unwrap_or(("Custom tool", false))
-}
-
-/// Format a risk badge for display
-fn risk_badge(destructive: bool) -> &'static str {
-    if destructive { "!!!" } else { "" }
-}
-
 /// Entry point: start the Telegram bot with long polling
 pub async fn run_bot(token: &str, allowed_chat_id: Option<i64>, agent_type: &str) {
     let bot = Bot::new(token);
-    let bot_settings = load_bot_settings(token);
+    let bot_settings = bot_common::load_bot_settings(&token_hash(token));
 
     if let Some(cid) = allowed_chat_id {
         println!("  ✓ Chat ID restriction: {cid}");
@@ -283,7 +148,7 @@ async fn handle_message(
                 None => {
                     // Imprint: register first user as owner
                     data.settings.owner_user_id = Some(uid);
-                    save_bot_settings(token, &data.settings);
+                    bot_common::save_bot_settings(&token_hash(token), &data.settings, &[("token", token)]);
                     println!("  [{timestamp}] ★ Owner registered: {raw_user_name} (id:{uid})");
                     true
                 }
@@ -328,7 +193,7 @@ async fn handle_message(
         if !data.sessions.contains_key(&chat_id) {
             if let Some(last_path) = data.settings.last_sessions.get(&chat_id.0.to_string()).cloned() {
                 if Path::new(&last_path).is_dir() {
-                    let existing = load_existing_session(&last_path);
+                    let existing = bot_common::load_existing_session(&last_path);
                     let session = data.sessions.entry(chat_id).or_insert_with(|| ChatSession {
                         session_id: None,
                         current_path: None,
@@ -504,7 +369,7 @@ async fn handle_start_command(
     };
 
     // Try to load existing session for this path
-    let existing = load_existing_session(&canonical_path);
+    let existing = bot_common::load_existing_session(&canonical_path);
 
     let mut response_lines = Vec::new();
 
@@ -560,7 +425,7 @@ async fn handle_start_command(
     {
         let mut data = state.lock().await;
         data.settings.last_sessions.insert(chat_id.0.to_string(), canonical_path);
-        save_bot_settings(token, &data.settings);
+        bot_common::save_bot_settings(&token_hash(token), &data.settings, &[("token", token)]);
     }
 
     let response_text = response_lines.join("\n");
@@ -828,7 +693,7 @@ async fn handle_file_upload(
                 content: upload_record.clone(),
             });
             session.pending_uploads.push(upload_record);
-            save_session_to_file(session, &save_dir);
+            bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &save_dir);
         }
     }
 
@@ -1021,7 +886,7 @@ async fn handle_allowed_command(
                     format!("<code>{}</code> is already in the list.", html_escape(&tool_name))
                 } else {
                     data.settings.allowed_tools.push(tool_name.clone());
-                    save_bot_settings(token, &data.settings);
+                    bot_common::save_bot_settings(&token_hash(token), &data.settings, &[("token", token)]);
                     format!("✅ Added <code>{}</code>", html_escape(&tool_name))
                 }
             }
@@ -1029,7 +894,7 @@ async fn handle_allowed_command(
                 let before_len = data.settings.allowed_tools.len();
                 data.settings.allowed_tools.retain(|t| t != &tool_name);
                 if data.settings.allowed_tools.len() < before_len {
-                    save_bot_settings(token, &data.settings);
+                    bot_common::save_bot_settings(&token_hash(token), &data.settings, &[("token", token)]);
                     format!("❌ Removed <code>{}</code>", html_escape(&tool_name))
                 } else {
                     format!("<code>{}</code> is not in the list.", html_escape(&tool_name))
@@ -1444,7 +1309,7 @@ async fn handle_text_message(
                         content: stopped_response,
                     });
 
-                    save_session_to_file(session, &current_path);
+                    bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &current_path);
                 }
             }
 
@@ -1535,7 +1400,7 @@ async fn handle_text_message(
                         content: full_response,
                     });
 
-                    save_session_to_file(session, &current_path);
+                    bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &current_path);
                 }
             }
         }
@@ -1551,106 +1416,6 @@ async fn handle_text_message(
     });
 
     Ok(())
-}
-
-/// Load existing session from ai_sessions directory matching the given path
-fn load_existing_session(current_path: &str) -> Option<(SessionData, std::time::SystemTime)> {
-    let sessions_dir = session::ai_sessions_dir()?;
-
-    if !sessions_dir.exists() {
-        return None;
-    }
-
-    let mut matching_session: Option<(SessionData, std::time::SystemTime)> = None;
-
-    if let Ok(entries) = fs::read_dir(&sessions_dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().map(|e| e == "json").unwrap_or(false) {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(session_data) = serde_json::from_str::<SessionData>(&content) {
-                        if session_data.current_path == current_path {
-                            if let Ok(metadata) = path.metadata() {
-                                if let Ok(modified) = metadata.modified() {
-                                    match &matching_session {
-                                        None => matching_session = Some((session_data, modified)),
-                                        Some((_, latest_time)) if modified > *latest_time => {
-                                            matching_session = Some((session_data, modified));
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    matching_session
-}
-
-/// Save session to file in the ai_sessions directory
-fn save_session_to_file(session: &ChatSession, current_path: &str) {
-    let Some(ref session_id) = session.session_id else {
-        return;
-    };
-
-    if session.history.is_empty() {
-        return;
-    }
-
-    let Some(sessions_dir) = session::ai_sessions_dir() else {
-        return;
-    };
-
-    if fs::create_dir_all(&sessions_dir).is_err() {
-        return;
-    }
-
-    // Filter out system messages
-    let saveable_history: Vec<HistoryItem> = session.history.iter()
-        .filter(|item| !matches!(item.item_type, HistoryType::System))
-        .cloned()
-        .collect();
-
-    if saveable_history.is_empty() {
-        return;
-    }
-
-    let session_data = SessionData {
-        session_id: session_id.clone(),
-        history: saveable_history,
-        current_path: current_path.to_string(),
-        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    let file_path = sessions_dir.join(format!("{}.json", session_id));
-
-    // Security: Verify the path is within sessions directory
-    if let Some(parent) = file_path.parent() {
-        if parent != sessions_dir {
-            return;
-        }
-    }
-
-    if let Ok(json) = serde_json::to_string_pretty(&session_data) {
-        let _ = fs::write(file_path, json);
-    }
-}
-
-/// Find the largest byte index <= `index` that is a valid UTF-8 char boundary
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        s.len()
-    } else {
-        let mut i = index;
-        while !s.is_char_boundary(i) {
-            i -= 1;
-        }
-        i
-    }
 }
 
 /// Shared per-chat rate limiter using reservation pattern.
@@ -1761,50 +1526,11 @@ async fn send_long_message(
     Ok(())
 }
 
-/// Normalize consecutive empty lines to maximum of one
-fn normalize_empty_lines(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut prev_was_empty = false;
-
-    for line in s.lines() {
-        let is_empty = line.is_empty();
-        if is_empty {
-            if !prev_was_empty {
-                result.push('\n');
-            }
-            prev_was_empty = true;
-        } else {
-            if !result.is_empty() {
-                result.push('\n');
-            }
-            result.push_str(line);
-            prev_was_empty = false;
-        }
-    }
-
-    result
-}
-
 /// Escape special HTML characters for Telegram HTML parse mode
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
-}
-
-/// Truncate a string to max_len bytes, cutting at a safe UTF-8 char and line boundary
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        return s.to_string();
-    }
-
-    let safe_end = floor_char_boundary(s, max_len);
-    let truncated = &s[..safe_end];
-    if let Some(pos) = truncated.rfind('\n') {
-        truncated[..pos].to_string()
-    } else {
-        truncated.to_string()
-    }
 }
 
 /// Convert standard markdown to Telegram-compatible HTML
@@ -2092,163 +1818,500 @@ fn find_closing_single(chars: &[char], start: usize, marker: char) -> Option<usi
     None
 }
 
-/// Format tool input JSON into a human-readable summary
+/// Format tool input: delegates to shared formatter (Telegram uses full paths)
 fn format_tool_input(name: &str, input: &str) -> String {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
-        return format!("{} {}", name, truncate_str(input, 200));
-    };
+    formatter::format_tool_input(name, input, false)
+}
 
-    match name {
-        "Bash" => {
-            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            let cmd = v.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            // Use only first line to avoid breaking inline backticks with heredocs/multi-line commands
-            let cmd_first_line = cmd.lines().next().unwrap_or(cmd);
-            if !desc.is_empty() {
-                format!("{}: `{}`", desc, truncate_str(cmd_first_line, 150))
-            } else {
-                format!("`{}`", truncate_str(cmd_first_line, 200))
-            }
-        }
-        "Read" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Read {}", fp)
-        }
-        "Write" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            let lines = content.lines().count();
-            if lines > 0 {
-                format!("Write {} ({} lines)", fp, lines)
-            } else {
-                format!("Write {}", fp)
-            }
-        }
-        "Edit" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-            let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-            let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all)
-        }
-        "Glob" => {
-            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            if !path.is_empty() {
-                format!("Glob {} in {}", pattern, path)
-            } else {
-                format!("Glob {}", pattern)
-            }
-        }
-        "Grep" => {
-            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let output_mode = v.get("output_mode").and_then(|v| v.as_str()).unwrap_or("");
-            if !path.is_empty() {
-                if !output_mode.is_empty() {
-                    format!("Grep \"{}\" in {} ({})", pattern, path, output_mode)
-                } else {
-                    format!("Grep \"{}\" in {}", pattern, path)
-                }
-            } else {
-                format!("Grep \"{}\"", pattern)
-            }
-        }
-        "NotebookEdit" => {
-            let nb_path = v.get("notebook_path").and_then(|v| v.as_str()).unwrap_or("");
-            let cell_id = v.get("cell_id").and_then(|v| v.as_str()).unwrap_or("");
-            if !cell_id.is_empty() {
-                format!("Notebook {} ({})", nb_path, cell_id)
-            } else {
-                format!("Notebook {}", nb_path)
-            }
-        }
-        "WebSearch" => {
-            let query = v.get("query").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Search: {}", query)
-        }
-        "WebFetch" => {
-            let url = v.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Fetch {}", url)
-        }
-        "Task" => {
-            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            let subagent_type = v.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("");
-            if !subagent_type.is_empty() {
-                format!("Task [{}]: {}", subagent_type, desc)
-            } else {
-                format!("Task: {}", desc)
-            }
-        }
-        "TaskOutput" => {
-            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Get task output: {}", task_id)
-        }
-        "TaskStop" => {
-            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Stop task: {}", task_id)
-        }
-        "TodoWrite" => {
-            if let Some(todos) = v.get("todos").and_then(|v| v.as_array()) {
-                let pending = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("pending")
-                }).count();
-                let in_progress = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("in_progress")
-                }).count();
-                let completed = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("completed")
-                }).count();
-                format!("Todo: {} pending, {} in progress, {} completed", pending, in_progress, completed)
-            } else {
-                "Update todos".to_string()
-            }
-        }
-        "Skill" => {
-            let skill = v.get("skill").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Skill: {}", skill)
-        }
-        "AskUserQuestion" => {
-            if let Some(questions) = v.get("questions").and_then(|v| v.as_array()) {
-                if let Some(q) = questions.first() {
-                    let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
-                    truncate_str(question, 200)
-                } else {
-                    "Ask user question".to_string()
-                }
-            } else {
-                "Ask user question".to_string()
-            }
-        }
-        "ExitPlanMode" => {
-            "Exit plan mode".to_string()
-        }
-        "EnterPlanMode" => {
-            "Enter plan mode".to_string()
-        }
-        "TaskCreate" => {
-            let subject = v.get("subject").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Create task: {}", subject)
-        }
-        "TaskUpdate" => {
-            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
-            let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            if !status.is_empty() {
-                format!("Update task {}: {}", task_id, status)
-            } else {
-                format!("Update task {}", task_id)
-            }
-        }
-        "TaskGet" => {
-            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Get task: {}", task_id)
-        }
-        "TaskList" => {
-            "List tasks".to_string()
-        }
-        _ => {
-            format!("{} {}", name, truncate_str(input, 200))
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- token_hash ---
+
+    #[test]
+    fn test_token_hash_deterministic() {
+        let hash1 = token_hash("test-token-123");
+        let hash2 = token_hash("test-token-123");
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_token_hash_length() {
+        let hash = token_hash("my-bot-token");
+        assert_eq!(hash.len(), 16); // 8 bytes = 16 hex chars
+    }
+
+    #[test]
+    fn test_token_hash_different_tokens() {
+        let hash1 = token_hash("token-a");
+        let hash2 = token_hash("token-b");
+        assert_ne!(hash1, hash2);
+    }
+
+    // --- normalize_tool_name ---
+
+    #[test]
+    fn test_normalize_tool_name_lowercase() {
+        assert_eq!(normalize_tool_name("bash"), "Bash");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_uppercase() {
+        assert_eq!(normalize_tool_name("BASH"), "Bash");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mixed() {
+        assert_eq!(normalize_tool_name("webFetch"), "Webfetch");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_empty() {
+        assert_eq!(normalize_tool_name(""), "");
+    }
+
+    // --- tool_info ---
+
+    #[test]
+    fn test_tool_info_known() {
+        let (desc, destructive) = tool_info("Bash");
+        assert!(desc.contains("shell"));
+        assert!(destructive);
+    }
+
+    #[test]
+    fn test_tool_info_safe_tool() {
+        let (_, destructive) = tool_info("Read");
+        assert!(!destructive);
+    }
+
+    #[test]
+    fn test_tool_info_unknown() {
+        let (desc, destructive) = tool_info("UnknownTool");
+        assert_eq!(desc, "Custom tool");
+        assert!(!destructive);
+    }
+
+    // --- risk_badge ---
+
+    #[test]
+    fn test_risk_badge_destructive() {
+        assert_eq!(risk_badge(true), "!!!");
+    }
+
+    #[test]
+    fn test_risk_badge_safe() {
+        assert_eq!(risk_badge(false), "");
+    }
+
+    // --- html_escape ---
+
+    #[test]
+    fn test_html_escape_basic() {
+        assert_eq!(html_escape("<div>"), "&lt;div&gt;");
+    }
+
+    #[test]
+    fn test_html_escape_ampersand() {
+        assert_eq!(html_escape("a & b"), "a &amp; b");
+    }
+
+    #[test]
+    fn test_html_escape_combined() {
+        assert_eq!(html_escape("<a href=\"&\">"), "&lt;a href=\"&amp;\"&gt;");
+    }
+
+    #[test]
+    fn test_html_escape_no_escape_needed() {
+        assert_eq!(html_escape("hello world"), "hello world");
+    }
+
+    // --- is_horizontal_rule ---
+
+    #[test]
+    fn test_horizontal_rule_dashes() {
+        assert!(is_horizontal_rule("---"));
+        assert!(is_horizontal_rule("-----"));
+    }
+
+    #[test]
+    fn test_horizontal_rule_stars() {
+        assert!(is_horizontal_rule("***"));
+        assert!(is_horizontal_rule("*****"));
+    }
+
+    #[test]
+    fn test_horizontal_rule_underscores() {
+        assert!(is_horizontal_rule("___"));
+    }
+
+    #[test]
+    fn test_horizontal_rule_with_spaces() {
+        assert!(is_horizontal_rule("- - -"));
+        assert!(is_horizontal_rule("* * *"));
+    }
+
+    #[test]
+    fn test_horizontal_rule_too_short() {
+        assert!(!is_horizontal_rule("--"));
+        assert!(!is_horizontal_rule("**"));
+    }
+
+    #[test]
+    fn test_horizontal_rule_not_rule() {
+        assert!(!is_horizontal_rule("hello"));
+        assert!(!is_horizontal_rule(""));
+    }
+
+    // --- strip_heading ---
+
+    #[test]
+    fn test_strip_heading_h1() {
+        assert_eq!(strip_heading("# Title"), Some("Title"));
+    }
+
+    #[test]
+    fn test_strip_heading_h3() {
+        assert_eq!(strip_heading("### Section"), Some("Section"));
+    }
+
+    #[test]
+    fn test_strip_heading_h6() {
+        assert_eq!(strip_heading("###### Deep"), Some("Deep"));
+    }
+
+    #[test]
+    fn test_strip_heading_too_many_hashes() {
+        assert_eq!(strip_heading("####### Seven"), None);
+    }
+
+    #[test]
+    fn test_strip_heading_no_space() {
+        assert_eq!(strip_heading("#NoSpace"), None);
+    }
+
+    #[test]
+    fn test_strip_heading_not_heading() {
+        assert_eq!(strip_heading("regular text"), None);
+    }
+
+    // --- strip_ordered_list ---
+
+    #[test]
+    fn test_strip_ordered_list_basic() {
+        assert_eq!(strip_ordered_list("1. First item"), Some("1. First item".to_string()));
+    }
+
+    #[test]
+    fn test_strip_ordered_list_double_digit() {
+        assert_eq!(strip_ordered_list("10. Tenth"), Some("10. Tenth".to_string()));
+    }
+
+    #[test]
+    fn test_strip_ordered_list_not_list() {
+        assert_eq!(strip_ordered_list("not a list"), None);
+    }
+
+    #[test]
+    fn test_strip_ordered_list_no_space() {
+        assert_eq!(strip_ordered_list("1.no space"), None);
+    }
+
+    // --- convert_inline ---
+
+    #[test]
+    fn test_convert_inline_code() {
+        let result = convert_inline("use `code` here");
+        assert_eq!(result, "use <code>code</code> here");
+    }
+
+    #[test]
+    fn test_convert_inline_bold() {
+        let result = convert_inline("some **bold** text");
+        assert_eq!(result, "some <b>bold</b> text");
+    }
+
+    #[test]
+    fn test_convert_inline_italic() {
+        let result = convert_inline("some *italic* text");
+        assert_eq!(result, "some <i>italic</i> text");
+    }
+
+    #[test]
+    fn test_convert_inline_strikethrough() {
+        let result = convert_inline("some ~~deleted~~ text");
+        assert_eq!(result, "some <s>deleted</s> text");
+    }
+
+    #[test]
+    fn test_convert_inline_no_formatting() {
+        let result = convert_inline("plain text");
+        assert_eq!(result, "plain text");
+    }
+
+    // --- convert_links ---
+
+    #[test]
+    fn test_convert_links_basic() {
+        let result = convert_links("[click here](https://example.com)");
+        assert_eq!(result, "<a href=\"https://example.com\">click here</a>");
+    }
+
+    #[test]
+    fn test_convert_links_no_link() {
+        let result = convert_links("just text");
+        assert_eq!(result, "just text");
+    }
+
+    #[test]
+    fn test_convert_links_empty_url() {
+        let result = convert_links("[text]()");
+        assert_eq!(result, "[text]()");
+    }
+
+    #[test]
+    fn test_convert_links_multiple() {
+        let result = convert_links("[a](http://a.com) and [b](http://b.com)");
+        assert!(result.contains("<a href=\"http://a.com\">a</a>"));
+        assert!(result.contains("<a href=\"http://b.com\">b</a>"));
+    }
+
+    // --- convert_bold_italic_strike ---
+
+    #[test]
+    fn test_bold_italic_strike_bold() {
+        assert_eq!(convert_bold_italic_strike("**hello**"), "<b>hello</b>");
+    }
+
+    #[test]
+    fn test_bold_italic_strike_italic() {
+        assert_eq!(convert_bold_italic_strike("*hello*"), "<i>hello</i>");
+    }
+
+    #[test]
+    fn test_bold_italic_strike_strike() {
+        assert_eq!(convert_bold_italic_strike("~~hello~~"), "<s>hello</s>");
+    }
+
+    #[test]
+    fn test_bold_italic_strike_mixed() {
+        let result = convert_bold_italic_strike("**bold** and *italic*");
+        assert!(result.contains("<b>bold</b>"));
+        assert!(result.contains("<i>italic</i>"));
+    }
+
+    #[test]
+    fn test_bold_italic_strike_unclosed() {
+        // Unclosed markers should be left as-is
+        assert_eq!(convert_bold_italic_strike("**unclosed"), "**unclosed");
+    }
+
+    // --- markdown_to_telegram_html ---
+
+    #[test]
+    fn test_md_to_html_plain_text() {
+        let result = markdown_to_telegram_html("Hello world");
+        assert_eq!(result, "Hello world");
+    }
+
+    #[test]
+    fn test_md_to_html_code_block() {
+        let result = markdown_to_telegram_html("```rust\nfn main() {}\n```");
+        assert!(result.contains("<pre>"));
+        assert!(result.contains("language-rust"));
+        assert!(result.contains("fn main() {}"));
+    }
+
+    #[test]
+    fn test_md_to_html_code_block_no_lang() {
+        let result = markdown_to_telegram_html("```\nsome code\n```");
+        assert!(result.contains("<pre>"));
+        assert!(result.contains("some code"));
+        assert!(!result.contains("language-"));
+    }
+
+    #[test]
+    fn test_md_to_html_heading() {
+        let result = markdown_to_telegram_html("# Title");
+        assert!(result.contains("<b>Title</b>"));
+    }
+
+    #[test]
+    fn test_md_to_html_horizontal_rule() {
+        let result = markdown_to_telegram_html("---");
+        assert!(result.contains("———————————"));
+    }
+
+    #[test]
+    fn test_md_to_html_blockquote() {
+        let result = markdown_to_telegram_html("> quoted text");
+        assert!(result.contains("┃"));
+        assert!(result.contains("<i>quoted text</i>"));
+    }
+
+    #[test]
+    fn test_md_to_html_unordered_list_dash() {
+        let result = markdown_to_telegram_html("- item one");
+        assert!(result.contains("• item one"));
+    }
+
+    #[test]
+    fn test_md_to_html_unordered_list_star() {
+        let result = markdown_to_telegram_html("* item one");
+        assert!(result.contains("• item one"));
+    }
+
+    #[test]
+    fn test_md_to_html_inline_bold() {
+        let result = markdown_to_telegram_html("this is **bold** text");
+        assert!(result.contains("<b>bold</b>"));
+    }
+
+    #[test]
+    fn test_md_to_html_html_entities_escaped() {
+        let result = markdown_to_telegram_html("a < b & c > d");
+        assert!(result.contains("&lt;"));
+        assert!(result.contains("&amp;"));
+        assert!(result.contains("&gt;"));
+    }
+
+    #[test]
+    fn test_md_to_html_complex() {
+        let md = "# Hello\n\nSome **bold** text.\n\n```rust\nfn main() {}\n```\n\n- item 1\n- item 2";
+        let result = markdown_to_telegram_html(md);
+        assert!(result.contains("<b>Hello</b>"));
+        assert!(result.contains("<b>bold</b>"));
+        assert!(result.contains("<pre>"));
+        assert!(result.contains("• item 1"));
+        assert!(result.contains("• item 2"));
+    }
+
+    // --- normalize_empty_lines ---
+
+    #[test]
+    fn test_normalize_empty_lines_collapses() {
+        assert_eq!(normalize_empty_lines("a\n\n\n\nb"), "a\n\nb");
+    }
+
+    #[test]
+    fn test_normalize_empty_lines_single_blank() {
+        assert_eq!(normalize_empty_lines("a\n\nb"), "a\n\nb");
+    }
+
+    #[test]
+    fn test_normalize_empty_lines_no_blanks() {
+        assert_eq!(normalize_empty_lines("a\nb"), "a\nb");
+    }
+
+    // --- truncate_str ---
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_at_newline() {
+        let s = "line1\nline2\nline3";
+        let result = truncate_str(s, 10);
+        assert_eq!(result, "line1");
+    }
+
+    #[test]
+    fn test_truncate_str_no_newline() {
+        let s = "abcdefghijklmnop";
+        let result = truncate_str(s, 5);
+        assert_eq!(result, "abcde");
+    }
+
+    // --- format_tool_input ---
+
+    #[test]
+    fn test_format_tool_input_bash() {
+        let input = r#"{"command":"ls -la","description":"List files"}"#;
+        let result = format_tool_input("Bash", input);
+        assert_eq!(result, "List files: `ls -la`");
+    }
+
+    #[test]
+    fn test_format_tool_input_bash_no_desc() {
+        let input = r#"{"command":"pwd"}"#;
+        let result = format_tool_input("Bash", input);
+        assert_eq!(result, "`pwd`");
+    }
+
+    #[test]
+    fn test_format_tool_input_read() {
+        let input = r#"{"file_path":"/src/main.rs"}"#;
+        let result = format_tool_input("Read", input);
+        assert_eq!(result, "Read /src/main.rs");
+    }
+
+    #[test]
+    fn test_format_tool_input_write() {
+        let input = r#"{"file_path":"/test.rs","content":"line1\nline2\nline3"}"#;
+        let result = format_tool_input("Write", input);
+        assert!(result.starts_with("Write /test.rs"));
+    }
+
+    #[test]
+    fn test_format_tool_input_glob() {
+        let input = r#"{"pattern":"*.rs","path":"/src"}"#;
+        let result = format_tool_input("Glob", input);
+        assert_eq!(result, "Glob *.rs in /src");
+    }
+
+    #[test]
+    fn test_format_tool_input_grep() {
+        let input = r#"{"pattern":"fn main","path":"/src"}"#;
+        let result = format_tool_input("Grep", input);
+        assert_eq!(result, "Grep \"fn main\" in /src");
+    }
+
+    #[test]
+    fn test_format_tool_input_websearch() {
+        let input = r#"{"query":"rust async"}"#;
+        let result = format_tool_input("WebSearch", input);
+        assert_eq!(result, "Search: rust async");
+    }
+
+    #[test]
+    fn test_format_tool_input_task() {
+        let input = r#"{"description":"Explore codebase","subagent_type":"Explore"}"#;
+        let result = format_tool_input("Task", input);
+        assert_eq!(result, "Task [Explore]: Explore codebase");
+    }
+
+    #[test]
+    fn test_format_tool_input_unknown_tool() {
+        let input = "some raw text";
+        let result = format_tool_input("CustomTool", input);
+        assert!(result.starts_with("CustomTool "));
+    }
+
+    #[test]
+    fn test_format_tool_input_invalid_json() {
+        let result = format_tool_input("Bash", "not json");
+        assert!(result.contains("Bash"));
+    }
+
+    // --- floor_char_boundary (telegram version) ---
+
+    #[test]
+    fn test_floor_char_boundary_basic() {
+        assert_eq!(floor_char_boundary("hello", 3), 3);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_beyond_end() {
+        assert_eq!(floor_char_boundary("hi", 10), 2);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        let s = "가나다"; // each 3 bytes
+        assert_eq!(floor_char_boundary(s, 4), 3);
     }
 }
 

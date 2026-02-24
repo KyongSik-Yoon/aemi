@@ -19,8 +19,10 @@ use crate::services::claude::{self, DEFAULT_ALLOWED_TOOLS};
 use crate::services::gemini;
 use crate::services::codex;
 use crate::services::opencode;
-use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
+use crate::services::session::{self, HistoryItem, HistoryType};
 use crate::services::formatter;
+use crate::services::utils::{floor_char_boundary, truncate_str, normalize_empty_lines};
+use crate::services::bot_common::{self, BotSettings, ALL_TOOLS, normalize_tool_name, tool_info, risk_badge};
 
 /// Per-channel session state
 struct ChannelSession {
@@ -31,26 +33,6 @@ struct ChannelSession {
     pending_uploads: Vec<String>,
     /// Set to true by /clear to prevent a racing polling loop from re-populating history.
     cleared: bool,
-}
-
-/// Bot-level settings persisted to disk
-#[derive(Clone)]
-struct BotSettings {
-    allowed_tools: Vec<String>,
-    /// channel_id (string) → last working directory path
-    last_sessions: HashMap<String, String>,
-    /// Discord user ID of the registered owner (imprinting auth)
-    owner_user_id: Option<u64>,
-}
-
-impl Default for BotSettings {
-    fn default() -> Self {
-        Self {
-            allowed_tools: DEFAULT_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect(),
-            last_sessions: HashMap::new(),
-            owner_user_id: None,
-        }
-    }
 }
 
 /// Shared state: per-channel sessions + bot settings
@@ -80,121 +62,6 @@ fn discord_token_hash(token: &str) -> String {
     hasher.update(token.as_bytes());
     let result = hasher.finalize();
     format!("dc_{}", hex::encode(&result[..8])) // prefix with dc_ to distinguish from Telegram
-}
-
-/// Path to bot settings file: ~/.aimi/bot_settings.json (shared with Telegram)
-fn bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".aimi").join("bot_settings.json"))
-}
-
-/// Load bot settings from bot_settings.json
-fn load_bot_settings(token: &str) -> BotSettings {
-    let Some(path) = bot_settings_path() else {
-        return BotSettings::default();
-    };
-    let Ok(content) = fs::read_to_string(&path) else {
-        return BotSettings::default();
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return BotSettings::default();
-    };
-    let key = discord_token_hash(token);
-    let Some(entry) = json.get(&key) else {
-        return BotSettings::default();
-    };
-    let owner_user_id = entry.get("owner_user_id").and_then(|v| v.as_u64());
-    let Some(tools_arr) = entry.get("allowed_tools").and_then(|v| v.as_array()) else {
-        return BotSettings { owner_user_id, ..BotSettings::default() };
-    };
-    let tools: Vec<String> = tools_arr
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    if tools.is_empty() {
-        return BotSettings { owner_user_id, ..BotSettings::default() };
-    }
-    let last_sessions = entry.get("last_sessions")
-        .and_then(|v| v.as_object())
-        .map(|obj| {
-            obj.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
-    BotSettings { allowed_tools: tools, last_sessions, owner_user_id }
-}
-
-/// Save bot settings to bot_settings.json
-fn save_bot_settings(token: &str, settings: &BotSettings) {
-    let Some(path) = bot_settings_path() else { return };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let mut json: serde_json::Value = if let Ok(content) = fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    let key = discord_token_hash(token);
-    let mut entry = serde_json::json!({
-        "platform": "discord",
-        "allowed_tools": settings.allowed_tools,
-        "last_sessions": settings.last_sessions,
-    });
-    if let Some(owner_id) = settings.owner_user_id {
-        entry["owner_user_id"] = serde_json::json!(owner_id);
-    }
-    json[key] = entry;
-    if let Ok(s) = serde_json::to_string_pretty(&json) {
-        let _ = fs::write(&path, s);
-    }
-}
-
-/// Normalize tool name: first letter uppercase, rest lowercase
-fn normalize_tool_name(name: &str) -> String {
-    let lower = name.to_lowercase();
-    let mut chars = lower.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
-/// All available tools with (description, is_destructive)
-const ALL_TOOLS: &[(&str, &str, bool)] = &[
-    ("Bash",            "Execute shell commands",                          true),
-    ("Read",            "Read file contents from the filesystem",          false),
-    ("Edit",            "Perform find-and-replace edits in files",         true),
-    ("Write",           "Create or overwrite files",                       true),
-    ("Glob",            "Find files by name pattern",                      false),
-    ("Grep",            "Search file contents with regex",                 false),
-    ("Task",            "Launch autonomous sub-agents for complex tasks",  true),
-    ("TaskOutput",      "Retrieve output from background tasks",           false),
-    ("TaskStop",        "Stop a running background task",                  false),
-    ("WebFetch",        "Fetch and process web page content",              true),
-    ("WebSearch",       "Search the web for up-to-date information",       true),
-    ("NotebookEdit",    "Edit Jupyter notebook cells",                     true),
-    ("Skill",           "Invoke slash-command skills",                     false),
-    ("TaskCreate",      "Create a structured task in the task list",       false),
-    ("TaskGet",         "Retrieve task details by ID",                     false),
-    ("TaskUpdate",      "Update task status or details",                   false),
-    ("TaskList",        "List all tasks and their status",                 false),
-    ("AskUserQuestion", "Ask the user a question (interactive)",           false),
-    ("EnterPlanMode",   "Enter planning mode (interactive)",               false),
-    ("ExitPlanMode",    "Exit planning mode (interactive)",                false),
-];
-
-/// Tool info: (description, is_destructive)
-fn tool_info(name: &str) -> (&'static str, bool) {
-    ALL_TOOLS.iter()
-        .find(|(n, _, _)| *n == name)
-        .map(|(_, desc, destr)| (*desc, *destr))
-        .unwrap_or(("Custom tool", false))
-}
-
-/// Format a risk badge for display
-fn risk_badge(destructive: bool) -> &'static str {
-    if destructive { "!!!" } else { "" }
 }
 
 /// TypeMapKey for storing shared state in serenity's data map
@@ -234,7 +101,7 @@ impl EventHandler for Handler {
 
 /// Entry point: start the Discord bot
 pub async fn run_bot(token: &str, allowed_channel_id: Option<u64>, agent_type: &str) {
-    let bot_settings = load_bot_settings(token);
+    let bot_settings = bot_common::load_bot_settings(&discord_token_hash(token));
 
     if let Some(cid) = allowed_channel_id {
         println!("  ✓ Channel ID restriction: {cid}");
@@ -306,7 +173,7 @@ async fn handle_message(
             match data.settings.owner_user_id {
                 None => {
                     data.settings.owner_user_id = Some(user_id);
-                    save_bot_settings(&data.token, &data.settings);
+                    bot_common::save_bot_settings(&discord_token_hash(&data.token), &data.settings, &[("platform", "discord")]);
                     println!("  [{timestamp}] ★ Owner registered: {user_name} (id:{user_id})");
                     true
                 }
@@ -347,7 +214,7 @@ async fn handle_message(
         if !data.sessions.contains_key(&channel_id) {
             if let Some(last_path) = data.settings.last_sessions.get(&channel_id.get().to_string()).cloned() {
                 if Path::new(&last_path).is_dir() {
-                    let existing = load_existing_session(&last_path);
+                    let existing = bot_common::load_existing_session(&last_path);
                     let session = data.sessions.entry(channel_id).or_insert_with(|| ChannelSession {
                         session_id: None,
                         current_path: None,
@@ -511,7 +378,7 @@ async fn handle_start_command(
             .unwrap_or_else(|_| expanded)
     };
 
-    let existing = load_existing_session(&canonical_path);
+    let existing = bot_common::load_existing_session(&canonical_path);
 
     let mut response_lines = Vec::new();
 
@@ -567,7 +434,7 @@ async fn handle_start_command(
     {
         let mut data = state.lock().await;
         data.settings.last_sessions.insert(channel_id.get().to_string(), canonical_path);
-        save_bot_settings(&token, &data.settings);
+        bot_common::save_bot_settings(&discord_token_hash(&token), &data.settings, &[("platform", "discord")]);
     }
 
     let response_text = response_lines.join("\n");
@@ -804,7 +671,7 @@ async fn handle_file_upload(
                     content: upload_record.clone(),
                 });
                 session.pending_uploads.push(upload_record);
-                save_session_to_file(session, &save_dir);
+                bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &save_dir);
             }
         }
     }
@@ -990,7 +857,7 @@ async fn handle_allowed_command(
                     format!("`{}` is already in the list.", tool_name)
                 } else {
                     data.settings.allowed_tools.push(tool_name.clone());
-                    save_bot_settings(&token, &data.settings);
+                    bot_common::save_bot_settings(&discord_token_hash(&token), &data.settings, &[("platform", "discord")]);
                     format!("Added `{}`", tool_name)
                 }
             }
@@ -998,7 +865,7 @@ async fn handle_allowed_command(
                 let before_len = data.settings.allowed_tools.len();
                 data.settings.allowed_tools.retain(|t| t != &tool_name);
                 if data.settings.allowed_tools.len() < before_len {
-                    save_bot_settings(&token, &data.settings);
+                    bot_common::save_bot_settings(&discord_token_hash(&token), &data.settings, &[("platform", "discord")]);
                     format!("Removed `{}`", tool_name)
                 } else {
                     format!("`{}` is not in the list.", tool_name)
@@ -1376,7 +1243,7 @@ async fn handle_text_message(
                         item_type: HistoryType::Assistant,
                         content: stopped_response,
                     });
-                    save_session_to_file(session, &current_path);
+                    bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &current_path);
                 }
             }
 
@@ -1416,7 +1283,7 @@ async fn handle_text_message(
                         item_type: HistoryType::Assistant,
                         content: full_response,
                     });
-                    save_session_to_file(session, &current_path);
+                    bot_common::save_session_to_file(session.session_id.as_deref(), &session.history, &current_path);
                 }
             }
         }
@@ -1433,104 +1300,6 @@ async fn handle_text_message(
     });
 
     Ok(())
-}
-
-/// Load existing session from ai_sessions directory matching the given path
-fn load_existing_session(current_path: &str) -> Option<(SessionData, std::time::SystemTime)> {
-    let sessions_dir = session::ai_sessions_dir()?;
-
-    if !sessions_dir.exists() {
-        return None;
-    }
-
-    let mut matching_session: Option<(SessionData, std::time::SystemTime)> = None;
-
-    if let Ok(entries) = fs::read_dir(&sessions_dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().map(|e| e == "json").unwrap_or(false) {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(session_data) = serde_json::from_str::<SessionData>(&content) {
-                        if session_data.current_path == current_path {
-                            if let Ok(metadata) = path.metadata() {
-                                if let Ok(modified) = metadata.modified() {
-                                    match &matching_session {
-                                        None => matching_session = Some((session_data, modified)),
-                                        Some((_, latest_time)) if modified > *latest_time => {
-                                            matching_session = Some((session_data, modified));
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    matching_session
-}
-
-/// Save session to file in the ai_sessions directory
-fn save_session_to_file(session: &ChannelSession, current_path: &str) {
-    let Some(ref session_id) = session.session_id else {
-        return;
-    };
-
-    if session.history.is_empty() {
-        return;
-    }
-
-    let Some(sessions_dir) = session::ai_sessions_dir() else {
-        return;
-    };
-
-    if fs::create_dir_all(&sessions_dir).is_err() {
-        return;
-    }
-
-    let saveable_history: Vec<HistoryItem> = session.history.iter()
-        .filter(|item| !matches!(item.item_type, HistoryType::System))
-        .cloned()
-        .collect();
-
-    if saveable_history.is_empty() {
-        return;
-    }
-
-    let session_data = SessionData {
-        session_id: session_id.clone(),
-        history: saveable_history,
-        current_path: current_path.to_string(),
-        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    let file_path = sessions_dir.join(format!("{}.json", session_id));
-
-    if let Some(parent) = file_path.parent() {
-        if parent != sessions_dir {
-            return;
-        }
-    }
-
-    if let Ok(json) = serde_json::to_string_pretty(&session_data) {
-        let _ = fs::write(file_path, json);
-    }
-}
-
-/// Find the largest byte index <= `index` that is a valid UTF-8 char boundary
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        s.len()
-    } else {
-        let mut i = index;
-        while !s.is_char_boundary(i) {
-            i -= 1;
-        }
-        i
-    }
 }
 
 /// Per-channel rate limiter (1 second gap for Discord)
@@ -1772,210 +1541,173 @@ fn find_closing_fence(bytes: &[u8], from: usize, backtick_count: usize) -> Optio
     None
 }
 
-/// Normalize consecutive empty lines to maximum of one
-fn normalize_empty_lines(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut prev_was_empty = false;
-
-    for line in s.lines() {
-        let is_empty = line.is_empty();
-        if is_empty {
-            if !prev_was_empty {
-                result.push('\n');
-            }
-            prev_was_empty = true;
-        } else {
-            if !result.is_empty() {
-                result.push('\n');
-            }
-            result.push_str(line);
-            prev_was_empty = false;
-        }
-    }
-
-    result
-}
-
-/// Truncate a string to max_len bytes, cutting at a safe UTF-8 char and line boundary
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        return s.to_string();
-    }
-
-    let safe_end = floor_char_boundary(s, max_len);
-    let truncated = &s[..safe_end];
-    if let Some(pos) = truncated.rfind('\n') {
-        truncated[..pos].to_string()
-    } else {
-        truncated.to_string()
-    }
-}
-
-/// Format tool input JSON into a human-readable summary (same as telegram.rs)
+/// Format tool input: delegates to shared formatter (Discord uses short filenames)
 fn format_tool_input(name: &str, input: &str) -> String {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
-        return format!("{} {}", name, truncate_str(input, 200));
-    };
-
-    match name {
-        "Bash" => {
-            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            let cmd = v.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            // Use only first line to avoid breaking inline backticks with heredocs/multi-line commands
-            let cmd_first_line = cmd.lines().next().unwrap_or(cmd);
-            if !desc.is_empty() {
-                format!("{}: `{}`", desc, truncate_str(cmd_first_line, 150))
-            } else {
-                format!("`{}`", truncate_str(cmd_first_line, 200))
-            }
-        }
-        "Read" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            let short = fp.rsplit('/').next().unwrap_or(fp);
-            format!("Read `{}`", short)
-        }
-        "Write" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            let short = fp.rsplit('/').next().unwrap_or(fp);
-            let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            let lines = content.lines().count();
-            if lines > 0 {
-                format!("Write `{}` ({} lines)", short, lines)
-            } else {
-                format!("Write `{}`", short)
-            }
-        }
-        "Edit" => {
-            let fp = v.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-            let old_str = v.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-            let new_str = v.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-            let replace_all = v.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
-            formatter::format_edit_tool_use(fp, old_str, new_str, replace_all)
-        }
-        "Glob" => {
-            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            if !path.is_empty() {
-                format!("Glob {} in {}", pattern, path)
-            } else {
-                format!("Glob {}", pattern)
-            }
-        }
-        "Grep" => {
-            let pattern = v.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            let path = v.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let output_mode = v.get("output_mode").and_then(|v| v.as_str()).unwrap_or("");
-            if !path.is_empty() {
-                if !output_mode.is_empty() {
-                    format!("Grep \"{}\" in {} ({})", pattern, path, output_mode)
-                } else {
-                    format!("Grep \"{}\" in {}", pattern, path)
-                }
-            } else {
-                format!("Grep \"{}\"", pattern)
-            }
-        }
-        "NotebookEdit" => {
-            let nb_path = v.get("notebook_path").and_then(|v| v.as_str()).unwrap_or("");
-            let cell_id = v.get("cell_id").and_then(|v| v.as_str()).unwrap_or("");
-            if !cell_id.is_empty() {
-                format!("Notebook {} ({})", nb_path, cell_id)
-            } else {
-                format!("Notebook {}", nb_path)
-            }
-        }
-        "WebSearch" => {
-            let query = v.get("query").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Search: {}", query)
-        }
-        "WebFetch" => {
-            let url = v.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Fetch {}", url)
-        }
-        "Task" => {
-            let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            let subagent_type = v.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("");
-            if !subagent_type.is_empty() {
-                format!("Task [{}]: {}", subagent_type, desc)
-            } else {
-                format!("Task: {}", desc)
-            }
-        }
-        "TaskOutput" => {
-            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Get task output: {}", task_id)
-        }
-        "TaskStop" => {
-            let task_id = v.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Stop task: {}", task_id)
-        }
-        "TodoWrite" => {
-            if let Some(todos) = v.get("todos").and_then(|v| v.as_array()) {
-                let pending = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("pending")
-                }).count();
-                let in_progress = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("in_progress")
-                }).count();
-                let completed = todos.iter().filter(|t| {
-                    t.get("status").and_then(|s| s.as_str()) == Some("completed")
-                }).count();
-                format!("Todo: {} pending, {} in progress, {} completed", pending, in_progress, completed)
-            } else {
-                "Update todos".to_string()
-            }
-        }
-        "Skill" => {
-            let skill = v.get("skill").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Skill: {}", skill)
-        }
-        "AskUserQuestion" => {
-            if let Some(questions) = v.get("questions").and_then(|v| v.as_array()) {
-                if let Some(q) = questions.first() {
-                    let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
-                    truncate_str(question, 200)
-                } else {
-                    "Ask user question".to_string()
-                }
-            } else {
-                "Ask user question".to_string()
-            }
-        }
-        "ExitPlanMode" => {
-            "Exit plan mode".to_string()
-        }
-        "EnterPlanMode" => {
-            "Enter plan mode".to_string()
-        }
-        "TaskCreate" => {
-            let subject = v.get("subject").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Create task: {}", subject)
-        }
-        "TaskUpdate" => {
-            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
-            let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            if !status.is_empty() {
-                format!("Update task {}: {}", task_id, status)
-            } else {
-                format!("Update task {}", task_id)
-            }
-        }
-        "TaskGet" => {
-            let task_id = v.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
-            format!("Get task: {}", task_id)
-        }
-        "TaskList" => {
-            "List tasks".to_string()
-        }
-        _ => {
-            format!("{} {}", name, truncate_str(input, 200))
-        }
-    }
+    formatter::format_tool_input(name, input, true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- normalize_tool_name ---
+
+    #[test]
+    fn test_normalize_tool_name_lowercase() {
+        assert_eq!(normalize_tool_name("bash"), "Bash");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_uppercase() {
+        assert_eq!(normalize_tool_name("BASH"), "Bash");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_empty() {
+        assert_eq!(normalize_tool_name(""), "");
+    }
+
+    // --- tool_info ---
+
+    #[test]
+    fn test_tool_info_known() {
+        let (desc, destructive) = tool_info("Bash");
+        assert!(desc.contains("shell"));
+        assert!(destructive);
+    }
+
+    #[test]
+    fn test_tool_info_safe() {
+        let (_, destructive) = tool_info("Read");
+        assert!(!destructive);
+    }
+
+    #[test]
+    fn test_tool_info_unknown() {
+        let (desc, _) = tool_info("UnknownTool");
+        assert_eq!(desc, "Custom tool");
+    }
+
+    // --- risk_badge ---
+
+    #[test]
+    fn test_risk_badge() {
+        assert_eq!(risk_badge(true), "!!!");
+        assert_eq!(risk_badge(false), "");
+    }
+
+    // --- find_code_fence ---
+
+    #[test]
+    fn test_find_code_fence_at_start() {
+        let input = b"```rust\ncode\n```";
+        assert_eq!(find_code_fence(input, 0), Some(0));
+    }
+
+    #[test]
+    fn test_find_code_fence_after_newline() {
+        let input = b"text\n```rust\ncode\n```";
+        assert_eq!(find_code_fence(input, 0), Some(5));
+    }
+
+    #[test]
+    fn test_find_code_fence_with_indent() {
+        let input = b"text\n   ```rust\n";
+        assert_eq!(find_code_fence(input, 0), Some(8));
+    }
+
+    #[test]
+    fn test_find_code_fence_none() {
+        let input = b"no fence here\njust text";
+        assert_eq!(find_code_fence(input, 0), None);
+    }
+
+    // --- count_backticks ---
+
+    #[test]
+    fn test_count_backticks_three() {
+        assert_eq!(count_backticks(b"```rest", 0), 3);
+    }
+
+    #[test]
+    fn test_count_backticks_four() {
+        assert_eq!(count_backticks(b"````rest", 0), 4);
+    }
+
+    #[test]
+    fn test_count_backticks_zero() {
+        assert_eq!(count_backticks(b"no backticks", 0), 0);
+    }
+
+    // --- memchr_newline ---
+
+    #[test]
+    fn test_memchr_newline_found() {
+        assert_eq!(memchr_newline(b"hello\nworld", 0), 6);
+    }
+
+    #[test]
+    fn test_memchr_newline_not_found() {
+        assert_eq!(memchr_newline(b"no newline", 0), 10);
+    }
+
+    #[test]
+    fn test_memchr_newline_from_offset() {
+        assert_eq!(memchr_newline(b"aa\nbb\ncc", 3), 6);
+    }
+
+    // --- find_closing_fence ---
+
+    #[test]
+    fn test_find_closing_fence_basic() {
+        let input = b"```rust\ncode line\n```\nafter";
+        // from=7 (after "```rust"), backtick_count=3
+        let result = find_closing_fence(input, 7, 3);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_find_closing_fence_not_found() {
+        let input = b"```rust\ncode line\nno close";
+        let result = find_closing_fence(input, 7, 3);
+        assert!(result.is_none());
+    }
+
+    // --- format_tool_input ---
+
+    #[test]
+    fn test_format_tool_input_bash() {
+        let input = r#"{"command":"ls -la","description":"List files"}"#;
+        let result = format_tool_input("Bash", input);
+        assert_eq!(result, "List files: `ls -la`");
+    }
+
+    #[test]
+    fn test_format_tool_input_read() {
+        let input = r#"{"file_path":"/src/main.rs"}"#;
+        let result = format_tool_input("Read", input);
+        assert!(result.contains("main.rs"));
+    }
+
+    #[test]
+    fn test_format_tool_input_glob() {
+        let input = r#"{"pattern":"*.rs","path":"/src"}"#;
+        let result = format_tool_input("Glob", input);
+        assert_eq!(result, "Glob *.rs in /src");
+    }
+
+    #[test]
+    fn test_format_tool_input_websearch() {
+        let input = r#"{"query":"rust async"}"#;
+        let result = format_tool_input("WebSearch", input);
+        assert_eq!(result, "Search: rust async");
+    }
+
+    #[test]
+    fn test_format_tool_input_invalid_json() {
+        let result = format_tool_input("Bash", "not json");
+        assert!(result.contains("Bash"));
+    }
 
     // --- unclosed_code_block_lang ---
 
