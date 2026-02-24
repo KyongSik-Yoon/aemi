@@ -56,21 +56,55 @@ See [build_manual.md](build_manual.md) for detailed build instructions including
 
 ## Agent Types
 
-Currently supported:
-
-| Agent | CLI Flag | Status |
-|-------|----------|--------|
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available |
-| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Planned |
+| Agent | CLI Flag | Status | Priority |
+|-------|----------|--------|----------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `--agent claude` | Available | - |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Planned | 1st |
+| [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Planned | 2nd |
 
 ### Prerequisites per Agent
 
 Each agent requires its own CLI tool to be installed:
 
 - **Claude**: `npm install -g @anthropic-ai/claude-code`
+- **Gemini**: `npm install -g @google/gemini-cli` (planned)
 - **Codex**: `npm install -g @openai/codex` (planned)
-- **Gemini**: `npm install -g @anthropic-ai/gemini-cli` → TBD (planned)
+
+### Integration Feasibility
+
+Each agent CLI provides a non-interactive mode and structured JSON output, making subprocess integration possible.
+
+#### Gemini CLI (Priority 1)
+
+- **Non-interactive mode**: `gemini -p "prompt"` — identical pattern to Claude's `-p` flag
+- **JSON output**: `--output-format json` (single JSON) / `--output-format stream-json` (JSONL stream)
+- **JSON structure**: `{ "response": "...", "stats": {...}, "error": null }`
+- **Stability**: Stable release channel available (nightly → preview → stable)
+- **Stdin piping**: Supported (`echo "text" | gemini`)
+- **Limitations**: Non-interactive mode restricts tool execution (WriteFile, shell commands require `--yolo/-y`)
+- **Session continuity**: Not supported in non-interactive mode (single-turn only)
+
+> Gemini CLI has the lowest integration barrier due to its CLI interface being nearly identical to Claude Code.
+
+#### Codex CLI (Priority 2)
+
+- **Non-interactive mode**: `codex exec "prompt"` — uses `exec` subcommand instead of `-p` flag
+- **JSON output**: `codex exec --json "prompt"` → JSONL event stream to stdout
+- **Event types**: `thread.started`, `turn.started`, `turn.completed`, `item.*`, `error`
+- **Stability**: **Alpha** (v0.105.0-alpha.16 as of 2025-02) — APIs may change without notice
+- **Stdin piping**: Supported (`cat prompt.md | codex exec -`)
+- **Session resume**: `codex exec resume --last "prompt"` / `codex exec resume <SESSION_ID>`
+- **Extra**: `--output-schema` for schema-constrained responses
+
+> Codex CLI has a clean subprocess interface, but its alpha status means breaking changes are likely. Will integrate after it stabilizes.
+
+### Implementation Plan
+
+1. **Create Agent trait** — abstract `execute_command`, `execute_command_streaming`, `resolve_binary` into a common interface
+2. **Add `src/services/gemini.rs`** — implement Gemini agent with `-p` and `--output-format stream-json`
+3. **Map StreamMessage** — convert Gemini's JSON events to existing `StreamMessage` enum
+4. **Add `src/services/codex.rs`** — implement Codex agent with `exec --json` (after Codex stabilizes)
+5. **Update routing in `main.rs`** — add `"gemini"` and `"codex"` match arms
 
 ## Supported Platforms
 
