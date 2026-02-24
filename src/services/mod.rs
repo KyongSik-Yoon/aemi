@@ -2,6 +2,7 @@ pub mod agent;
 pub mod claude;
 pub mod gemini;
 pub mod codex;
+pub mod opencode;
 pub mod telegram;
 pub mod discord;
 pub mod session;
