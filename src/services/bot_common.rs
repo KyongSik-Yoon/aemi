@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use sha2::{Sha256, Digest};
+
 use crate::services::claude::DEFAULT_ALLOWED_TOOLS;
 use crate::services::session::{self, HistoryItem, HistoryType, SessionData};
 
@@ -72,6 +74,19 @@ pub fn tool_info(name: &str) -> (&'static str, bool) {
 /// Format a risk badge for display
 pub fn risk_badge(destructive: bool) -> &'static str {
     if destructive { "!!!" } else { "" }
+}
+
+/// Compute a short hash key from the bot token (first 16 chars of SHA-256 hex).
+/// Optional `prefix` is prepended with `_` separator (e.g., "dc" → "dc_<hash>").
+pub fn token_hash(token: &str, prefix: Option<&str>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let result = hasher.finalize();
+    let hash = hex::encode(&result[..8]); // 16 hex chars
+    match prefix {
+        Some(p) => format!("{}_{}", p, hash),
+        None => hash,
+    }
 }
 
 /// Path to bot settings file: ~/.aimi/bot_settings.json
@@ -300,6 +315,44 @@ mod tests {
         assert_eq!(risk_badge(false), "");
     }
 
+    // --- token_hash ---
+
+    #[test]
+    fn test_token_hash_deterministic() {
+        let h1 = token_hash("my-token", None);
+        let h2 = token_hash("my-token", None);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_token_hash_length_no_prefix() {
+        let h = token_hash("my-token", None);
+        assert_eq!(h.len(), 16); // 8 bytes = 16 hex chars
+    }
+
+    #[test]
+    fn test_token_hash_with_prefix() {
+        let h = token_hash("my-token", Some("dc"));
+        assert!(h.starts_with("dc_"));
+        // "dc_" (3) + 16 hex chars = 19
+        assert_eq!(h.len(), 19);
+    }
+
+    #[test]
+    fn test_token_hash_different_tokens() {
+        let h1 = token_hash("token-a", None);
+        let h2 = token_hash("token-b", None);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_token_hash_same_token_different_prefix() {
+        let h_none = token_hash("same-token", None);
+        let h_dc = token_hash("same-token", Some("dc"));
+        // The hash portion should be the same, just the prefix differs
+        assert_eq!(h_dc.strip_prefix("dc_").unwrap(), h_none);
+    }
+
     // --- bot_settings_path ---
 
     #[test]
@@ -308,5 +361,15 @@ mod tests {
         assert!(path.is_some());
         let p = path.unwrap();
         assert!(p.ends_with("bot_settings.json"));
+    }
+
+    // --- BotSettings default ---
+
+    #[test]
+    fn test_bot_settings_default() {
+        let settings = BotSettings::default();
+        assert!(!settings.allowed_tools.is_empty());
+        assert!(settings.last_sessions.is_empty());
+        assert!(settings.owner_user_id.is_none());
     }
 }
