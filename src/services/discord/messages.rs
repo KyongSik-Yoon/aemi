@@ -33,25 +33,28 @@ pub async fn send_long_message(
 }
 
 /// Detect if a text chunk ends inside an unclosed code block.
-/// Returns the language hint (e.g. "diff", "rust") if a block is open, or None if not.
-/// Parses line-by-line so it correctly handles nested/multiple code blocks.
-pub fn unclosed_code_block_lang(text: &str) -> Option<String> {
-    let mut open_lang: Option<String> = None;
+/// Returns `(language_hint, fence_length)` if a block is open, or None if not.
+/// Fence-length-aware: a ```` block is NOT closed by inner ``` lines.
+pub fn unclosed_code_block_lang(text: &str) -> Option<(String, usize)> {
+    let mut open: Option<(String, usize)> = None;
     for line in text.lines() {
-        // Code fence lines start with ``` (optionally preceded by spaces)
         let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
-            if open_lang.is_some() {
-                // Closing fence
-                open_lang = None;
-            } else {
-                // Opening fence — capture language hint
-                let lang = trimmed[3..].trim().to_string();
-                open_lang = Some(lang);
+        if !trimmed.starts_with("```") {
+            continue;
+        }
+        let bt_count = trimmed.bytes().take_while(|&b| b == b'`').count();
+        if let Some((_, open_len)) = &open {
+            // Closing fence: must have >= opening fence backticks, rest is whitespace
+            if bt_count >= *open_len && trimmed[bt_count..].trim().is_empty() {
+                open = None;
             }
+        } else {
+            // Opening fence — capture language hint and fence length
+            let lang = trimmed[bt_count..].trim().to_string();
+            open = Some((lang, bt_count));
         }
     }
-    open_lang
+    open
 }
 
 /// Send a long message using raw HTTP (for use in spawned tasks)
@@ -87,9 +90,10 @@ pub async fn send_long_message_raw(
         let (chunk, rest) = remaining.split_at(split_at);
 
         // Check whether the chunk ends inside an unclosed code block
-        let open_lang = unclosed_code_block_lang(chunk);
-        let chunk_to_send = if open_lang.is_some() {
-            format!("{}\n```", chunk)
+        let open_info = unclosed_code_block_lang(chunk);
+        let chunk_to_send = if let Some((_, fence_len)) = &open_info {
+            let fence: String = "`".repeat(*fence_len);
+            format!("{}\n{}", chunk, fence)
         } else {
             chunk.to_string()
         };
@@ -100,12 +104,13 @@ pub async fn send_long_message_raw(
         remaining = rest.strip_prefix('\n').unwrap_or(rest);
 
         // If we force-closed an open code block, reopen it in the next message
-        if let Some(lang_hint) = open_lang {
+        if let Some((lang_hint, fence_len)) = open_info {
             if !remaining.is_empty() {
+                let fence: String = "`".repeat(fence_len);
                 let reopened = if lang_hint.is_empty() {
-                    format!("```\n{}", remaining)
+                    format!("{}\n{}", fence, remaining)
                 } else {
-                    format!("```{}\n{}", lang_hint, remaining)
+                    format!("{}{}\n{}", fence, lang_hint, remaining)
                 };
                 return Box::pin(send_long_message_raw(http, channel_id, &reopened, state)).await;
             }

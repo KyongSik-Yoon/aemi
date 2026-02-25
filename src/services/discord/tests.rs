@@ -179,20 +179,20 @@ fn test_closed_code_block() {
 #[test]
 fn test_open_code_block_with_lang() {
     let text = "some text\n```diff\n- old line\n+ new line";
-    assert_eq!(unclosed_code_block_lang(text), Some("diff".to_string()));
+    assert_eq!(unclosed_code_block_lang(text), Some(("diff".to_string(), 3)));
 }
 
 #[test]
 fn test_open_code_block_no_lang() {
     let text = "prefix\n```\ncontent here";
-    assert_eq!(unclosed_code_block_lang(text), Some("".to_string()));
+    assert_eq!(unclosed_code_block_lang(text), Some(("".to_string(), 3)));
 }
 
 #[test]
 fn test_multiple_blocks_last_open() {
     // Two complete blocks then one open
     let text = "```rust\nfn a() {}\n```\n```python\nprint()\n```\n```diff\n+added";
-    assert_eq!(unclosed_code_block_lang(text), Some("diff".to_string()));
+    assert_eq!(unclosed_code_block_lang(text), Some(("diff".to_string(), 3)));
 }
 
 #[test]
@@ -260,14 +260,28 @@ fn test_find_closing_fence_mismatched_count() {
 fn test_unclosed_code_block_nested_fences() {
     // Two opens and one close → one remains open
     let text = "```rust\nfn a() {}\n```\n```python\nprint()";
-    assert_eq!(unclosed_code_block_lang(text), Some("python".to_string()));
+    assert_eq!(unclosed_code_block_lang(text), Some(("python".to_string(), 3)));
 }
 
 #[test]
 fn test_unclosed_code_block_indented_fence() {
     // Indented ``` should still count
     let text = "   ```json\n{\"key\": 1}";
-    assert_eq!(unclosed_code_block_lang(text), Some("json".to_string()));
+    assert_eq!(unclosed_code_block_lang(text), Some(("json".to_string(), 3)));
+}
+
+#[test]
+fn test_unclosed_code_block_four_backtick_fence() {
+    // ```` block should NOT be closed by inner ```
+    let text = "````diff\n- old\n```\n+ new";
+    assert_eq!(unclosed_code_block_lang(text), Some(("diff".to_string(), 4)));
+}
+
+#[test]
+fn test_closed_four_backtick_fence() {
+    // ```` block closed by ````
+    let text = "````diff\n- old\n```\n+ new\n````";
+    assert_eq!(unclosed_code_block_lang(text), None);
 }
 
 // --- fix_diff_code_blocks ---
@@ -321,4 +335,44 @@ fn test_fix_diff_blocks_multiple_blocks() {
     assert!(result.contains("```kotlin\n"), "kotlin block should be unchanged");
     assert!(result.contains("```diff\n"), "rust block with diff content should become diff");
     assert!(result.contains("```python\n"), "python block should be unchanged");
+}
+
+// --- sanitize_inline_backticks ---
+
+#[test]
+fn test_sanitize_no_backticks() {
+    let input = "just plain text\nnothing special";
+    assert_eq!(sanitize_inline_backticks(input), input);
+}
+
+#[test]
+fn test_sanitize_proper_code_block_untouched() {
+    let input = "text\n```rust\nfn main() {}\n```\nmore";
+    assert_eq!(sanitize_inline_backticks(input), input);
+}
+
+#[test]
+fn test_sanitize_inline_triple_backtick() {
+    let input = "use ```rust for code blocks";
+    let result = sanitize_inline_backticks(input);
+    assert!(!result.contains("```"), "inline ``` should be escaped");
+    assert!(result.contains('\u{200B}'), "should contain zero-width space");
+}
+
+#[test]
+fn test_sanitize_preserves_code_block_content() {
+    // ``` inside a code block should NOT be escaped
+    let input = "````rust\nformat!(\"{}\\n```\\n\", x)\n````";
+    let result = sanitize_inline_backticks(input);
+    assert_eq!(result, input, "content inside code blocks should be untouched");
+}
+
+#[test]
+fn test_sanitize_mixed_content() {
+    let input = "say ```rust to start\n```diff\n- old\n+ new\n```\ndone";
+    let result = sanitize_inline_backticks(input);
+    // First line: inline ``` escaped
+    assert!(result.starts_with("say `\u{200B}``"));
+    // Code block preserved
+    assert!(result.contains("```diff\n- old\n+ new\n```"));
 }

@@ -17,8 +17,8 @@ use crate::services::utils::{truncate_str, normalize_empty_lines};
 use crate::services::bot_common;
 
 use super::{SharedState, DISCORD_MSG_LIMIT, discord_token_hash};
-use super::messages::{rate_limit_wait, send_long_message_raw};
-use super::formatting::fix_diff_code_blocks;
+use super::messages::{rate_limit_wait, send_long_message_raw, unclosed_code_block_lang};
+use super::formatting::{fix_diff_code_blocks, sanitize_inline_backticks};
 
 /// Format tool input: delegates to shared formatter (Discord uses short filenames)
 fn format_tool_input(name: &str, input: &str) -> String {
@@ -121,6 +121,7 @@ pub async fn handle_text_message(
          - Keep messages concise — Discord has a 2000 character limit per message\n\
          - Avoid headers (# Title) — they render as large text in Discord\n\
          - Use bullet lists (- item) for multiple items\n\
+         - NEVER write triple backticks in regular text or inline code — Discord misinterprets them as code block markers. Say \"code block\" in words instead.\n\
          Token hash: {}{}",
         current_path, token_hash, disabled_notice
     );
@@ -310,8 +311,14 @@ pub async fn handle_text_message(
                 indicator.to_string()
             } else {
                 let normalized = normalize_empty_lines(&full_response);
-                let truncated = truncate_str(&normalized, DISCORD_MSG_LIMIT - 20);
-                format!("{}\n\n{}", truncated, indicator)
+                let truncated = truncate_str(&normalized, DISCORD_MSG_LIMIT - 30);
+                // Close unclosed code blocks so Discord renders them properly
+                if let Some((_, fence_len)) = unclosed_code_block_lang(&truncated) {
+                    let fence: String = "`".repeat(fence_len);
+                    format!("{}\n{}\n\n{}", truncated, fence, indicator)
+                } else {
+                    format!("{}\n\n{}", truncated, indicator)
+                }
             };
 
             if display_text != last_edit_text && !done {
@@ -404,6 +411,7 @@ pub async fn handle_text_message(
 
         let full_response = normalize_empty_lines(&full_response);
         let full_response = fix_diff_code_blocks(&full_response);
+        let full_response = sanitize_inline_backticks(&full_response);
 
         rate_limit_wait(&state_owned, channel_id).await;
 
@@ -418,7 +426,7 @@ pub async fn handle_text_message(
             let _ = send_long_message_raw(&http, channel_id, &full_response, &state_owned).await;
             // Edit placeholder to a minimal marker so it doesn't show stale content
             rate_limit_wait(&state_owned, channel_id).await;
-            let edit = EditMessage::new().content("⬆️");
+            let edit = EditMessage::new().content("⬆️ (continued below)");
             let _ = channel_id.edit_message(&http, placeholder_msg_id, edit).await;
         }
 
