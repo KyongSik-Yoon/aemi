@@ -173,7 +173,8 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, f
     if is_error {
         let truncated = smart_truncate(content, max_len);
         if truncated.contains('\n') {
-            format!("\n❌\n```\n{}\n```\n", truncated)
+            let fence = min_code_fence(&truncated);
+            format!("\n❌\n{}\n{}\n{}\n", fence, truncated, fence)
         } else {
             format!("\n❌ `{}`\n", truncated)
         }
@@ -190,12 +191,13 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, f
         let is_diff = is_diff_content(content);
         let is_table = !is_diff && is_table_content(content);
         let truncated = smart_truncate_for_diff(content, max_len, is_diff);
+        let fence = min_code_fence(&truncated);
 
         if is_diff {
-            format!("\n```diff\n{}\n```\n", truncated)
+            format!("\n{}diff\n{}\n{}\n", fence, truncated, fence)
         } else if is_table {
             // Tables always in code blocks to preserve alignment
-            format!("\n```\n{}\n```\n", truncated)
+            format!("\n{}\n{}\n{}\n", fence, truncated, fence)
         } else if truncated.contains('\n') {
             // Language detection: file extension takes priority over content heuristics
             let lang = if let Some(path) = file_hint {
@@ -205,9 +207,9 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, f
                 detect_language(last_tool_name, &truncated)
             };
             if !lang.is_empty() {
-                format!("\n```{}\n{}\n```\n", lang, truncated)
+                format!("\n{}{}\n{}\n{}\n", fence, lang, truncated, fence)
             } else {
-                format!("\n```\n{}\n```\n", truncated)
+                format!("\n{}\n{}\n{}\n", fence, truncated, fence)
             }
         } else {
             format!("\n✅ `{}`\n", truncated)
@@ -233,8 +235,9 @@ pub fn format_edit_tool_use(file_path: &str, old_string: &str, new_string: &str,
     }
 
     let diff_text = build_edit_diff(old_string, new_string, 12);
+    let fence = min_code_fence(&diff_text);
 
-    format!("{}\n```diff\n{}\n```", header, diff_text)
+    format!("{}\n{}diff\n{}\n{}", header, fence, diff_text, fence)
 }
 
 /// Build a mini-diff view from Edit tool's old_string and new_string.
@@ -308,6 +311,25 @@ fn detect_language(tool_name: &str, content: &str) -> &'static str {
         }
         _ => "",
     }
+}
+
+/// Returns the minimum code fence (3+ backticks) needed to safely wrap `content`
+/// without inner backtick sequences prematurely closing the block.
+pub fn min_code_fence(content: &str) -> String {
+    let mut max_run = 0usize;
+    let mut current_run = 0usize;
+    for b in content.bytes() {
+        if b == b'`' {
+            current_run += 1;
+            if current_run > max_run {
+                max_run = current_run;
+            }
+        } else {
+            current_run = 0;
+        }
+    }
+    let fence_len = if max_run >= 3 { max_run + 1 } else { 3 };
+    "`".repeat(fence_len)
 }
 
 /// Smart truncate for diff content - tries to keep complete hunks.
@@ -900,5 +922,36 @@ mod tests {
         let s = "한글"; // each char is 3 bytes
         assert_eq!(floor_char_boundary(s, 1), 0);
         assert_eq!(floor_char_boundary(s, 3), 3);
+    }
+
+    // --- min_code_fence ---
+
+    #[test]
+    fn test_min_code_fence_no_backticks() {
+        assert_eq!(min_code_fence("hello world"), "```");
+    }
+
+    #[test]
+    fn test_min_code_fence_single_backtick() {
+        assert_eq!(min_code_fence("use `code` here"), "```");
+    }
+
+    #[test]
+    fn test_min_code_fence_triple_backticks() {
+        // Content has ``` → need ````
+        assert_eq!(min_code_fence("line\n```\nmore"), "````");
+    }
+
+    #[test]
+    fn test_min_code_fence_quad_backticks() {
+        assert_eq!(min_code_fence("````lang\ncode\n````"), "`````");
+    }
+
+    #[test]
+    fn test_format_tool_result_diff_with_inner_backticks() {
+        // Diff content containing ``` should use ```` fence
+        let diff = "@@ -1,2 +1,3 @@\n-format!(\"{}\\n```\\n\", x)\n+format!(\"{}\\n````\\n\", x)";
+        let result = format_tool_result(diff, false, "Bash", None);
+        assert!(result.contains("````"), "should use longer fence when content has ```");
     }
 }

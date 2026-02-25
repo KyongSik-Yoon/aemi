@@ -1,5 +1,54 @@
 use crate::services::formatter;
 
+/// Sanitize stray triple-backtick sequences that appear outside code blocks.
+/// Discord interprets any ``` as a code fence marker, so inline occurrences
+/// (e.g. "use ```rust for code blocks") break rendering. This inserts a
+/// zero-width space to break the sequence: ``` → `\u{200B}``
+pub fn sanitize_inline_backticks(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() + 64);
+    let mut in_code_block = false;
+    let mut open_fence_len: usize = 0;
+
+    for (i, line) in text.lines().enumerate() {
+        if i > 0 {
+            result.push('\n');
+        }
+
+        let trimmed = line.trim_start();
+        let bt_count = if trimmed.starts_with('`') {
+            trimmed.bytes().take_while(|&b| b == b'`').count()
+        } else {
+            0
+        };
+
+        if in_code_block {
+            // Check for closing fence (>= opening length, rest is whitespace)
+            if bt_count >= open_fence_len && trimmed[bt_count..].trim().is_empty() {
+                in_code_block = false;
+            }
+            result.push_str(line);
+        } else if bt_count >= 3 {
+            // Potential opening fence — valid if remainder has no backticks
+            let after_bt = &trimmed[bt_count..];
+            if !after_bt.contains('`') {
+                in_code_block = true;
+                open_fence_len = bt_count;
+                result.push_str(line);
+            } else {
+                // Starts with ``` but has more backticks later — escape
+                result.push_str(&line.replace("```", "`\u{200B}``"));
+            }
+        } else if line.contains("```") {
+            // Inline ``` not at line start — escape
+            result.push_str(&line.replace("```", "`\u{200B}``"));
+        } else {
+            result.push_str(line);
+        }
+    }
+
+    result
+}
+
 /// Fix code blocks that contain diff content but use a non-diff language hint.
 /// Discord only applies +/- coloring (green/red) when the code block uses ```diff.
 /// Claude sometimes wraps diff-like content in ```kotlin, ```rust, etc.
