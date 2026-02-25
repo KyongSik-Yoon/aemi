@@ -17,7 +17,7 @@ pub async fn handle_help_command(
     state: &SharedState,
 ) -> ResponseResult<()> {
     let help = "\
-<b>aimi Telegram Bot</b>
+<b>aemi Telegram Bot</b>
 Manage server files &amp; chat with Claude AI.
 
 <b>Session</b>
@@ -74,7 +74,7 @@ pub async fn handle_start_command(
                 .await?;
             return Ok(());
         };
-        let workspace_dir = home.join(".aimi").join("workspace");
+        let workspace_dir = home.join(".aemi").join("workspace");
         use rand::Rng;
         let random_name: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)

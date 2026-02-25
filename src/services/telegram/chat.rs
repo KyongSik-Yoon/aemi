@@ -105,7 +105,7 @@ pub async fn handle_text_message(
          Current working directory: {}\n\n\
          When your work produces a file the user would want (generated code, reports, images, archives, etc.),\n\
          send it by running this bash command:\n\n\
-         aimi --sendfile <filepath> --chat {} --key {}\n\n\
+         aemi --sendfile <filepath> --chat {} --key {}\n\n\
          This delivers the file directly to the user's Telegram chat.\n\
          Do NOT tell the user to use /down — use the command above instead.\n\n\
          Always keep the user informed about what you are doing. \

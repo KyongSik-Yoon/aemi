@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AIMI Rust Build Script
+AEMI Rust Build Script
 
 Cross-compilation build system for Linux and macOS platforms.
 All build tools are installed locally in the builder/tools directory.
@@ -33,7 +33,7 @@ def print_banner():
     """Print the build script banner."""
     print()
     print("=" * 50)
-    print("  AIMI Rust Build Script")
+    print("  AEMI Rust Build Script")
     print("  Cross-Compilation Support")
     print("=" * 50)
     print()
@@ -42,7 +42,7 @@ def print_banner():
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     parser = argparse.ArgumentParser(
-        description="AIMI Rust Build Script with Cross-Compilation Support",
+        description="AEMI Rust Build Script with Cross-Compilation Support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -89,9 +89,9 @@ pub fn token_hash(token: &str, prefix: Option<&str>) -> String {
     }
 }
 
-/// Path to bot settings file: ~/.aimi/bot_settings.json
+/// Path to bot settings file: ~/.aemi/bot_settings.json
 pub fn bot_settings_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".aimi").join("bot_settings.json"))
+    dirs::home_dir().map(|h| h.join(".aemi").join("bot_settings.json"))
 }
 
 /// Load bot settings from bot_settings.json using a pre-computed hash key.

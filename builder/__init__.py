@@ -1,5 +1,5 @@
 """
-AIMI Rust Build System
+AEMI Rust Build System
 
 A Python-based build system for cross-compiling Rust projects
 to Linux and macOS platforms.

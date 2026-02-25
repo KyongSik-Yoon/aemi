@@ -143,7 +143,7 @@ class BuildExecutor:
         profile = "release" if self.config.release else "debug"
 
         # Determine binary name (could be different on Windows)
-        binary_name = "aimi"
+        binary_name = "aemi"
 
         if target.is_native:
             binary_path = self.target_dir / profile / binary_name
@@ -165,7 +165,7 @@ class BuildExecutor:
                 continue
 
             # Determine destination name
-            dest_name = f"aimi-{result.target.friendly_name}"
+            dest_name = f"aemi-{result.target.friendly_name}"
             dest_path = self.dist_dir / dest_name
 
             try:

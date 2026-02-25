@@ -15,17 +15,17 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: aimi-linux-x86_64
+            artifact: aemi-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: aimi-linux-aarch64
+            artifact: aemi-linux-aarch64
             cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: aimi-macos-x86_64
+            artifact: aemi-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: aimi-macos-aarch64
+            artifact: aemi-macos-aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -49,7 +49,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/aimi ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/aemi ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

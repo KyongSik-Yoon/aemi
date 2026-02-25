@@ -1,5 +1,5 @@
 """
-Build configuration for AIMI Rust project.
+Build configuration for AEMI Rust project.
 """
 from dataclasses import dataclass, field
 from pathlib import Path
