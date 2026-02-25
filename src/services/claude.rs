@@ -1,12 +1,12 @@
 use std::process::Stdio;
-use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
 use regex::Regex;
 use serde_json::Value;
 
 pub use super::agent::{StreamMessage, CancelToken, AgentResponse};
+use super::provider_common::{self, StreamingConfig, DEFAULT_SYSTEM_PROMPT};
 
-// Generate resolve_binary_path(), get_binary_path(), debug_log() for "claude"
+// Generate resolve_binary_path(), get_binary_path(), is_cli_available(), debug_log() for "claude"
 define_ai_service_helpers!("claude");
 
 /// Type alias for backward compatibility
@@ -49,33 +49,7 @@ pub fn execute_command(
         "--output-format".to_string(),
         "json".to_string(),
         "--append-system-prompt".to_string(),
-        r#"You are a terminal file manager assistant. Be concise. Focus on file operations. Respond in the same language as the user.
-
-SECURITY RULES (MUST FOLLOW):
-- NEVER execute destructive commands like rm -rf, format, mkfs, dd, etc.
-- NEVER modify system files in /etc, /sys, /proc, /boot
-- NEVER access or modify files outside the current working directory without explicit user path
-- NEVER execute commands that could harm the system or compromise security
-- ONLY suggest safe file operations: copy, move, rename, create directory, view, edit
-- If a request seems dangerous, explain the risk and suggest a safer alternative
-
-BASH EXECUTION RULES (MUST FOLLOW):
-- All commands MUST run non-interactively without user input
-- Use -y, --yes, or --non-interactive flags (e.g., apt install -y, npm init -y)
-- Use -m flag for commit messages (e.g., git commit -m "message")
-- Disable pagers with --no-pager or pipe to cat (e.g., git --no-pager log)
-- NEVER use commands that open editors (vim, nano, etc.)
-- NEVER use commands that wait for stdin without arguments
-- NEVER use interactive flags like -i
-
-IMPORTANT: Format your responses using Markdown for better readability:
-- Use **bold** for important terms or commands
-- Use `code` for file paths, commands, and technical terms
-- Use bullet lists (- item) for multiple items
-- Use numbered lists (1. item) for sequential steps
-- Use code blocks (```language) for multi-line code or command examples
-- Use headers (## Title) to organize longer responses
-- Keep formatting minimal and terminal-friendly"#.to_string(),
+        DEFAULT_SYSTEM_PROMPT.to_string(),
     ];
 
     // Resume session if available
@@ -202,15 +176,7 @@ fn parse_claude_output(output: &str) -> ClaudeResponse {
 
 /// Check if Claude CLI is available
 pub fn is_claude_available() -> bool {
-    #[cfg(not(unix))]
-    {
-        false
-    }
-
-    #[cfg(unix)]
-    {
-        get_binary_path().is_some()
-    }
+    is_cli_available()
 }
 
 /// Check if platform supports AI features
@@ -231,43 +197,8 @@ pub fn execute_command_streaming(
     allowed_tools: Option<&[String]>,
     cancel_token: Option<std::sync::Arc<CancelToken>>,
 ) -> Result<(), String> {
-    debug_log("========================================");
-    debug_log("=== execute_command_streaming START ===");
-    debug_log("========================================");
     debug_log(&format!("prompt_len: {} chars", prompt.len()));
-    let prompt_preview: String = prompt.chars().take(200).collect();
-    debug_log(&format!("prompt_preview: {:?}", prompt_preview));
     debug_log(&format!("session_id: {:?}", session_id));
-    debug_log(&format!("working_dir: {}", working_dir));
-    debug_log(&format!("timestamp: {:?}", std::time::SystemTime::now()));
-
-    let default_system_prompt = r#"You are a terminal file manager assistant. Be concise. Focus on file operations. Respond in the same language as the user.
-
-SECURITY RULES (MUST FOLLOW):
-- NEVER execute destructive commands like rm -rf, format, mkfs, dd, etc.
-- NEVER modify system files in /etc, /sys, /proc, /boot
-- NEVER access or modify files outside the current working directory without explicit user path
-- NEVER execute commands that could harm the system or compromise security
-- ONLY suggest safe file operations: copy, move, rename, create directory, view, edit
-- If a request seems dangerous, explain the risk and suggest a safer alternative
-
-BASH EXECUTION RULES (MUST FOLLOW):
-- All commands MUST run non-interactively without user input
-- Use -y, --yes, or --non-interactive flags (e.g., apt install -y, npm init -y)
-- Use -m flag for commit messages (e.g., git commit -m "message")
-- Disable pagers with --no-pager or pipe to cat (e.g., git --no-pager log)
-- NEVER use commands that open editors (vim, nano, etc.)
-- NEVER use commands that wait for stdin without arguments
-- NEVER use interactive flags like -i
-
-IMPORTANT: Format your responses using Markdown for better readability:
-- Use **bold** for important terms or commands
-- Use `code` for file paths, commands, and technical terms
-- Use bullet lists (- item) for multiple items
-- Use numbered lists (1. item) for sequential steps
-- Use code blocks (```language) for multi-line code or command examples
-- Use headers (## Title) to organize longer responses
-- Keep formatting minimal and terminal-friendly"#;
 
     let tools_str = match allowed_tools {
         Some(tools) => tools.join(","),
@@ -284,7 +215,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
 
     // Append system prompt based on parameter
     let effective_prompt = match system_prompt {
-        None => Some(default_system_prompt),
+        None => Some(DEFAULT_SYSTEM_PROMPT),
         Some("") => None,
         Some(p) => Some(p),
     };
@@ -303,241 +234,33 @@ IMPORTANT: Format your responses using Markdown for better readability:
         args.push(sid.to_string());
     }
 
-    let claude_bin = get_binary_path()
+    let binary_path = get_binary_path()
         .ok_or_else(|| {
             debug_log("ERROR: Claude CLI not found");
             "Claude CLI not found. Is Claude CLI installed?".to_string()
         })?;
 
-    debug_log("--- Spawning claude process ---");
-    debug_log(&format!("Command: {}", claude_bin));
-    debug_log(&format!("Args count: {}", args.len()));
-    for (i, arg) in args.iter().enumerate() {
-        if arg.len() > 100 {
-            debug_log(&format!("  arg[{}]: {}... (truncated, {} chars total)", i, &arg[..100], arg.len()));
-        } else {
-            debug_log(&format!("  arg[{}]: {}", i, arg));
-        }
-    }
-    debug_log("Env: CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000");
-    debug_log("Env: BASH_DEFAULT_TIMEOUT_MS=86400000");
-    debug_log("Env: BASH_MAX_TIMEOUT_MS=86400000");
+    let config = StreamingConfig {
+        provider_name: "claude",
+        binary_path,
+        args: &args,
+        working_dir,
+        env_vars: &[
+            ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"),
+            ("BASH_DEFAULT_TIMEOUT_MS", "86400000"),
+            ("BASH_MAX_TIMEOUT_MS", "86400000"),
+        ],
+        env_remove: &["CLAUDECODE"],
+        stdin_data: Some(prompt.as_bytes()),
+        send_synthetic_init: false, // Claude does not need synthetic Init
+    };
 
-    let spawn_start = std::time::Instant::now();
-    let mut child = Command::new(claude_bin)
-        .args(&args)
-        .current_dir(working_dir)
-        .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000")
-        .env("BASH_DEFAULT_TIMEOUT_MS", "86400000")  // 24 hours (no practical timeout)
-        .env("BASH_MAX_TIMEOUT_MS", "86400000")      // 24 hours (no practical timeout)
-        .env_remove("CLAUDECODE")  // Allow running from within Claude Code sessions
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            debug_log(&format!("ERROR: Failed to spawn after {:?}: {}", spawn_start.elapsed(), e));
-            format!("Failed to start Claude: {}. Is Claude CLI installed?", e)
-        })?;
-    debug_log(&format!("Claude process spawned successfully in {:?}, pid={:?}", spawn_start.elapsed(), child.id()));
-
-    // Store child PID in cancel token so the caller can kill it externally
-    if let Some(ref token) = cancel_token {
-        *token.child_pid.lock().unwrap() = Some(child.id());
-    }
-
-    // Write prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        debug_log(&format!("Writing prompt to stdin ({} bytes)...", prompt.len()));
-        let write_start = std::time::Instant::now();
-        let write_result = stdin.write_all(prompt.as_bytes());
-        debug_log(&format!("stdin.write_all completed in {:?}, result={:?}", write_start.elapsed(), write_result.is_ok()));
-        // stdin is dropped here, which closes it - this signals end of input to claude
-        debug_log("stdin handle dropped (closed)");
-    } else {
-        debug_log("WARNING: Could not get stdin handle!");
-    }
-
-    // Take stderr handle before reading stdout so we can report CLI errors
-    let stderr_handle = child.stderr.take();
-
-    // Read stdout line by line for streaming
-    debug_log("Taking stdout handle...");
-    let stdout = child.stdout.take()
-        .ok_or_else(|| {
-            debug_log("ERROR: Failed to capture stdout");
-            "Failed to capture stdout".to_string()
-        })?;
-    let reader = BufReader::new(stdout);
-    debug_log("BufReader created, ready to read lines...");
-
-    let mut last_session_id: Option<String> = None;
-    let mut final_result: Option<String> = None;
-    let mut line_count = 0;
-
-    debug_log("Entering lines loop - will block until first line arrives...");
-    for line in reader.lines() {
-        // Check cancel token before processing each line
-        if let Some(ref token) = cancel_token {
-            if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                debug_log("Cancel detected — killing child process");
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(());
-            }
-        }
-
-        debug_log(&format!("Line {} - read started", line_count + 1));
-        let line = match line {
-            Ok(l) => {
-                debug_log(&format!("Line {} - read completed: {} chars", line_count + 1, l.len()));
-                l
-            },
-            Err(e) => {
-                debug_log(&format!("ERROR: Failed to read line: {}", e));
-                let _ = sender.send(StreamMessage::Error {
-                    message: format!("Failed to read output: {}", e)
-                });
-                break;
-            }
-        };
-
-        line_count += 1;
-        debug_log(&format!("Line {}: {} chars", line_count, line.len()));
-
-        if line.trim().is_empty() {
-            debug_log("  (empty line, skipping)");
-            continue;
-        }
-
-        let line_preview: String = line.chars().take(200).collect();
-        debug_log(&format!("  Raw line preview: {}", line_preview));
-
-        if let Ok(json) = serde_json::from_str::<Value>(&line) {
-            let msg_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let msg_subtype = json.get("subtype").and_then(|v| v.as_str()).unwrap_or("-");
-            debug_log(&format!("  JSON parsed: type={}, subtype={}", msg_type, msg_subtype));
-
-            // Log more details for specific message types
-            if msg_type == "assistant" {
-                if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
-                    debug_log(&format!("  Assistant content array: {}", content));
-                }
-            }
-
-            debug_log("  Calling parse_stream_message...");
-            if let Some(msg) = parse_stream_message(&json) {
-                debug_log(&format!("  Parsed message variant: {:?}", std::mem::discriminant(&msg)));
-
-                // Track session_id and final result for Done message
-                match &msg {
-                    StreamMessage::Init { session_id } => {
-                        debug_log(&format!("  >>> Init: session_id={}", session_id));
-                        last_session_id = Some(session_id.clone());
-                    }
-                    StreamMessage::Text { content } => {
-                        let preview: String = content.chars().take(100).collect();
-                        debug_log(&format!("  >>> Text: {} chars, preview: {:?}", content.len(), preview));
-                    }
-                    StreamMessage::ToolUse { name, input } => {
-                        let input_preview: String = input.chars().take(200).collect();
-                        debug_log(&format!("  >>> ToolUse: name={}, input_preview={:?}", name, input_preview));
-                    }
-                    StreamMessage::ToolResult { content, is_error } => {
-                        let content_preview: String = content.chars().take(200).collect();
-                        debug_log(&format!("  >>> ToolResult: is_error={}, content_len={}, preview={:?}",
-                            is_error, content.len(), content_preview));
-                    }
-                    StreamMessage::Done { result, session_id } => {
-                        let result_preview: String = result.chars().take(100).collect();
-                        debug_log(&format!("  >>> Done: result_len={}, session_id={:?}, preview={:?}",
-                            result.len(), session_id, result_preview));
-                        final_result = Some(result.clone());
-                        if session_id.is_some() {
-                            last_session_id = session_id.clone();
-                        }
-                    }
-                    StreamMessage::Error { message } => {
-                        debug_log(&format!("  >>> Error: {}", message));
-                    }
-                    StreamMessage::TaskNotification { task_id, status, summary } => {
-                        debug_log(&format!("  >>> TaskNotification: task_id={}, status={}, summary={}", task_id, status, summary));
-                    }
-                }
-
-                // Send message to channel
-                debug_log("  Sending message to channel...");
-                let send_result = sender.send(msg);
-                if send_result.is_err() {
-                    debug_log("  ERROR: Channel send failed (receiver dropped)");
-                    break;
-                }
-                debug_log("  Message sent to channel successfully");
-            } else {
-                debug_log(&format!("  parse_stream_message returned None for type={}", msg_type));
-            }
-        } else {
-            let invalid_preview: String = line.chars().take(200).collect();
-            debug_log(&format!("  NOT valid JSON: {}", invalid_preview));
-        }
-    }
-
-    debug_log("--- Exited lines loop ---");
-    debug_log(&format!("Total lines read: {}", line_count));
-    debug_log(&format!("final_result present: {}", final_result.is_some()));
-    debug_log(&format!("last_session_id: {:?}", last_session_id));
-
-    // Check cancel token after exiting the loop
-    if let Some(ref token) = cancel_token {
-        if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-            debug_log("Cancel detected after loop — killing child process");
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(());
-        }
-    }
-
-    // Wait for process to finish
-    debug_log("Waiting for child process to finish (child.wait())...");
-    let wait_start = std::time::Instant::now();
-    let status = child.wait().map_err(|e| {
-        debug_log(&format!("ERROR: Process wait failed after {:?}: {}", wait_start.elapsed(), e));
-        format!("Process error: {}", e)
-    })?;
-    debug_log(&format!("Process finished in {:?}, status: {:?}, exit_code: {:?}",
-        wait_start.elapsed(), status, status.code()));
-
-    // If we didn't get a proper Done message, send one now
-    if final_result.is_none() {
-        debug_log("No Done message received, sending synthetic Done message...");
-        let send_result = sender.send(StreamMessage::Done {
-            result: String::new(),
-            session_id: last_session_id.clone(),
-        });
-        debug_log(&format!("Synthetic Done message sent, result={:?}", send_result.is_ok()));
-    } else {
-        debug_log("Done message was already received, not sending synthetic one");
-    }
-
-    if !status.success() {
-        debug_log(&format!("ERROR: Process failed with exit code {:?}", status.code()));
-        // Read stderr for actual error details from the CLI
-        let stderr_msg = stderr_handle.and_then(|h| {
-            let mut buf = String::new();
-            std::io::Read::read_to_string(&mut BufReader::new(h), &mut buf).ok()?;
-            let trimmed = buf.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
-        });
-        return Err(match stderr_msg {
-            Some(msg) => msg,
-            None => format!("Process exited with code {:?}", status.code()),
-        });
-    }
-
-    debug_log("========================================");
-    debug_log("=== execute_command_streaming END (success) ===");
-    debug_log("========================================");
-    Ok(())
+    provider_common::run_streaming(
+        &config,
+        sender,
+        cancel_token,
+        provider_common::make_default_handler(parse_stream_message),
+    )
 }
 
 /// Parse a stream-json line into a StreamMessage

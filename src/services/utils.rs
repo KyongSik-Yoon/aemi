@@ -44,6 +44,14 @@ macro_rules! define_ai_service_helpers {
             BINARY_PATH.get_or_init(|| resolve_binary_path()).as_deref()
         }
 
+        #[allow(dead_code)]
+        fn is_cli_available() -> bool {
+            #[cfg(not(unix))]
+            { false }
+            #[cfg(unix)]
+            { get_binary_path().is_some() }
+        }
+
         fn debug_log(msg: &str) {
             static ENABLED: OnceLock<bool> = OnceLock::new();
             let enabled = ENABLED.get_or_init(|| {
