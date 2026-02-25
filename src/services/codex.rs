@@ -201,7 +201,7 @@ IMPORTANT: Format your responses using Markdown for better readability:
     ];
 
     // Note: Codex CLI does not support --resume for session continuity.
-    // Session tracking is handled at the aimi level only.
+    // Session tracking is handled at the aemi level only.
     if session_id.is_some() {
         debug_log("Session ID available but Codex CLI does not support --resume, skipping");
     }

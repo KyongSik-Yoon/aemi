@@ -2,7 +2,7 @@
 
 /// Macro to generate the common boilerplate for AI service modules:
 /// - A `OnceLock`-cached path resolver (`resolve_*_path`, `get_*_path`)
-/// - A `debug_log` function that writes to `~/.aimi/debug/<name>.log`
+/// - A `debug_log` function that writes to `~/.aemi/debug/<name>.log`
 ///
 /// Usage: `define_ai_service_helpers!("claude");`
 #[macro_export]
@@ -47,11 +47,11 @@ macro_rules! define_ai_service_helpers {
         fn debug_log(msg: &str) {
             static ENABLED: OnceLock<bool> = OnceLock::new();
             let enabled = ENABLED.get_or_init(|| {
-                std::env::var("AIMI_DEBUG").map(|v| v == "1").unwrap_or(false)
+                std::env::var("AEMI_DEBUG").map(|v| v == "1").unwrap_or(false)
             });
             if !*enabled { return; }
             if let Some(home) = dirs::home_dir() {
-                let debug_dir = home.join(".aimi").join("debug");
+                let debug_dir = home.join(".aemi").join("debug");
                 let _ = std::fs::create_dir_all(&debug_dir);
                 let log_path = debug_dir.join(format!("{}.log", $binary_name));
                 if let Ok(mut file) = OpenOptions::new()

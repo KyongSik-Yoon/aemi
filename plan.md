@@ -127,7 +127,7 @@ match agent.as_str() {
 |------|-----------|
 | Gemini stream-json 포맷이 문서와 다를 수 있음 | debug_log로 raw JSON 로깅, 실제 테스트 시 파서 조정 |
 | `-p` flag deprecation | positional arg도 지원하도록 구현 (향후 전환 용이) |
-| session continuity 없음 | session_id를 자체 생성하여 aimi 레벨에서 대화 이력 관리 |
+| session continuity 없음 | session_id를 자체 생성하여 aemi 레벨에서 대화 이력 관리 |
 | `--yolo` 보안 리스크 | system prompt에서 보안 규칙 강제, 기존 Claude와 동일 수준 |
 
 ## Implementation Order

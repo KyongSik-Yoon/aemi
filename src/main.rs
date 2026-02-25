@@ -7,11 +7,11 @@ use crate::services::claude;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
-    println!("aimi {} - AI agent routing tool", VERSION);
+    println!("aemi {} - Agent Mirror", VERSION);
     println!();
     println!("USAGE:");
-    println!("    aimi [OPTIONS]");
-    println!("    aimi --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... --chat-id|--channel-id <ID>");
+    println!("    aemi [OPTIONS]");
+    println!("    aemi --agent <AGENT> --routing <PLATFORM> --token <TOKEN>... --chat-id|--channel-id <ID>");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help              Print help information");
@@ -26,9 +26,9 @@ fn print_help() {
     println!("    --channel-id <ID>       Discord channel ID (required for discord routing)");
     println!();
     println!("EXAMPLES:");
-    println!("    aimi --agent claude --routing telegram --token <TOKEN> --chat-id <ID>");
-    println!("    aimi --agent claude --routing telegram --token <T1> <T2> --chat-id <ID>");
-    println!("    aimi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
+    println!("    aemi --agent claude --routing telegram --token <TOKEN> --chat-id <ID>");
+    println!("    aemi --agent claude --routing telegram --token <T1> <T2> --chat-id <ID>");
+    println!("    aemi --agent claude --routing discord --token <TOKEN> --channel-id <ID>");
     println!();
     println!("INTERNAL:");
     println!("    --base64 <TEXT>         Decode base64 and print");
@@ -37,7 +37,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("aimi {}", VERSION);
+    println!("aemi {}", VERSION);
 }
 
 fn handle_base64(encoded: &str) {
@@ -116,7 +116,7 @@ fn handle_prompt(prompt: &str) {
 fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64, agent: &str) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let title = format!("  aimi v{}  |  Telegram Bot Server  ", VERSION);
+    let title = format!("  aemi v{}  |  Telegram Bot Server  ", VERSION);
     let width = title.chars().count();
     println!();
     println!("  ┌{}┐", "─".repeat(width));
@@ -157,7 +157,7 @@ fn handle_telegram_server(tokens: Vec<String>, allowed_chat_id: i64, agent: &str
 fn handle_discord_server(token: String, allowed_channel_id: u64, agent: &str) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let title = format!("  aimi v{}  |  Discord Bot Server  ", VERSION);
+    let title = format!("  aemi v{}  |  Discord Bot Server  ", VERSION);
     let width = title.chars().count();
     println!();
     println!("  ┌{}┐", "─".repeat(width));
@@ -195,7 +195,7 @@ fn main() {
         "--prompt" => {
             if args.len() < 3 {
                 eprintln!("Error: --prompt requires a text argument");
-                eprintln!("Usage: aimi --prompt \"your question\"");
+                eprintln!("Usage: aemi --prompt \"your question\"");
                 return;
             }
             handle_prompt(&args[2]);
@@ -245,7 +245,7 @@ fn main() {
                 }
                 _ => {
                     eprintln!("Error: --sendfile requires <PATH>, --chat <ID>, and --key <HASH>");
-                    eprintln!("Usage: aimi --sendfile <PATH> --chat <ID> --key <HASH>");
+                    eprintln!("Usage: aemi --sendfile <PATH> --chat <ID> --key <HASH>");
                 }
             }
             return;
@@ -327,7 +327,7 @@ fn main() {
         Some(a) => a,
         None => {
             eprintln!("Error: --agent is required");
-            eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN>");
+            eprintln!("Usage: aemi --agent claude --routing telegram --token <TOKEN>");
             return;
         }
     };
@@ -335,13 +335,13 @@ fn main() {
         Some(r) => r,
         None => {
             eprintln!("Error: --routing is required");
-            eprintln!("Usage: aimi --agent claude --routing telegram --token <TOKEN>");
+            eprintln!("Usage: aemi --agent claude --routing telegram --token <TOKEN>");
             return;
         }
     };
     if tokens.is_empty() {
         eprintln!("Error: --token is required");
-        eprintln!("Usage: aimi --agent {} --routing {} --token <TOKEN>", agent, routing);
+        eprintln!("Usage: aemi --agent {} --routing {} --token <TOKEN>", agent, routing);
         return;
     }
 
@@ -353,7 +353,7 @@ fn main() {
                     Some(id) => id,
                     None => {
                         eprintln!("Error: --chat-id is required for Telegram routing (security)");
-                        eprintln!("Usage: aimi --agent {} --routing telegram --token <TOKEN> --chat-id <ID>", agent);
+                        eprintln!("Usage: aemi --agent {} --routing telegram --token <TOKEN> --chat-id <ID>", agent);
                         return;
                     }
                 };
@@ -368,7 +368,7 @@ fn main() {
                     Some(id) => id,
                     None => {
                         eprintln!("Error: --channel-id is required for Discord routing (security)");
-                        eprintln!("Usage: aimi --agent {} --routing discord --token <TOKEN> --channel-id <ID>", agent);
+                        eprintln!("Usage: aemi --agent {} --routing discord --token <TOKEN> --channel-id <ID>", agent);
                         return;
                     }
                 };

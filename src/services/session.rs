@@ -28,9 +28,9 @@ pub struct SessionData {
     pub created_at: String,
 }
 
-/// Get the AI sessions directory path (~/.aimi/ai_sessions)
+/// Get the AI sessions directory path (~/.aemi/ai_sessions)
 pub fn ai_sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".aimi").join("ai_sessions"))
+    dirs::home_dir().map(|h| h.join(".aemi").join("ai_sessions"))
 }
 
 /// Sanitize user input to prevent prompt injection attacks

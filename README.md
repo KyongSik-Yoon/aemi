@@ -1,6 +1,6 @@
-# AIMI
+# AEMI
 
-AI agent routing tool with Telegram and Discord bot integration.
+Agent Mirror - AI agent routing tool with Telegram and Discord bot integration.
 
 A CLI tool that relays AI agent responses through Telegram/Discord bots.
 
@@ -20,34 +20,34 @@ This project is a fork of [kstost/cokacdir](https://github.com/kstost/cokacdir).
 
 ```bash
 # Query Claude Code directly
-aimi --prompt "explain this code"
+aemi --prompt "explain this code"
 
 # Start Telegram bot server with Claude (--chat-id required)
-aimi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+aemi --agent claude --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Telegram bot server with Gemini
-aimi --agent gemini --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+aemi --agent gemini --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server (--channel-id required)
-aimi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+aemi --agent claude --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Start Telegram bot server with Codex
-aimi --agent codex --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+aemi --agent codex --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server with Gemini
-aimi --agent gemini --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+aemi --agent gemini --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Start Discord bot server with Codex
-aimi --agent codex --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+aemi --agent codex --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Start Telegram bot server with OpenCode
-aimi --agent opencode --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+aemi --agent opencode --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 
 # Start Discord bot server with OpenCode
-aimi --agent opencode --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
+aemi --agent opencode --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
 # Run multiple Telegram bots simultaneously
-aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
+aemi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
 ```
 
 ## Installation
@@ -60,14 +60,14 @@ aimi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat
 
 ```bash
 # Clone
-git clone https://github.com/KyongSik-Yoon/aimi.git
-cd aimi
+git clone https://github.com/KyongSik-Yoon/aemi.git
+cd aemi
 
 # Build
 cargo build --release
 
 # Binary location
-./target/release/aimi
+./target/release/aemi
 ```
 
 See [build_manual.md](build_manual.md) for detailed build instructions including cross-compilation.

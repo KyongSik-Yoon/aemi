@@ -21,7 +21,7 @@ pub async fn handle_help_command(
     state: &SharedState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let help = "\
-**aimi Discord Bot**
+**aemi Discord Bot**
 Manage server files & chat with Claude AI.
 
 **Session**
@@ -72,7 +72,7 @@ pub async fn handle_start_command(
             channel_id.say(&ctx.http, "Error: cannot determine home directory.").await?;
             return Ok(());
         };
-        let workspace_dir = home.join(".aimi").join("workspace");
+        let workspace_dir = home.join(".aemi").join("workspace");
         use rand::Rng;
         let random_name: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
