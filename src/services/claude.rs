@@ -290,7 +290,7 @@ fn parse_stream_message(json: &Value) -> Option<StreamMessage> {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    Some(StreamMessage::TaskNotification { task_id, status, summary })
+                    Some(StreamMessage::TaskNotification { _task_id: task_id, _status: status, summary })
                 }
                 _ => None
             }

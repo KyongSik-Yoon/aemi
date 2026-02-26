@@ -13,7 +13,7 @@ pub enum StreamMessage {
     /// Tool execution result
     ToolResult { content: String, is_error: bool },
     /// Background task notification
-    TaskNotification { task_id: String, status: String, summary: String },
+    TaskNotification { _task_id: String, _status: String, summary: String },
     /// Completion
     Done { result: String, session_id: Option<String> },
     /// Error
