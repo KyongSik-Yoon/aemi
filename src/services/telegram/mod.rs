@@ -226,6 +226,9 @@ async fn handle_message(
     } else if text.starts_with("/start") {
         println!("  [{timestamp}] ◀ [{user_name}] /start");
         commands::handle_start_command(&bot, chat_id, &text, &state, token).await?;
+    } else if text.starts_with("/resume") {
+        println!("  [{timestamp}] ◀ [{user_name}] /resume {}", text.strip_prefix("/resume").unwrap_or("").trim());
+        commands::handle_resume_command(&bot, chat_id, &text, &state, token).await?;
     } else if text.starts_with("/clear") {
         println!("  [{timestamp}] ◀ [{user_name}] /clear");
         commands::handle_clear_command(&bot, chat_id, &state).await?;
