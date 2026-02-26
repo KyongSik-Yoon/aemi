@@ -74,3 +74,75 @@ jobs:
         with:
           generate_release_notes: true
           files: artifacts/**/*
+
+  npm-publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          declare -A PKG_MAP=(
+            ["aemi-linux-x86_64"]="cli-linux-x64"
+            ["aemi-linux-aarch64"]="cli-linux-arm64"
+            ["aemi-macos-x86_64"]="cli-darwin-x64"
+            ["aemi-macos-aarch64"]="cli-darwin-arm64"
+          )
+
+          for artifact in "${!PKG_MAP[@]}"; do
+            pkg_dir="${PKG_MAP[$artifact]}"
+            staging="npm-staging/${pkg_dir}"
+
+            mkdir -p "${staging}/bin"
+            cp "artifacts/${artifact}/${artifact}" "${staging}/bin/aemi"
+            chmod +x "${staging}/bin/aemi"
+
+            node -e "
+              const pkg = require('./npm/${pkg_dir}/package.json');
+              pkg.version = '${VERSION}';
+              require('fs').writeFileSync('${staging}/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+
+            cd "${staging}"
+            npm publish --access public
+            cd -
+          done
+
+      - name: Publish main wrapper package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          staging="npm-staging/aemi"
+
+          mkdir -p "${staging}/bin"
+          cp npm/aemi/bin/aemi "${staging}/bin/aemi"
+          chmod +x "${staging}/bin/aemi"
+
+          node -e "
+            const pkg = require('./npm/aemi/package.json');
+            pkg.version = '${VERSION}';
+            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[dep] = '${VERSION}';
+            }
+            require('fs').writeFileSync('${staging}/package.json', JSON.stringify(pkg, null, 2));
+          "
+
+          cd "${staging}"
+          npm publish --access public

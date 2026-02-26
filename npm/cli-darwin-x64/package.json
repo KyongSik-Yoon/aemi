@@ -1,0 +1,15 @@
+{
+  "name": "@aemi-cli/darwin-x64",
+  "version": "0.0.3",
+  "description": "aemi binary for macOS x86_64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KyongSik-Yoon/aemi"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "bin": {
+    "aemi": "bin/aemi"
+  }
+}

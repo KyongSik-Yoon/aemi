@@ -1,0 +1,21 @@
+{
+  "name": "aemi",
+  "version": "0.0.3",
+  "description": "LLM CLI routing tool with Telegram and Discord bot integration",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KyongSik-Yoon/aemi"
+  },
+  "homepage": "https://www.jennifersoft.com",
+  "keywords": ["cli", "ai", "llm", "telegram", "discord", "claude", "codex", "gemini", "opencode"],
+  "bin": {
+    "aemi": "bin/aemi"
+  },
+  "optionalDependencies": {
+    "@aemi-cli/linux-x64": "0.0.3",
+    "@aemi-cli/linux-arm64": "0.0.3",
+    "@aemi-cli/darwin-x64": "0.0.3",
+    "@aemi-cli/darwin-arm64": "0.0.3"
+  }
+}
