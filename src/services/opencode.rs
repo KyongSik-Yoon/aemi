@@ -1,25 +1,17 @@
 use std::process::Stdio;
-use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
 use serde_json::Value;
 
 pub use super::agent::{StreamMessage, CancelToken, AgentResponse};
+use super::provider_common::{self, StreamingConfig};
 
-// Generate resolve_binary_path(), get_binary_path(), debug_log() for "opencode"
+// Generate resolve_binary_path(), get_binary_path(), is_cli_available(), debug_log() for "opencode"
 define_ai_service_helpers!("opencode");
 
 /// Check if OpenCode CLI is available
 #[allow(dead_code)]
 pub fn is_opencode_available() -> bool {
-    #[cfg(not(unix))]
-    {
-        false
-    }
-
-    #[cfg(unix)]
-    {
-        get_binary_path().is_some()
-    }
+    is_cli_available()
 }
 
 /// Execute a command using OpenCode CLI (non-streaming)
@@ -151,47 +143,10 @@ pub fn execute_command_streaming(
     _allowed_tools: Option<&[String]>, // OpenCode manages tools internally
     cancel_token: Option<std::sync::Arc<CancelToken>>,
 ) -> Result<(), String> {
-    debug_log("========================================");
-    debug_log("=== opencode execute_command_streaming START ===");
-    debug_log("========================================");
     debug_log(&format!("prompt_len: {} chars", prompt.len()));
-    debug_log(&format!("working_dir: {}", working_dir));
     debug_log(&format!("session_id: {:?}", session_id));
 
-    let default_system_prompt = r#"You are a terminal file manager assistant. Be concise. Focus on file operations. Respond in the same language as the user.
-
-SECURITY RULES (MUST FOLLOW):
-- NEVER execute destructive commands like rm -rf, format, mkfs, dd, etc.
-- NEVER modify system files in /etc, /sys, /proc, /boot
-- NEVER access or modify files outside the current working directory without explicit user path
-- NEVER execute commands that could harm the system or compromise security
-- ONLY suggest safe file operations: copy, move, rename, create directory, view, edit
-- If a request seems dangerous, explain the risk and suggest a safer alternative
-
-BASH EXECUTION RULES (MUST FOLLOW):
-- All commands MUST run non-interactively without user input
-- Use -y, --yes, or --non-interactive flags (e.g., apt install -y, npm init -y)
-- Use -m flag for commit messages (e.g., git commit -m "message")
-- Disable pagers with --no-pager or pipe to cat (e.g., git --no-pager log)
-- NEVER use commands that open editors (vim, nano, etc.)
-- NEVER use commands that wait for stdin without arguments
-- NEVER use interactive flags like -i
-
-IMPORTANT: Format your responses using Markdown for better readability:
-- Use **bold** for important terms or commands
-- Use `code` for file paths, commands, and technical terms
-- Use bullet lists (- item) for multiple items
-- Use numbered lists (1. item) for sequential steps
-- Use code blocks (```language) for multi-line code or command examples
-- Use headers (## Title) to organize longer responses
-- Keep formatting minimal and terminal-friendly"#;
-
-    // Build the effective prompt with system prompt prepended
-    let effective_prompt = match system_prompt {
-        None => format!("[System Instructions]\n{}\n\n[User Message]\n{}", default_system_prompt, prompt),
-        Some("") => prompt.to_string(),
-        Some(sp) => format!("[System Instructions]\n{}\n\n[User Message]\n{}", sp, prompt),
-    };
+    let effective_prompt = provider_common::build_effective_prompt(system_prompt, prompt);
 
     // Build args: opencode run --format json [--session <session_id>] "prompt"
     let mut args = vec![
@@ -210,155 +165,51 @@ IMPORTANT: Format your responses using Markdown for better readability:
     // Prompt as positional argument (must be last)
     args.push(effective_prompt);
 
-    let opencode_bin = get_binary_path()
+    let binary_path = get_binary_path()
         .ok_or_else(|| {
             debug_log("ERROR: OpenCode CLI not found");
             "OpenCode CLI not found. Is OpenCode CLI installed?".to_string()
         })?;
 
-    debug_log("--- Spawning opencode process ---");
-    debug_log(&format!("Command: {} {}", opencode_bin, args.iter()
-        .map(|a| if a.len() > 50 { format!("{}...", &a[..50]) } else { a.clone() })
-        .collect::<Vec<_>>().join(" ")));
+    let config = StreamingConfig {
+        provider_name: "opencode",
+        binary_path,
+        args: &args,
+        working_dir,
+        env_vars: &[],
+        env_remove: &[],
+        stdin_data: None,
+        send_synthetic_init: true,
+    };
 
-    let spawn_start = std::time::Instant::now();
-    let mut child = Command::new(opencode_bin)
-        .args(&args)
-        .current_dir(working_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            debug_log(&format!("ERROR: Failed to spawn: {}", e));
-            format!("Failed to start OpenCode: {}. Is OpenCode CLI installed?", e)
-        })?;
-    debug_log(&format!("OpenCode process spawned in {:?}, pid={:?}", spawn_start.elapsed(), child.id()));
-
-    // Store child PID in cancel token so the caller can kill it externally
-    if let Some(ref token) = cancel_token {
-        *token.child_pid.lock().unwrap() = Some(child.id());
-    }
-
-    // Take stderr handle before reading stdout so we can report CLI errors
-    let stderr_handle = child.stderr.take();
-
-    // Read stdout line by line for streaming
-    let stdout = child.stdout.take()
-        .ok_or_else(|| "Failed to capture stdout".to_string())?;
-    let reader = BufReader::new(stdout);
-
-    let mut captured_session_id: Option<String> = None;
-    let mut sent_init = false;
-    let mut final_result: Option<String> = None;
-    let mut line_count = 0;
-
-    for line in reader.lines() {
-        // Check cancel token before processing each line
-        if let Some(ref token) = cancel_token {
-            if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                debug_log("Cancel detected — killing child process");
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(());
-            }
-        }
-
-        let line = match line {
-            Ok(l) => l,
-            Err(e) => {
-                debug_log(&format!("ERROR: Failed to read line: {}", e));
-                let _ = sender.send(StreamMessage::Error {
-                    message: format!("Failed to read output: {}", e)
-                });
-                break;
-            }
-        };
-
-        line_count += 1;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        debug_log(&format!("Line {}: {}", line_count, &line.chars().take(200).collect::<String>()));
-
-        if let Ok(json) = serde_json::from_str::<Value>(&line) {
-            // Capture sessionID from the first event
-            if captured_session_id.is_none() {
-                captured_session_id = json.get("sessionID")
+    // OpenCode uses a custom handler because sessionID must be extracted from the
+    // JSON envelope (not from parse_stream_message) and Init must be sent manually.
+    provider_common::run_streaming(
+        &config,
+        sender,
+        cancel_token,
+        |json, sender, state| {
+            // Capture sessionID from any event
+            if state.session_id.is_none() {
+                state.session_id = json.get("sessionID")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
             }
 
             // Send Init on first event with sessionID
-            if !sent_init {
-                if let Some(ref sid) = captured_session_id {
+            if !state.sent_init {
+                if let Some(ref sid) = state.session_id {
                     let _ = sender.send(StreamMessage::Init { session_id: sid.clone() });
-                    sent_init = true;
+                    state.sent_init = true;
                 }
             }
 
-            if let Some(msg) = parse_stream_message(&json) {
-                // Track final result
-                if let StreamMessage::Done { ref result, .. } = msg {
-                    final_result = Some(result.clone());
-                }
-
-                let send_result = sender.send(msg);
-                if send_result.is_err() {
-                    debug_log("Channel send failed (receiver dropped)");
-                    break;
-                }
+            if let Some(msg) = parse_stream_message(json) {
+                return provider_common::handle_parsed_message(msg, sender, state);
             }
-        }
-    }
-
-    // Check cancel token after exiting the loop
-    if let Some(ref token) = cancel_token {
-        if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(());
-        }
-    }
-
-    // Wait for process to finish
-    let status = child.wait().map_err(|e| format!("Process error: {}", e))?;
-    debug_log(&format!("Process finished, exit_code: {:?}", status.code()));
-
-    // If we never got an Init, send a synthetic one
-    if !sent_init {
-        let synthetic_id = format!("opencode-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis());
-        let _ = sender.send(StreamMessage::Init { session_id: synthetic_id });
-    }
-
-    // If we didn't get a proper Done message, send one now
-    if final_result.is_none() {
-        let _ = sender.send(StreamMessage::Done {
-            result: String::new(),
-            session_id: captured_session_id,
-        });
-    }
-
-    if !status.success() {
-        // Read stderr for actual error details from the CLI
-        let stderr_msg = stderr_handle.and_then(|h| {
-            let mut buf = String::new();
-            std::io::Read::read_to_string(&mut BufReader::new(h), &mut buf).ok()?;
-            let trimmed = buf.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
-        });
-        return Err(match stderr_msg {
-            Some(msg) => msg,
-            None => format!("Process exited with code {:?}", status.code()),
-        });
-    }
-
-    debug_log("=== opencode execute_command_streaming END (success) ===");
-    Ok(())
+            true
+        },
+    )
 }
 
 /// Parse an OpenCode JSONL event into a StreamMessage.
