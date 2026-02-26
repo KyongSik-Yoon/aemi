@@ -92,7 +92,7 @@ cargo build --release
 
 ## 슬래시 명령어
 
-전체 봇 명령어 목록은 [docs/slash_commands.md](docs/slash_commands.md)를 참조하세요.
+전체 봇 명령어 목록은 [docs/slash_commands_ko.md](docs/slash_commands_ko.md)를 참조하세요.
 
 ## 지원 플랫폼
 
