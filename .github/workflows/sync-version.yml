@@ -1,0 +1,37 @@
+name: Sync Version from Tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: tag
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Update Cargo.toml
+        run: |
+          sed -i 's/^version = .*/version = "${{ steps.tag.outputs.version }}"/' Cargo.toml
+      
+      - name: Verify change
+        run: grep "version = " Cargo.toml
+      
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to ${{ steps.tag.outputs.version }}"
+          git push
