@@ -6,7 +6,7 @@ use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
 use crate::services::session::{HistoryItem, HistoryType};
-use crate::services::bot_common::{self, ALL_TOOLS, normalize_tool_name, tool_info, risk_badge};
+use crate::services::bot_common::{self, ALL_TOOLS, AVAILABLE_AGENTS, normalize_tool_name, tool_info, risk_badge, is_valid_agent};
 use super::{ChatSession, SharedState, token_hash};
 use super::messages::{shared_rate_limit_wait, send_long_message, html_escape};
 
@@ -36,8 +36,12 @@ Send a file/photo — Upload to session directory
   e.g. <code>!ls -la</code>, <code>!git status</code>
 
 <b>AI Chat</b>
-Any other message is sent to Claude AI.
+Any other message is sent to AI agent.
 AI can read, edit, and run commands in your session.
+
+<b>Agent</b>
+<code>/agent</code> — Show current AI agent
+<code>/agent &lt;name&gt;</code> — Switch agent (claude, gemini, codex, opencode)
 
 <b>Tool Management</b>
 <code>/availabletools</code> — List all available tools
@@ -651,6 +655,75 @@ pub async fn handle_allowed_command(
 
     shared_rate_limit_wait(state, chat_id).await;
     bot.send_message(chat_id, &response_msg)
+        .parse_mode(ParseMode::Html)
+        .await?;
+
+    Ok(())
+}
+
+/// Handle /agent command - switch AI agent or show current agent
+/// Usage: /agent               (show current agent)
+///        /agent <name>        (switch to agent)
+pub async fn handle_agent_command(
+    bot: &Bot,
+    chat_id: ChatId,
+    text: &str,
+    state: &SharedState,
+) -> ResponseResult<()> {
+    let arg = text.strip_prefix("/agent").unwrap_or("").trim();
+
+    if arg.is_empty() {
+        // Show current agent and list of available agents
+        let current = {
+            let data = state.lock().await;
+            data.agent_type.clone()
+        };
+
+        let mut msg = format!("<b>Current agent:</b> <code>{}</code>\n\n<b>Available agents:</b>\n", html_escape(&current));
+        for &(name, desc) in AVAILABLE_AGENTS {
+            let marker = if name == current { " ◀" } else { "" };
+            msg.push_str(&format!("<code>{}</code> — {}{}\n", html_escape(name), html_escape(desc), marker));
+        }
+        msg.push_str("\nSwitch: <code>/agent &lt;name&gt;</code>");
+
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(chat_id, &msg)
+            .parse_mode(ParseMode::Html)
+            .await?;
+        return Ok(());
+    }
+
+    let agent_name = arg.to_lowercase();
+
+    if !is_valid_agent(&agent_name) {
+        let valid: Vec<&str> = AVAILABLE_AGENTS.iter().map(|(n, _)| *n).collect();
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(chat_id, &format!(
+            "Unknown agent: <code>{}</code>\nAvailable: {}",
+            html_escape(&agent_name),
+            valid.iter().map(|n| format!("<code>{}</code>", n)).collect::<Vec<_>>().join(", ")
+        ))
+            .parse_mode(ParseMode::Html)
+            .await?;
+        return Ok(());
+    }
+
+    // Switch agent
+    let old_agent = {
+        let mut data = state.lock().await;
+        let old = data.agent_type.clone();
+        data.agent_type = agent_name.clone();
+        old
+    };
+
+    let response = if old_agent == agent_name {
+        format!("Already using <code>{}</code>.", html_escape(&agent_name))
+    } else {
+        format!("Switched: <code>{}</code> → <code>{}</code>", html_escape(&old_agent), html_escape(&agent_name))
+    };
+
+    shared_rate_limit_wait(state, chat_id).await;
+    bot.send_message(chat_id, &response)
         .parse_mode(ParseMode::Html)
         .await?;
 

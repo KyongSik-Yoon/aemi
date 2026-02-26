@@ -8,7 +8,7 @@ use serenity::model::id::ChannelId;
 use serenity::prelude::*;
 
 use crate::services::session::{HistoryItem, HistoryType};
-use crate::services::bot_common::{self, ALL_TOOLS, normalize_tool_name, tool_info, risk_badge};
+use crate::services::bot_common::{self, ALL_TOOLS, AVAILABLE_AGENTS, normalize_tool_name, tool_info, risk_badge, is_valid_agent};
 use crate::services::formatter;
 
 use super::{ChannelSession, SharedState, discord_token_hash};
@@ -40,8 +40,12 @@ Send a file — Upload to session directory
   e.g. `!ls -la`, `!git status`
 
 **AI Chat**
-Any other message is sent to Claude AI.
+Any other message is sent to AI agent.
 AI can read, edit, and run commands in your session.
+
+**Agent**
+`/agent` — Show current AI agent
+`/agent <name>` — Switch agent (claude, gemini, codex, opencode)
 
 **Tool Management**
 `/availabletools` — List all available tools
@@ -606,6 +610,69 @@ pub async fn handle_allowed_command(
 
     rate_limit_wait(state, channel_id).await;
     channel_id.say(&ctx.http, &response_msg).await?;
+
+    Ok(())
+}
+
+/// Handle /agent command - switch AI agent or show current agent
+/// Usage: /agent               (show current agent)
+///        /agent <name>        (switch to agent)
+pub async fn handle_agent_command(
+    ctx: &Context,
+    channel_id: ChannelId,
+    text: &str,
+    state: &SharedState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let arg = text.strip_prefix("/agent").unwrap_or("").trim();
+
+    if arg.is_empty() {
+        // Show current agent and list of available agents
+        let current = {
+            let data = state.lock().await;
+            data.agent_type.clone()
+        };
+
+        let mut msg = format!("**Current agent:** `{}`\n\n**Available agents:**\n", current);
+        for &(name, desc) in AVAILABLE_AGENTS {
+            let marker = if name == current { " ◀" } else { "" };
+            msg.push_str(&format!("`{}` — {}{}\n", name, desc, marker));
+        }
+        msg.push_str("\nSwitch: `/agent <name>`");
+
+        rate_limit_wait(state, channel_id).await;
+        channel_id.say(&ctx.http, &msg).await?;
+        return Ok(());
+    }
+
+    let agent_name = arg.to_lowercase();
+
+    if !is_valid_agent(&agent_name) {
+        let valid: Vec<&str> = AVAILABLE_AGENTS.iter().map(|(n, _)| *n).collect();
+        rate_limit_wait(state, channel_id).await;
+        channel_id.say(&ctx.http, &format!(
+            "Unknown agent: `{}`\nAvailable: {}",
+            agent_name,
+            valid.iter().map(|n| format!("`{}`", n)).collect::<Vec<_>>().join(", ")
+        )).await?;
+        return Ok(());
+    }
+
+    // Switch agent
+    let old_agent = {
+        let mut data = state.lock().await;
+        let old = data.agent_type.clone();
+        data.agent_type = agent_name.clone();
+        old
+    };
+
+    let response = if old_agent == agent_name {
+        format!("Already using `{}`.", agent_name)
+    } else {
+        format!("Switched: `{}` → `{}`", old_agent, agent_name)
+    };
+
+    rate_limit_wait(state, channel_id).await;
+    channel_id.say(&ctx.http, &response).await?;
 
     Ok(())
 }

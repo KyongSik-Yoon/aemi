@@ -198,7 +198,6 @@ pub async fn handle_text_message(
     let state_owned = state.clone();
     let user_text_owned = user_text.to_string();
     tokio::spawn(async move {
-        const SPINNER: &[&str] = &["Processing.", "Processing..", "Processing..."];
         let mut full_response = String::new();
         let mut last_edit_text = String::new();
         let mut done = false;
@@ -207,6 +206,8 @@ pub async fn handle_text_message(
         let mut spin_idx: usize = 0;
         let mut last_tool_name = String::new();
         let mut last_file_path = String::new();
+        // Track current progress phase for contextual spinner
+        let mut progress_phase = String::from("Thinking");
 
         while !done {
             // Check cancel token
@@ -234,11 +235,14 @@ pub async fn handle_text_message(
                             }
                             StreamMessage::Text { content } => {
                                 full_response.push_str(&content);
+                                progress_phase = String::from("Generating");
                             }
                             StreamMessage::ToolUse { name, input } => {
                                 let summary = format_tool_input(&name, &input);
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
+                                // Update progress phase with current tool name
+                                progress_phase = format!("Using: {name}");
 
                                 // Format tool use with blockquote for multi-line summaries
                                 let lines: Vec<&str> = summary.lines().collect();
@@ -274,6 +278,7 @@ pub async fn handle_text_message(
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
+                                progress_phase = String::from("Thinking");
                             }
                             StreamMessage::TaskNotification { summary, .. } => {
                                 if !summary.is_empty() {
@@ -303,15 +308,16 @@ pub async fn handle_text_message(
                 }
             }
 
-            // Build display text with spinning indicator appended
-            let indicator = SPINNER[spin_idx % SPINNER.len()];
+            // Build display text with contextual progress indicator
+            let dots = match spin_idx % 3 { 0 => ".", 1 => "..", _ => "..." };
             spin_idx += 1;
+            let indicator = format!("{progress_phase}{dots}");
 
             let display_text = if full_response.is_empty() {
                 indicator.to_string()
             } else {
                 let normalized = normalize_empty_lines(&full_response);
-                let truncated = truncate_str(&normalized, DISCORD_MSG_LIMIT - 30);
+                let truncated = truncate_str(&normalized, DISCORD_MSG_LIMIT - 50);
                 // Close unclosed code blocks so Discord renders them properly
                 if let Some((_, fence_len)) = unclosed_code_block_lang(&truncated) {
                     let fence: String = "`".repeat(fence_len);

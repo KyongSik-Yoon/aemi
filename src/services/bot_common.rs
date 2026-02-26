@@ -29,6 +29,19 @@ impl Default for BotSettings {
     }
 }
 
+/// All supported AI agent types
+pub const AVAILABLE_AGENTS: &[(&str, &str)] = &[
+    ("claude",   "Claude Code (Anthropic)"),
+    ("gemini",   "Gemini CLI (Google)"),
+    ("codex",    "Codex CLI (OpenAI)"),
+    ("opencode", "OpenCode CLI"),
+];
+
+/// Check if an agent name is valid
+pub fn is_valid_agent(name: &str) -> bool {
+    AVAILABLE_AGENTS.iter().any(|(n, _)| *n == name)
+}
+
 /// All available tools with (name, description, is_destructive)
 pub const ALL_TOOLS: &[(&str, &str, bool)] = &[
     ("Bash",            "Execute shell commands",                          true),

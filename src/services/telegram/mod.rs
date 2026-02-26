@@ -236,6 +236,9 @@ async fn handle_message(
     } else if text.starts_with("/down") {
         println!("  [{timestamp}] ◀ [{user_name}] /down {}", text.strip_prefix("/down").unwrap_or("").trim());
         commands::handle_down_command(&bot, chat_id, &text, &state).await?;
+    } else if text.starts_with("/agent") {
+        println!("  [{timestamp}] ◀ [{user_name}] /agent {}", text.strip_prefix("/agent").unwrap_or("").trim());
+        commands::handle_agent_command(&bot, chat_id, &text, &state).await?;
     } else if text.starts_with("/availabletools") {
         println!("  [{timestamp}] ◀ [{user_name}] /availabletools");
         commands::handle_availabletools_command(&bot, chat_id, &state).await?;

@@ -255,6 +255,9 @@ async fn handle_message(
     } else if text.starts_with("/down") {
         println!("  [{timestamp}] ◀ [{user_display}] /down {}", text.strip_prefix("/down").unwrap_or("").trim());
         commands::handle_down_command(ctx, channel_id, &text, state).await?;
+    } else if text.starts_with("/agent") {
+        println!("  [{timestamp}] ◀ [{user_display}] /agent {}", text.strip_prefix("/agent").unwrap_or("").trim());
+        commands::handle_agent_command(ctx, channel_id, &text, state).await?;
     } else if text.starts_with("/availabletools") {
         println!("  [{timestamp}] ◀ [{user_display}] /availabletools");
         commands::handle_availabletools_command(ctx, channel_id, state).await?;
