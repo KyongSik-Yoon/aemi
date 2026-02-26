@@ -189,11 +189,9 @@ pub async fn handle_text_message(
     let state_owned = state.clone();
     let user_text_owned = user_text.to_string();
     tokio::spawn(async move {
-        const SPINNER: &[&str] = &[
-            "🕐 P",           "🕑 Pr",          "🕒 Pro",
-            "🕓 Proc",        "🕔 Proce",       "🕕 Proces",
-            "🕖 Process",     "🕗 Processi",    "🕘 Processin",
-            "🕙 Processing",  "🕚 Processing.", "🕛 Processing..",
+        const SPINNER_CLOCKS: &[&str] = &[
+            "🕐", "🕑", "🕒", "🕓", "🕔", "🕕",
+            "🕖", "🕗", "🕘", "🕙", "🕚", "🕛",
         ];
         let mut full_response = String::new();
         let mut last_edit_text = String::new();
@@ -203,6 +201,8 @@ pub async fn handle_text_message(
         let mut spin_idx: usize = 0;
         let mut last_tool_name = String::new();
         let mut last_file_path = String::new();
+        // Track current progress phase for contextual spinner
+        let mut progress_phase = String::from("Thinking");
 
         while !done {
             // Check cancel token
@@ -230,12 +230,15 @@ pub async fn handle_text_message(
                             }
                             StreamMessage::Text { content } => {
                                 full_response.push_str(&content);
+                                progress_phase = String::from("Generating");
                             }
                             StreamMessage::ToolUse { name, input } => {
                                 let summary = format_tool_input(&name, &input);
                                 let ts = chrono::Local::now().format("%H:%M:%S");
                                 println!("  [{ts}]   ⚙ {name}: {}", truncate_str(&summary, 80));
                                 full_response.push_str(&format!("\n\n⚙️ {}\n", summary));
+                                // Update progress phase with current tool name
+                                progress_phase = format!("⚙️ {name}");
                                 // Extract file path for language detection in subsequent ToolResult
                                 if matches!(name.as_str(), "Read" | "Write" | "Edit") {
                                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) {
@@ -259,6 +262,7 @@ pub async fn handle_text_message(
                                 if !formatted.is_empty() {
                                     full_response.push_str(&formatted);
                                 }
+                                progress_phase = String::from("Thinking");
                             }
                             StreamMessage::TaskNotification { summary, .. } => {
                                 if !summary.is_empty() {
@@ -288,15 +292,16 @@ pub async fn handle_text_message(
                 }
             }
 
-            // Build display text with spinning clock+text indicator appended
-            let indicator = SPINNER[spin_idx % SPINNER.len()];
+            // Build display text with contextual progress indicator
+            let clock = SPINNER_CLOCKS[spin_idx % SPINNER_CLOCKS.len()];
             spin_idx += 1;
+            let indicator = format!("{clock} {progress_phase}");
 
             let display_text = if full_response.is_empty() {
                 indicator.to_string()
             } else {
                 let normalized = normalize_empty_lines(&full_response);
-                let truncated = truncate_str(&normalized, TELEGRAM_MSG_LIMIT - 20);
+                let truncated = truncate_str(&normalized, TELEGRAM_MSG_LIMIT - 40);
                 format!("{}\n\n{}", truncated, indicator)
             };
 
