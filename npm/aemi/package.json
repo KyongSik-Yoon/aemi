@@ -1,5 +1,5 @@
 {
-  "name": "aemi",
+  "name": "@aemi-cli/aemi",
   "version": "0.0.3",
   "description": "LLM CLI routing tool with Telegram and Discord bot integration",
   "license": "MIT",
