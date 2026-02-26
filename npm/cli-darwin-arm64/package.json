@@ -1,0 +1,15 @@
+{
+  "name": "@aemi-cli/darwin-arm64",
+  "version": "0.0.3",
+  "description": "aemi binary for macOS ARM64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KyongSik-Yoon/aemi"
+  },
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "bin": {
+    "aemi": "bin/aemi"
+  }
+}
