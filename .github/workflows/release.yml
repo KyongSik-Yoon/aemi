@@ -97,8 +97,6 @@ jobs:
           path: artifacts
 
       - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
 
@@ -129,8 +127,6 @@ jobs:
           done
 
       - name: Publish main wrapper package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           staging="npm-staging/aemi"

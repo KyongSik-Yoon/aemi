@@ -1,6 +1,6 @@
 [package]
 name = "aemi"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 authors = ["sam <sam@jennifersoft.com>"]
 description = "LLM CLI routing tool with Telegram and Discord bot integration"
