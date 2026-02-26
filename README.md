@@ -1,5 +1,7 @@
 # AEMI
 
+[한국어](README_KO.md)
+
 Agent Mirror - AI agent routing tool with Telegram and Discord bot integration.
 
 A CLI tool that relays AI agent responses through Telegram/Discord bots.
