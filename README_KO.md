@@ -56,6 +56,12 @@ aemi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat
 
 - 사용하려는 에이전트의 CLI 도구를 설치해야 합니다 ([에이전트 종류](#에이전트-종류) 참조)
 
+### npm으로 설치
+
+```bash
+npm install -g @aemi-cli/aemi
+```
+
 ### 소스에서 빌드
 
 ```bash

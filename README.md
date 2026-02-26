@@ -58,6 +58,12 @@ aemi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat
 
 - Install the CLI tool for the agent you want to use (see [Agent Types](#agent-types))
 
+### Install via npm
+
+```bash
+npm install -g @aemi-cli/aemi
+```
+
 ### Build from source
 
 ```bash
