@@ -90,6 +90,10 @@ Each agent requires its own CLI tool to be installed:
 - **Codex**: `npm install -g @openai/codex`
 - **OpenCode**: `npm install -g opencode` (or see [opencode.ai](https://opencode.ai/docs/) for other methods)
 
+## Slash Commands
+
+See [docs/slash_commands.md](docs/slash_commands.md) for the full list of bot commands.
+
 ## Supported Platforms
 
 - macOS (Apple Silicon & Intel)
