@@ -139,6 +139,7 @@ jobs:
           mkdir -p "${staging}/bin"
           cp npm/aemi/bin/aemi "${staging}/bin/aemi"
           chmod +x "${staging}/bin/aemi"
+          cp README.md "${staging}/README.md"
 
           node -e "
             const pkg = require('./npm/aemi/package.json');
