@@ -27,6 +27,7 @@ Manage server files & chat with Claude AI.
 **Session**
 `/start <path>` — Start session at directory
 `/start` — Start with auto-generated workspace
+`/resume` — List & resume saved sessions
 `/pwd` — Show current working directory
 `/clear` — Clear AI conversation history
 `/stop` — Stop current AI request
@@ -610,6 +611,136 @@ pub async fn handle_allowed_command(
 
     rate_limit_wait(state, channel_id).await;
     channel_id.say(&ctx.http, &response_msg).await?;
+
+    Ok(())
+}
+
+/// Handle /resume command - list saved sessions or resume a specific one
+/// Usage: /resume              (list all saved sessions)
+///        /resume <number>     (resume session by number from the list)
+pub async fn handle_resume_command(
+    ctx: &Context,
+    channel_id: ChannelId,
+    text: &str,
+    state: &SharedState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let arg = text.strip_prefix("/resume").unwrap_or("").trim();
+
+    let sessions = bot_common::list_all_sessions();
+
+    if sessions.is_empty() {
+        rate_limit_wait(state, channel_id).await;
+        channel_id.say(&ctx.http, "No saved sessions found.").await?;
+        return Ok(());
+    }
+
+    if arg.is_empty() {
+        // List all saved sessions
+        let mut msg = String::from("**Saved Sessions**\n\n");
+        let max_display = 10;
+        for (i, s) in sessions.iter().take(max_display).enumerate() {
+            let path_display: String = s.current_path.chars().take(40).collect();
+            let path_suffix = if s.current_path.chars().count() > 40 { "..." } else { "" };
+            msg.push_str(&format!(
+                "`{}`. `{}{}`\n    {} | {} msgs\n",
+                i + 1,
+                path_display,
+                path_suffix,
+                s.created_at,
+                s.history_count,
+            ));
+        }
+        if sessions.len() > max_display {
+            msg.push_str(&format!("\n... and {} more", sessions.len() - max_display));
+        }
+        msg.push_str("\nResume: `/resume <number>`");
+
+        send_long_message(ctx, channel_id, &msg, state).await?;
+        return Ok(());
+    }
+
+    // Parse number argument
+    let num: usize = match arg.parse() {
+        Ok(n) if n >= 1 && n <= sessions.len() => n,
+        _ => {
+            rate_limit_wait(state, channel_id).await;
+            channel_id.say(&ctx.http, &format!("Invalid number. Use 1-{}.", sessions.len())).await?;
+            return Ok(());
+        }
+    };
+
+    let selected = &sessions[num - 1];
+
+    // Validate the path still exists
+    if !std::path::Path::new(&selected.current_path).is_dir() {
+        rate_limit_wait(state, channel_id).await;
+        channel_id.say(&ctx.http, &format!("Directory no longer exists: {}", selected.current_path)).await?;
+        return Ok(());
+    }
+
+    // Load full session data
+    let session_data = match bot_common::load_session_by_id(&selected.session_id) {
+        Some(data) => data,
+        None => {
+            rate_limit_wait(state, channel_id).await;
+            channel_id.say(&ctx.http, "Failed to load session data.").await?;
+            return Ok(());
+        }
+    };
+
+    let canonical_path = selected.current_path.clone();
+    let mut response_lines = Vec::new();
+
+    let token = {
+        let mut data = state.lock().await;
+        let session = data.sessions.entry(channel_id).or_insert_with(|| ChannelSession {
+            session_id: None,
+            current_path: None,
+            history: Vec::new(),
+            pending_uploads: Vec::new(),
+            cleared: false,
+        });
+
+        session.session_id = Some(session_data.session_id.clone());
+        session.current_path = Some(canonical_path.clone());
+        session.history = session_data.history.clone();
+        session.pending_uploads.clear();
+        session.cleared = false;
+
+        let ts = chrono::Local::now().format("%H:%M:%S");
+        println!("  [{ts}] ▶ Session resumed: {canonical_path}");
+        response_lines.push(format!("Session resumed at `{}`.", canonical_path));
+        response_lines.push(String::new());
+
+        // Show last 5 conversation items
+        let history_len = session_data.history.len();
+        let start_idx = if history_len > 5 { history_len - 5 } else { 0 };
+        for item in &session_data.history[start_idx..] {
+            let prefix = match item.item_type {
+                HistoryType::User => "You",
+                HistoryType::Assistant => "AI",
+                HistoryType::Error => "Error",
+                HistoryType::System => "System",
+                HistoryType::ToolUse => "Tool",
+                HistoryType::ToolResult => "Result",
+            };
+            let content: String = item.content.chars().take(200).collect();
+            let truncated = if item.content.chars().count() > 200 { "..." } else { "" };
+            response_lines.push(format!("[{}] {}{}", prefix, content, truncated));
+        }
+
+        data.token.clone()
+    };
+
+    // Persist channel_id → path mapping for auto-restore
+    {
+        let mut data = state.lock().await;
+        data.settings.last_sessions.insert(channel_id.get().to_string(), canonical_path);
+        bot_common::save_bot_settings(&discord_token_hash(&token), &data.settings, &[("platform", "discord")]);
+    }
+
+    let response_text = response_lines.join("\n");
+    send_long_message(ctx, channel_id, &response_text, state).await?;
 
     Ok(())
 }

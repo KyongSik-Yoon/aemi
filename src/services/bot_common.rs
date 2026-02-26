@@ -176,6 +176,69 @@ pub fn save_bot_settings(
     }
 }
 
+/// Summary of a saved session for listing purposes.
+pub struct SessionSummary {
+    pub session_id: String,
+    pub current_path: String,
+    pub created_at: String,
+    pub history_count: usize,
+    pub modified: std::time::SystemTime,
+}
+
+/// List all saved sessions from the ai_sessions directory, sorted by modification time (most recent first).
+pub fn list_all_sessions() -> Vec<SessionSummary> {
+    let Some(sessions_dir) = session::ai_sessions_dir() else {
+        return Vec::new();
+    };
+    if !sessions_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut sessions: Vec<SessionSummary> = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&sessions_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(data) = serde_json::from_str::<SessionData>(&content) {
+                        let modified = path.metadata()
+                            .and_then(|m| m.modified())
+                            .unwrap_or(std::time::UNIX_EPOCH);
+                        sessions.push(SessionSummary {
+                            session_id: data.session_id,
+                            current_path: data.current_path,
+                            created_at: data.created_at,
+                            history_count: data.history.len(),
+                            modified,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by modification time, most recent first
+    sessions.sort_by(|a, b| b.modified.cmp(&a.modified));
+    sessions
+}
+
+/// Load a specific session by session_id from the ai_sessions directory.
+pub fn load_session_by_id(session_id: &str) -> Option<SessionData> {
+    let sessions_dir = session::ai_sessions_dir()?;
+    let file_path = sessions_dir.join(format!("{}.json", session_id));
+
+    // Security: Verify the path is within sessions directory
+    if let Some(parent) = file_path.parent() {
+        if parent != sessions_dir {
+            return None;
+        }
+    }
+
+    let content = fs::read_to_string(&file_path).ok()?;
+    serde_json::from_str::<SessionData>(&content).ok()
+}
+
 /// Load the most recently modified session matching the given working directory path.
 pub fn load_existing_session(current_path: &str) -> Option<(SessionData, std::time::SystemTime)> {
     let sessions_dir = session::ai_sessions_dir()?;

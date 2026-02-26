@@ -245,6 +245,9 @@ async fn handle_message(
     } else if text.starts_with("/start") {
         println!("  [{timestamp}] ◀ [{user_display}] /start");
         commands::handle_start_command(ctx, channel_id, &text, state).await?;
+    } else if text.starts_with("/resume") {
+        println!("  [{timestamp}] ◀ [{user_display}] /resume {}", text.strip_prefix("/resume").unwrap_or("").trim());
+        commands::handle_resume_command(ctx, channel_id, &text, state).await?;
     } else if text.starts_with("/clear") {
         println!("  [{timestamp}] ◀ [{user_display}] /clear");
         commands::handle_clear_command(ctx, channel_id, state).await?;
