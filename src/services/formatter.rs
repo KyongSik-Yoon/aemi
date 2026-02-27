@@ -160,10 +160,6 @@ fn try_reformat_rg_line(trimmed: &str) -> Option<String> {
     // Simple N:content format (line starts with digits, e.g. "10:fn main()")
     if !before_colon.is_empty() && before_colon.chars().all(|c| c.is_ascii_digit()) {
         let content = &trimmed[colon_pos + 1..];
-        // Skip if already formatted with space ("N: content") to avoid double-space
-        if content.starts_with(' ') {
-            return None;
-        }
         return Some(format!("{}: {}", before_colon, content));
     }
 
@@ -173,9 +169,6 @@ fn try_reformat_rg_line(trimmed: &str) -> Option<String> {
     let num_part = &after_first[..second_colon];
     if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
         let content = &after_first[second_colon + 1..];
-        if content.starts_with(' ') {
-            return None;
-        }
         return Some(format!("{}:{}: {}", before_colon, num_part, content));
     }
 
