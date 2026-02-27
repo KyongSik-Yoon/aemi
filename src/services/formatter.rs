@@ -103,6 +103,85 @@ fn reformat_read_line_numbers(content: &str) -> Option<String> {
     if matched >= 2 { Some(result) } else { None }
 }
 
+/// Like `reformat_read_line_numbers` but preserves non-matching lines (file path
+/// headers, empty separators) instead of breaking. Used for Grep content output
+/// that mixes file path headers with numbered content lines.
+fn reformat_grep_line_numbers(content: &str) -> Option<String> {
+    const ARROW: char = '→'; // U+2192
+    let mut result = String::with_capacity(content.len());
+    let mut matched = 0usize;
+    let mut first = true;
+
+    for line in content.lines() {
+        if !first {
+            result.push('\n');
+        }
+        first = false;
+
+        let trimmed = line.trim_start();
+        if let Some(arrow_pos) = trimmed.find(ARROW) {
+            let num_part = &trimmed[..arrow_pos];
+            if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
+                matched += 1;
+                result.push_str(num_part);
+                result.push_str(": ");
+                result.push_str(&trimmed[arrow_pos + ARROW.len_utf8()..]);
+                continue;
+            }
+        }
+        // Keep non-matching line as-is (file path headers, empty separators, etc.)
+        result.push_str(line);
+    }
+
+    if matched >= 2 { Some(result) } else { None }
+}
+
+/// Extract a file hint from Grep tool input JSON for language detection.
+/// Looks at `glob` (e.g. "*.rs") and `type` (e.g. "rust") parameters.
+pub fn extract_grep_file_hint(input: &str) -> String {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
+        return String::new();
+    };
+
+    // Try glob parameter first: "*.rs", "**/*.py", etc.
+    if let Some(glob) = v.get("glob").and_then(|v| v.as_str()) {
+        if !glob.contains('{') {
+            if let Some(dot_pos) = glob.rfind("*.") {
+                let ext = &glob[dot_pos + 2..];
+                if !ext.is_empty() && ext.chars().all(|c| c.is_alphanumeric()) {
+                    return format!("match.{}", ext);
+                }
+            }
+        }
+    }
+
+    // Try type parameter: "rust", "py", "js", etc.
+    if let Some(type_hint) = v.get("type").and_then(|v| v.as_str()) {
+        let ext = match type_hint {
+            "rust" => "rs",
+            "py" | "python" => "py",
+            "js" | "javascript" => "js",
+            "ts" | "typescript" => "ts",
+            "go" => "go",
+            "java" => "java",
+            "c" => "c",
+            "cpp" => "cpp",
+            "kotlin" | "kt" => "kt",
+            "ruby" | "rb" => "rb",
+            "swift" => "swift",
+            "dart" => "dart",
+            "lua" => "lua",
+            "php" => "php",
+            _ => "",
+        };
+        if !ext.is_empty() {
+            return format!("match.{}", ext);
+        }
+    }
+
+    String::new()
+}
+
 /// Detect if content looks like unified diff output.
 pub fn is_diff_content(content: &str) -> bool {
     let lines: Vec<&str> = content.lines().take(40).collect();
@@ -180,11 +259,12 @@ pub fn format_tool_result(content: &str, is_error: bool, last_tool_name: &str, f
         }
     } else {
         // Reformat "     N→code" line numbers to "N: code" for tools that return
-        // file content with line numbers (Read results, Edit/Write result snippets).
-        let reformatted = if matches!(last_tool_name, "Read" | "Edit" | "Write") {
-            reformat_read_line_numbers(content)
-        } else {
-            None
+        // file content with line numbers (Read results, Edit/Write result snippets,
+        // Grep content output).
+        let reformatted = match last_tool_name {
+            "Read" | "Edit" | "Write" => reformat_read_line_numbers(content),
+            "Grep" => reformat_grep_line_numbers(content),
+            _ => None,
         };
         let content = reformatted.as_deref().unwrap_or(content);
 
@@ -953,5 +1033,92 @@ mod tests {
         let diff = "@@ -1,2 +1,3 @@\n-format!(\"{}\\n```\\n\", x)\n+format!(\"{}\\n````\\n\", x)";
         let result = format_tool_result(diff, false, "Bash", None);
         assert!(result.contains("````"), "should use longer fence when content has ```");
+    }
+
+    // --- reformat_grep_line_numbers ---
+
+    #[test]
+    fn test_reformat_grep_basic() {
+        // Grep content with file header + numbered lines
+        let input = "src/main.rs\n     10→fn main() {\n     11→    println!(\"hi\");\n     12→}";
+        let result = reformat_grep_line_numbers(input).unwrap();
+        assert_eq!(result, "src/main.rs\n10: fn main() {\n11:     println!(\"hi\");\n12: }");
+    }
+
+    #[test]
+    fn test_reformat_grep_multiple_files() {
+        let input = "src/main.rs\n     1→line one\n     2→line two\n\nsrc/lib.rs\n     5→line five\n     6→line six";
+        let result = reformat_grep_line_numbers(input).unwrap();
+        assert_eq!(result, "src/main.rs\n1: line one\n2: line two\n\nsrc/lib.rs\n5: line five\n6: line six");
+    }
+
+    #[test]
+    fn test_reformat_grep_no_arrows() {
+        // Standard ripgrep format without arrows → returns None
+        let input = "src/main.rs:10:fn main() {\nsrc/main.rs:11:    println!(\"hi\");";
+        assert!(reformat_grep_line_numbers(input).is_none());
+    }
+
+    #[test]
+    fn test_reformat_grep_single_match() {
+        // Only 1 matching line → returns None (need >= 2)
+        let input = "src/main.rs\n     10→fn main() {";
+        assert!(reformat_grep_line_numbers(input).is_none());
+    }
+
+    #[test]
+    fn test_format_tool_result_grep_reformats() {
+        let input = "     10→fn main() {\n     11→    let x = 5;\n     12→}";
+        let result = format_tool_result(input, false, "Grep", Some("main.rs"));
+        assert!(result.contains("10: fn main()"), "Grep should reformat line numbers");
+        assert!(!result.contains("→"), "Arrow should be replaced");
+        assert!(result.contains("```rust"), "should use rust language hint from file hint");
+    }
+
+    #[test]
+    fn test_format_tool_result_grep_with_file_header() {
+        let input = "src/main.rs\n     10→fn main() {\n     11→}";
+        let result = format_tool_result(input, false, "Grep", None);
+        assert!(result.contains("src/main.rs"), "file header should be preserved");
+        assert!(result.contains("10: fn main()"), "line numbers should be reformatted");
+        assert!(!result.contains("→"), "Arrow should be replaced");
+    }
+
+    // --- extract_grep_file_hint ---
+
+    #[test]
+    fn test_extract_grep_file_hint_glob_rs() {
+        let input = r#"{"pattern":"fn main","glob":"*.rs"}"#;
+        assert_eq!(extract_grep_file_hint(input), "match.rs");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_glob_with_path() {
+        let input = r#"{"pattern":"fn main","glob":"**/*.py"}"#;
+        assert_eq!(extract_grep_file_hint(input), "match.py");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_glob_with_braces_skipped() {
+        let input = r#"{"pattern":"fn main","glob":"*.{ts,tsx}"}"#;
+        assert_eq!(extract_grep_file_hint(input), "");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_type_rust() {
+        let input = r#"{"pattern":"fn main","type":"rust"}"#;
+        assert_eq!(extract_grep_file_hint(input), "match.rs");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_type_py() {
+        let input = r#"{"pattern":"def main","type":"py"}"#;
+        assert_eq!(extract_grep_file_hint(input), "match.py");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_no_hint() {
+        let input = r#"{"pattern":"fn main"}"#;
+        assert_eq!(extract_grep_file_hint(input), "");
     }
 }
