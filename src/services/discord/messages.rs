@@ -70,24 +70,29 @@ pub async fn send_long_message_raw(
         return Ok(());
     }
 
-    let mut remaining = text;
+    // Use an owned buffer so we can prepend fence reopeners without recursion
+    let mut buf = String::new();
+    let mut remaining: &str = text;
 
     while !remaining.is_empty() {
-        if remaining.len() <= DISCORD_MSG_LIMIT {
+        // If we have a prepended fence from a previous iteration, use the owned buf
+        let current = if buf.is_empty() { remaining } else { &buf };
+
+        if current.len() <= DISCORD_MSG_LIMIT {
             rate_limit_wait(state, channel_id).await;
-            channel_id.say(http, remaining).await?;
+            channel_id.say(http, current).await?;
             break;
         }
 
-        let safe_end = floor_char_boundary(remaining, DISCORD_MSG_LIMIT);
+        let safe_end = floor_char_boundary(current, DISCORD_MSG_LIMIT);
 
         // Try to split at a newline for cleaner breaks; avoid zero-length chunk
-        let split_at = match remaining[..safe_end].rfind('\n') {
+        let split_at = match current[..safe_end].rfind('\n') {
             Some(0) | None => safe_end,
             Some(pos) => pos,
         };
 
-        let (chunk, rest) = remaining.split_at(split_at);
+        let (chunk, rest) = current.split_at(split_at);
 
         // Check whether the chunk ends inside an unclosed code block
         let open_info = unclosed_code_block_lang(chunk);
@@ -101,19 +106,29 @@ pub async fn send_long_message_raw(
         rate_limit_wait(state, channel_id).await;
         channel_id.say(http, &chunk_to_send).await?;
 
-        remaining = rest.strip_prefix('\n').unwrap_or(rest);
+        let after = rest.strip_prefix('\n').unwrap_or(rest);
 
-        // If we force-closed an open code block, reopen it in the next message
+        // If we force-closed an open code block, reopen it in the next chunk
         if let Some((lang_hint, fence_len)) = open_info {
-            if !remaining.is_empty() {
+            if !after.is_empty() {
                 let fence: String = "`".repeat(fence_len);
-                let reopened = if lang_hint.is_empty() {
-                    format!("{}\n{}", fence, remaining)
+                buf = if lang_hint.is_empty() {
+                    format!("{}\n{}", fence, after)
                 } else {
-                    format!("{}{}\n{}", fence, lang_hint, remaining)
+                    format!("{}{}\n{}", fence, lang_hint, after)
                 };
-                return Box::pin(send_long_message_raw(http, channel_id, &reopened, state)).await;
+                // remaining is no longer used directly; buf holds the data
+                remaining = "";
+                continue;
             }
+        }
+
+        // No fence reopen needed — advance normally
+        if buf.is_empty() {
+            remaining = after;
+        } else {
+            buf = after.to_string();
+            remaining = "";
         }
     }
 

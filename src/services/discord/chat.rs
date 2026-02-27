@@ -208,6 +208,10 @@ pub async fn handle_text_message(
         let mut last_file_path = String::new();
         // Track current progress phase for contextual spinner
         let mut progress_phase = String::from("Thinking");
+        // Track last time we received a stream message for stale detection
+        let mut last_message_time = tokio::time::Instant::now();
+        // Track consecutive edit failures
+        let mut consecutive_edit_failures: u32 = 0;
 
         while !done {
             // Check cancel token
@@ -226,9 +230,11 @@ pub async fn handle_text_message(
             }
 
             // Drain all available messages
+            let mut received_any = false;
             loop {
                 match rx.try_recv() {
                     Ok(msg) => {
+                        received_any = true;
                         match msg {
                             StreamMessage::Init { session_id: sid } => {
                                 new_session_id = Some(sid);
@@ -310,6 +316,30 @@ pub async fn handle_text_message(
                 }
             }
 
+            // Update last_message_time if we received anything
+            if received_any {
+                last_message_time = tokio::time::Instant::now();
+            }
+
+            // Stale timeout: if no messages received for 120s, assume agent hung
+            if !done && last_message_time.elapsed() > tokio::time::Duration::from_secs(120) {
+                let ts = chrono::Local::now().format("%H:%M:%S");
+                println!("  [{ts}]   ⚠ Stale timeout: no stream messages for 120s, aborting");
+                full_response.push_str("\n\n⚠️ Response timed out (no activity for 120s)");
+                // Kill the agent process
+                cancel_token.cancelled.store(true, Ordering::Relaxed);
+                if let Ok(guard) = cancel_token.child_pid.lock() {
+                    if let Some(pid) = *guard {
+                        #[cfg(unix)]
+                        #[allow(unsafe_code)]
+                        unsafe {
+                            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                        }
+                    }
+                }
+                done = true;
+            }
+
             // Build display text with contextual progress indicator
             let dots = match spin_idx % 3 { 0 => ".", 1 => "..", _ => "..." };
             spin_idx += 1;
@@ -330,13 +360,22 @@ pub async fn handle_text_message(
             };
 
             if display_text != last_edit_text && !done {
-                rate_limit_wait(&state_owned, channel_id).await;
-                let edit = EditMessage::new().content(&display_text);
-                if let Err(e) = channel_id.edit_message(&http, placeholder_msg_id, edit).await {
-                    let ts = chrono::Local::now().format("%H:%M:%S");
-                    println!("  [{ts}]   ⚠ edit_message failed (streaming): {e}");
+                // Skip edits if we've had too many consecutive failures
+                if consecutive_edit_failures < 5 {
+                    rate_limit_wait(&state_owned, channel_id).await;
+                    let edit = EditMessage::new().content(&display_text);
+                    match channel_id.edit_message(&http, placeholder_msg_id, edit).await {
+                        Ok(_) => {
+                            consecutive_edit_failures = 0;
+                            last_edit_text = display_text;
+                        }
+                        Err(e) => {
+                            consecutive_edit_failures += 1;
+                            let ts = chrono::Local::now().format("%H:%M:%S");
+                            println!("  [{ts}]   ⚠ edit_message failed ({consecutive_edit_failures}/5): {e}");
+                        }
+                    }
                 }
-                last_edit_text = display_text;
             }
         }
 
