@@ -106,6 +106,10 @@ fn reformat_read_line_numbers(content: &str) -> Option<String> {
 /// Like `reformat_read_line_numbers` but preserves non-matching lines (file path
 /// headers, empty separators) instead of breaking. Used for Grep content output
 /// that mixes file path headers with numbered content lines.
+///
+/// Handles two output formats:
+/// - Claude Code arrow format: `     N→content` (cat -n style)
+/// - Ripgrep colon format: `N:content` or `file:N:content` (rg -n style)
 fn reformat_grep_line_numbers(content: &str) -> Option<String> {
     const ARROW: char = '→'; // U+2192
     let mut result = String::with_capacity(content.len());
@@ -119,6 +123,8 @@ fn reformat_grep_line_numbers(content: &str) -> Option<String> {
         first = false;
 
         let trimmed = line.trim_start();
+
+        // Try arrow format: N→content
         if let Some(arrow_pos) = trimmed.find(ARROW) {
             let num_part = &trimmed[..arrow_pos];
             if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
@@ -129,11 +135,51 @@ fn reformat_grep_line_numbers(content: &str) -> Option<String> {
                 continue;
             }
         }
+
+        // Try ripgrep colon format: N:content or file:N:content
+        if let Some(reformatted_line) = try_reformat_rg_line(trimmed) {
+            matched += 1;
+            result.push_str(&reformatted_line);
+            continue;
+        }
+
         // Keep non-matching line as-is (file path headers, empty separators, etc.)
         result.push_str(line);
     }
 
-    if matched >= 2 { Some(result) } else { None }
+    if matched >= 1 { Some(result) } else { None }
+}
+
+/// Try to parse a ripgrep-formatted line and reformat it.
+/// Handles `N:content` (single-file / --heading) and `file:N:content` (multi-file).
+/// Returns the reformatted line or None if the line doesn't match.
+fn try_reformat_rg_line(trimmed: &str) -> Option<String> {
+    let colon_pos = trimmed.find(':')?;
+    let before_colon = &trimmed[..colon_pos];
+
+    // Simple N:content format (line starts with digits, e.g. "10:fn main()")
+    if !before_colon.is_empty() && before_colon.chars().all(|c| c.is_ascii_digit()) {
+        let content = &trimmed[colon_pos + 1..];
+        // Skip if already formatted with space ("N: content") to avoid double-space
+        if content.starts_with(' ') {
+            return None;
+        }
+        return Some(format!("{}: {}", before_colon, content));
+    }
+
+    // file:N:content format (first part is file path, second is line number)
+    let after_first = &trimmed[colon_pos + 1..];
+    let second_colon = after_first.find(':')?;
+    let num_part = &after_first[..second_colon];
+    if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
+        let content = &after_first[second_colon + 1..];
+        if content.starts_with(' ') {
+            return None;
+        }
+        return Some(format!("{}:{}: {}", before_colon, num_part, content));
+    }
+
+    None
 }
 
 /// Extract a file hint from Grep tool input JSON for language detection.
@@ -1053,16 +1099,34 @@ mod tests {
     }
 
     #[test]
-    fn test_reformat_grep_no_arrows() {
-        // Standard ripgrep format without arrows → returns None
+    fn test_reformat_grep_colon_format() {
+        // Ripgrep colon format: file:N:content
         let input = "src/main.rs:10:fn main() {\nsrc/main.rs:11:    println!(\"hi\");";
-        assert!(reformat_grep_line_numbers(input).is_none());
+        let result = reformat_grep_line_numbers(input).unwrap();
+        assert!(result.contains("src/main.rs:10: fn main()"));
+        assert!(result.contains("src/main.rs:11:     println!"));
+    }
+
+    #[test]
+    fn test_reformat_grep_colon_heading_format() {
+        // Ripgrep heading format: N:content (file path on separate header line)
+        let input = "src/main.rs\n10:fn main() {\n11:    println!(\"hi\");\n12:}";
+        let result = reformat_grep_line_numbers(input).unwrap();
+        assert_eq!(result, "src/main.rs\n10: fn main() {\n11:     println!(\"hi\");\n12: }");
     }
 
     #[test]
     fn test_reformat_grep_single_match() {
-        // Only 1 matching line → returns None (need >= 2)
+        // Single matching line is now reformatted (threshold >= 1)
         let input = "src/main.rs\n     10→fn main() {";
+        let result = reformat_grep_line_numbers(input).unwrap();
+        assert_eq!(result, "src/main.rs\n10: fn main() {");
+    }
+
+    #[test]
+    fn test_reformat_grep_no_line_numbers() {
+        // Files list without any line numbers → returns None
+        let input = "Found 3 files\nsrc/main.rs\nsrc/lib.rs\nsrc/mod.rs";
         assert!(reformat_grep_line_numbers(input).is_none());
     }
 
@@ -1082,6 +1146,24 @@ mod tests {
         assert!(result.contains("src/main.rs"), "file header should be preserved");
         assert!(result.contains("10: fn main()"), "line numbers should be reformatted");
         assert!(!result.contains("→"), "Arrow should be replaced");
+    }
+
+    #[test]
+    fn test_format_tool_result_grep_colon_format() {
+        // Grep result in ripgrep colon format (file:N:content)
+        let input = "src/main.rs:10:fn main() {\nsrc/main.rs:11:    let x = 5;\nsrc/main.rs:12:}";
+        let result = format_tool_result(input, false, "Grep", Some("main.rs"));
+        assert!(result.contains("src/main.rs:10: fn main()"), "colon format should be reformatted");
+        assert!(result.contains("```rust"), "should use rust language hint from file hint");
+    }
+
+    #[test]
+    fn test_format_tool_result_grep_heading_colon_format() {
+        // Grep result in ripgrep heading format (N:content with file header)
+        let input = "src/main.rs\n10:fn main() {\n11:    let x = 5;\n12:}";
+        let result = format_tool_result(input, false, "Grep", Some("main.rs"));
+        assert!(result.contains("src/main.rs"), "file header should be preserved");
+        assert!(result.contains("10: fn main()"), "line numbers should be reformatted");
     }
 
     // --- extract_grep_file_hint ---
