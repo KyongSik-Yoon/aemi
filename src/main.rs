@@ -19,7 +19,7 @@ fn print_help() {
     println!("    --prompt <TEXT>         Send prompt to AI and print response");
     println!();
     println!("SERVER MODE:");
-    println!("    --agent <AGENT>         AI agent to use (claude, gemini, codex, opencode)");
+    println!("    --agent <AGENT>         AI agent to use (claude, gemini, codex, opencode, oh-my-pi)");
     println!("    --routing <PLATFORM>    Messaging platform (telegram, discord)");
     println!("    --token <TOKEN>...      Bot token(s). Telegram supports multiple tokens");
     println!("    --chat-id <ID>          Telegram chat ID (required for telegram routing)");
@@ -347,7 +347,7 @@ fn main() {
 
     // Dispatch based on agent and routing
     match agent.as_str() {
-        "claude" | "gemini" | "codex" | "opencode" => match routing.as_str() {
+        "claude" | "gemini" | "codex" | "opencode" | "oh-my-pi" => match routing.as_str() {
             "telegram" => {
                 let chat_id = match chat_id {
                     Some(id) => id,
@@ -379,7 +379,7 @@ fn main() {
             }
         },
         other => {
-            eprintln!("Error: unsupported agent '{}'. Supported: claude, gemini, codex, opencode", other);
+            eprintln!("Error: unsupported agent '{}'. Supported: claude, gemini, codex, opencode, oh-my-pi", other);
         }
     }
 }

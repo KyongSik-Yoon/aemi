@@ -7,6 +7,7 @@ pub mod claude;
 pub mod gemini;
 pub mod codex;
 pub mod opencode;
+pub mod oh_my_pi;
 pub mod telegram;
 pub mod discord;
 pub mod session;

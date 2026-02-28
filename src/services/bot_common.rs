@@ -31,10 +31,11 @@ impl Default for BotSettings {
 
 /// All supported AI agent types
 pub const AVAILABLE_AGENTS: &[(&str, &str)] = &[
-    ("claude",   "Claude Code (Anthropic)"),
-    ("gemini",   "Gemini CLI (Google)"),
-    ("codex",    "Codex CLI (OpenAI)"),
-    ("opencode", "OpenCode CLI"),
+    ("claude",    "Claude Code (Anthropic)"),
+    ("gemini",    "Gemini CLI (Google)"),
+    ("codex",     "Codex CLI (OpenAI)"),
+    ("opencode",  "OpenCode CLI"),
+    ("oh-my-pi",  "oh-my-pi (omp)"),
 ];
 
 /// Check if an agent name is valid
