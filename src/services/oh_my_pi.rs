@@ -74,15 +74,42 @@ pub fn execute_command(
                 parse_omp_jsonl_output(&stdout)
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let err_msg = if stderr.is_empty() {
+                    format!("Process exited with code {:?}", output.status.code())
+                } else {
+                    stderr
+                };
+
+                // If session not found, retry without --resume
+                if session_id.is_some() && is_session_not_found_error(&err_msg) {
+                    let retry_args = vec![
+                        "--print".to_string(),
+                        "--mode".to_string(),
+                        "json".to_string(),
+                        prompt.to_string(),
+                    ];
+
+                    if let Ok(retry_child) = Command::new(omp_bin)
+                        .args(&retry_args)
+                        .current_dir(working_dir)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                    {
+                        if let Ok(retry_output) = retry_child.wait_with_output() {
+                            if retry_output.status.success() {
+                                let stdout = String::from_utf8_lossy(&retry_output.stdout).to_string();
+                                return parse_omp_jsonl_output(&stdout);
+                            }
+                        }
+                    }
+                }
+
                 AgentResponse {
                     success: false,
                     response: None,
                     session_id: None,
-                    error: Some(if stderr.is_empty() {
-                        format!("Process exited with code {:?}", output.status.code())
-                    } else {
-                        stderr
-                    }),
+                    error: Some(err_msg),
                 }
             }
         }
@@ -134,6 +161,39 @@ fn parse_omp_jsonl_output(output: &str) -> AgentResponse {
     }
 }
 
+/// Check if an error message indicates a session-not-found condition.
+fn is_session_not_found_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    lower.contains("session") && lower.contains("not found")
+}
+
+/// oh-my-pi custom JSON handler: extracts sessionId from envelope and sends Init.
+fn handle_omp_json(
+    json: &Value,
+    sender: &Sender<StreamMessage>,
+    state: &mut provider_common::StreamState,
+) -> bool {
+    // Capture sessionId from any event
+    if state.session_id.is_none() {
+        state.session_id = json.get("sessionId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+
+    // Send Init on first event with sessionId
+    if !state.sent_init {
+        if let Some(ref sid) = state.session_id {
+            let _ = sender.send(StreamMessage::Init { session_id: sid.clone() });
+            state.sent_init = true;
+        }
+    }
+
+    if let Some(msg) = parse_stream_message(json) {
+        return provider_common::handle_parsed_message(msg, sender, state);
+    }
+    true
+}
+
 /// Execute a command using oh-my-pi CLI with streaming output
 pub fn execute_command_streaming(
     prompt: &str,
@@ -164,7 +224,7 @@ pub fn execute_command_streaming(
     }
 
     // Prompt as positional argument (must be last)
-    args.push(effective_prompt);
+    args.push(effective_prompt.clone());
 
     let binary_path = get_binary_path()
         .ok_or_else(|| {
@@ -183,34 +243,50 @@ pub fn execute_command_streaming(
         send_synthetic_init: false,
     };
 
-    // oh-my-pi uses a custom handler because sessionId must be extracted from the
-    // JSON envelope (not from parse_stream_message) and Init must be sent manually.
-    provider_common::run_streaming(
+    // Clone sender and cancel_token for potential retry on session-not-found
+    let sender_retry = sender.clone();
+    let cancel_retry = cancel_token.clone();
+
+    let result = provider_common::run_streaming(
         &config,
         sender,
         cancel_token,
-        |json, sender, state| {
-            // Capture sessionId from any event
-            if state.session_id.is_none() {
-                state.session_id = json.get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-            }
+        handle_omp_json,
+    );
 
-            // Send Init on first event with sessionId
-            if !state.sent_init {
-                if let Some(ref sid) = state.session_id {
-                    let _ = sender.send(StreamMessage::Init { session_id: sid.clone() });
-                    state.sent_init = true;
-                }
-            }
+    // If session resume failed with "session not found", retry without --resume
+    if let Err(ref e) = result {
+        if session_id.is_some() && is_session_not_found_error(e) {
+            debug_log(&format!("Session not found, retrying without --resume: {}", e));
 
-            if let Some(msg) = parse_stream_message(json) {
-                return provider_common::handle_parsed_message(msg, sender, state);
-            }
-            true
-        },
-    )
+            let retry_args = vec![
+                "--print".to_string(),
+                "--mode".to_string(),
+                "json".to_string(),
+                effective_prompt,
+            ];
+
+            let retry_config = StreamingConfig {
+                provider_name: "oh-my-pi",
+                binary_path,
+                args: &retry_args,
+                working_dir,
+                env_vars: &[],
+                env_remove: &[],
+                stdin_data: None,
+                send_synthetic_init: false,
+            };
+
+            return provider_common::run_streaming(
+                &retry_config,
+                sender_retry,
+                cancel_retry,
+                handle_omp_json,
+            );
+        }
+    }
+
+    result
 }
 
 /// Parse an oh-my-pi JSONL event into a StreamMessage.
@@ -480,5 +556,31 @@ mod tests {
             r#"{"type":"unknown_event","data":"something"}"#
         ).unwrap();
         assert!(parse_stream_message(&json).is_none());
+    }
+
+    // --- is_session_not_found_error ---
+
+    #[test]
+    fn test_session_not_found_omp_error() {
+        assert!(is_session_not_found_error(
+            r#"Error: [Uncaught Exception] Error: Session "oh-my-pi-1772278729103" not found."#
+        ));
+    }
+
+    #[test]
+    fn test_session_not_found_simple() {
+        assert!(is_session_not_found_error("Session not found"));
+    }
+
+    #[test]
+    fn test_session_not_found_case_insensitive() {
+        assert!(is_session_not_found_error("SESSION NOT FOUND"));
+    }
+
+    #[test]
+    fn test_session_not_found_negative() {
+        assert!(!is_session_not_found_error("Connection lost"));
+        assert!(!is_session_not_found_error("Rate limit exceeded"));
+        assert!(!is_session_not_found_error("File not found"));
     }
 }
