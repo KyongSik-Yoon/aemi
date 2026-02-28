@@ -218,6 +218,14 @@ pub fn extract_grep_file_hint(input: &str) -> String {
         }
     }
 
+    // Try path parameter if it looks like a file (has extension)
+    if let Some(path) = v.get("path").and_then(|v| v.as_str()) {
+        let lang = detect_language_from_extension(path);
+        if !lang.is_empty() {
+            return format!("match.{}", path.rsplit('.').next().unwrap_or(""));
+        }
+    }
+
     String::new()
 }
 
@@ -416,8 +424,23 @@ fn detect_language(tool_name: &str, content: &str) -> &'static str {
                 ""
             }
         }
-        "Read" => {
-            // Try to detect from file content patterns
+        "Read" | "Grep" => {
+            // For Grep results, try to detect from file path headers in the content
+            // (heading format: first line is "src/index.ts", followed by "N: code")
+            if tool_name == "Grep" {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() { continue; }
+                    // Skip lines that look like "N: code" (numbered content lines)
+                    if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) { continue; }
+                    let ext_lang = detect_language_from_extension(trimmed);
+                    if !ext_lang.is_empty() {
+                        return ext_lang;
+                    }
+                    break;
+                }
+            }
+            // Fallback: try to detect from content patterns
             if content.contains("fn ") && content.contains("let ") {
                 "rust"
             } else if content.contains("function ") || content.contains("const ") || content.contains("import ") {
@@ -980,6 +1003,34 @@ mod tests {
     fn test_detect_language_read_rust() {
         let content = "fn main() {\n    let x = 1;\n}";
         assert_eq!(detect_language("Read", content), "rust");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_from_path() {
+        let input = r#"{"pattern":"Hono","path":"src/index.ts"}"#;
+        let hint = extract_grep_file_hint(input);
+        assert_eq!(hint, "match.ts");
+    }
+
+    #[test]
+    fn test_extract_grep_file_hint_dir_path_no_hint() {
+        let input = r#"{"pattern":"Hono","path":"src/"}"#;
+        let hint = extract_grep_file_hint(input);
+        assert_eq!(hint, "");
+    }
+
+    #[test]
+    fn test_detect_language_grep_from_file_header() {
+        // Grep heading format: file path header followed by numbered lines
+        let content = "src/index.ts\n10: import { Hono } from \"hono\";\n11: const app = new Hono();";
+        assert_eq!(detect_language("Grep", content), "typescript");
+    }
+
+    #[test]
+    fn test_detect_language_grep_fallback_to_content() {
+        // Grep without file path header falls back to content detection
+        let content = "10: fn main() {\n11: let x = 1;\n12: }";
+        assert_eq!(detect_language("Grep", content), "rust");
     }
 
     #[test]
