@@ -180,7 +180,7 @@ pub fn execute_command_streaming(
         env_vars: &[],
         env_remove: &[],
         stdin_data: None,
-        send_synthetic_init: true,
+        send_synthetic_init: false,
     };
 
     // oh-my-pi uses a custom handler because sessionId must be extracted from the
