@@ -11,12 +11,17 @@ pub fn markdown_to_telegram_html(md: &str) -> String {
 
         // Fenced code block
         if trimmed.starts_with("```") {
-            // Extract language hint from opening ``` (e.g., ```diff, ```rust)
-            let lang = trimmed.trim_start_matches('`').trim();
+            // Count the opening fence length (e.g., ``` = 3, ```` = 4)
+            let fence_len = trimmed.bytes().take_while(|&b| b == b'`').count();
+            // Extract language hint from opening fence (e.g., ```diff, ````rust)
+            let lang = trimmed[fence_len..].trim();
             let mut code_lines = Vec::new();
-            i += 1; // skip opening ```
+            i += 1; // skip opening fence
             while i < lines.len() {
-                if lines[i].trim_start().starts_with("```") {
+                let inner = lines[i].trim_start();
+                // Closing fence must have at least the same number of backticks
+                let inner_ticks = inner.bytes().take_while(|&b| b == b'`').count();
+                if inner_ticks >= fence_len && inner[inner_ticks..].trim().is_empty() {
                     break;
                 }
                 code_lines.push(lines[i]);

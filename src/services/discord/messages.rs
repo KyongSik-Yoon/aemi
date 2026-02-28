@@ -57,39 +57,34 @@ pub fn unclosed_code_block_lang(text: &str) -> Option<(String, usize)> {
     open
 }
 
-/// Send a long message using raw HTTP (for use in spawned tasks)
-pub async fn send_long_message_raw(
-    http: &serenity::http::Http,
-    channel_id: ChannelId,
-    text: &str,
-    state: &SharedState,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if text.len() <= DISCORD_MSG_LIMIT {
-        rate_limit_wait(state, channel_id).await;
-        channel_id.say(http, text).await?;
-        return Ok(());
+/// Split a long message into Discord-sized chunks, handling code block continuation.
+/// Returns a Vec of chunks ready to send. Pure function — no I/O.
+pub fn split_long_message(text: &str, max_len: usize) -> Vec<String> {
+    if text.len() <= max_len {
+        return vec![text.to_string()];
     }
 
-    let mut remaining = text;
+    let mut chunks = Vec::new();
+    let mut buf = String::new();
+    let mut remaining: &str = text;
 
-    while !remaining.is_empty() {
-        if remaining.len() <= DISCORD_MSG_LIMIT {
-            rate_limit_wait(state, channel_id).await;
-            channel_id.say(http, remaining).await?;
+    while !remaining.is_empty() || !buf.is_empty() {
+        let current = if buf.is_empty() { remaining } else { &buf };
+
+        if current.len() <= max_len {
+            chunks.push(current.to_string());
             break;
         }
 
-        let safe_end = floor_char_boundary(remaining, DISCORD_MSG_LIMIT);
+        let safe_end = floor_char_boundary(current, max_len);
 
-        // Try to split at a newline for cleaner breaks; avoid zero-length chunk
-        let split_at = match remaining[..safe_end].rfind('\n') {
+        let split_at = match current[..safe_end].rfind('\n') {
             Some(0) | None => safe_end,
             Some(pos) => pos,
         };
 
-        let (chunk, rest) = remaining.split_at(split_at);
+        let (chunk, rest) = current.split_at(split_at);
 
-        // Check whether the chunk ends inside an unclosed code block
         let open_info = unclosed_code_block_lang(chunk);
         let chunk_to_send = if let Some((_, fence_len)) = &open_info {
             let fence: String = "`".repeat(*fence_len);
@@ -98,24 +93,45 @@ pub async fn send_long_message_raw(
             chunk.to_string()
         };
 
-        rate_limit_wait(state, channel_id).await;
-        channel_id.say(http, &chunk_to_send).await?;
+        chunks.push(chunk_to_send);
 
-        remaining = rest.strip_prefix('\n').unwrap_or(rest);
+        let after = rest.strip_prefix('\n').unwrap_or(rest);
 
-        // If we force-closed an open code block, reopen it in the next message
         if let Some((lang_hint, fence_len)) = open_info {
-            if !remaining.is_empty() {
+            if !after.is_empty() {
                 let fence: String = "`".repeat(fence_len);
-                let reopened = if lang_hint.is_empty() {
-                    format!("{}\n{}", fence, remaining)
+                buf = if lang_hint.is_empty() {
+                    format!("{}\n{}", fence, after)
                 } else {
-                    format!("{}{}\n{}", fence, lang_hint, remaining)
+                    format!("{}{}\n{}", fence, lang_hint, after)
                 };
-                return Box::pin(send_long_message_raw(http, channel_id, &reopened, state)).await;
+                remaining = "";
+                continue;
             }
+        }
+
+        if buf.is_empty() {
+            remaining = after;
+        } else {
+            buf = after.to_string();
+            remaining = "";
         }
     }
 
+    chunks
+}
+
+/// Send a long message using raw HTTP (for use in spawned tasks)
+pub async fn send_long_message_raw(
+    http: &serenity::http::Http,
+    channel_id: ChannelId,
+    text: &str,
+    state: &SharedState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let chunks = split_long_message(text, DISCORD_MSG_LIMIT);
+    for chunk in &chunks {
+        rate_limit_wait(state, channel_id).await;
+        channel_id.say(http, chunk).await?;
+    }
     Ok(())
 }

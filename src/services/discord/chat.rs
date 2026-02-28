@@ -208,6 +208,8 @@ pub async fn handle_text_message(
         let mut last_file_path = String::new();
         // Track current progress phase for contextual spinner
         let mut progress_phase = String::from("Thinking");
+        // Track consecutive edit failures
+        let mut consecutive_edit_failures: u32 = 0;
 
         while !done {
             // Check cancel token
@@ -244,14 +246,16 @@ pub async fn handle_text_message(
                                 // Update progress phase with current tool name
                                 progress_phase = format!("Using: {name}");
 
-                                // Format tool use with blockquote for multi-line summaries
+                                // Format tool use: header in blockquote, code blocks outside
                                 let lines: Vec<&str> = summary.lines().collect();
                                 if lines.len() <= 1 {
                                     full_response.push_str(&format!("\n\n> ⚙️ {}\n", summary));
                                 } else {
-                                    full_response.push_str("\n\n");
-                                    for line in &lines {
-                                        full_response.push_str(&format!("> {}\n", line));
+                                    // First line is the header (blockquoted), rest is code block
+                                    full_response.push_str(&format!("\n\n> ⚙️ {}\n", lines[0]));
+                                    for line in &lines[1..] {
+                                        full_response.push_str(line);
+                                        full_response.push('\n');
                                     }
                                 }
 
@@ -263,6 +267,8 @@ pub async fn handle_text_message(
                                             .unwrap_or("")
                                             .to_string();
                                     }
+                                } else if name == "Grep" {
+                                    last_file_path = formatter::extract_grep_file_hint(&input);
                                 } else {
                                     last_file_path.clear();
                                 }
@@ -328,13 +334,22 @@ pub async fn handle_text_message(
             };
 
             if display_text != last_edit_text && !done {
-                rate_limit_wait(&state_owned, channel_id).await;
-                let edit = EditMessage::new().content(&display_text);
-                if let Err(e) = channel_id.edit_message(&http, placeholder_msg_id, edit).await {
-                    let ts = chrono::Local::now().format("%H:%M:%S");
-                    println!("  [{ts}]   ⚠ edit_message failed (streaming): {e}");
+                // Skip edits if we've had too many consecutive failures
+                if consecutive_edit_failures < 5 {
+                    rate_limit_wait(&state_owned, channel_id).await;
+                    let edit = EditMessage::new().content(&display_text);
+                    match channel_id.edit_message(&http, placeholder_msg_id, edit).await {
+                        Ok(_) => {
+                            consecutive_edit_failures = 0;
+                            last_edit_text = display_text;
+                        }
+                        Err(e) => {
+                            consecutive_edit_failures += 1;
+                            let ts = chrono::Local::now().format("%H:%M:%S");
+                            println!("  [{ts}]   ⚠ edit_message failed ({consecutive_edit_failures}/5): {e}");
+                        }
+                    }
                 }
-                last_edit_text = display_text;
             }
         }
 

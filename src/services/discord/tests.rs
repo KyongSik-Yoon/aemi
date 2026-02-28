@@ -2,7 +2,7 @@ use crate::services::bot_common::{normalize_tool_name, tool_info, risk_badge};
 use crate::services::utils::{truncate_str, normalize_empty_lines};
 
 use super::formatting::*;
-use super::messages::unclosed_code_block_lang;
+use super::messages::{unclosed_code_block_lang, split_long_message};
 
 // --- normalize_tool_name ---
 
@@ -375,4 +375,122 @@ fn test_sanitize_mixed_content() {
     assert!(result.starts_with("say `\u{200B}``"));
     // Code block preserved
     assert!(result.contains("```diff\n- old\n+ new\n```"));
+}
+
+// --- split_long_message ---
+
+#[test]
+fn test_split_short_message_no_split() {
+    let text = "short message";
+    let chunks = split_long_message(text, 100);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0], "short message");
+}
+
+#[test]
+fn test_split_exact_limit() {
+    let text = "a".repeat(100);
+    let chunks = split_long_message(&text, 100);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0], text);
+}
+
+#[test]
+fn test_split_plain_text_at_newline() {
+    // 60 chars total, limit=30 → should split at a newline boundary
+    let text = "line1 here xxxx\nline2 here xxxx\nline3 here xxxx\nline4 end";
+    let chunks = split_long_message(text, 35);
+    assert!(chunks.len() >= 2, "should split into multiple chunks: {:?}", chunks);
+    // All chunks should be within limit (with some margin for fence closing)
+    for chunk in &chunks {
+        assert!(chunk.len() <= 40, "chunk too long: {} chars", chunk.len());
+    }
+    // Reassembled content should contain all original lines
+    let joined = chunks.join("\n");
+    assert!(joined.contains("line1"));
+    assert!(joined.contains("line4"));
+}
+
+#[test]
+fn test_split_code_block_continuation() {
+    // Code block that spans a split boundary should be closed and reopened
+    let mut text = String::from("```rust\n");
+    for i in 0..20 {
+        text.push_str(&format!("let x{} = {};\n", i, i));
+    }
+    text.push_str("```\nDone.");
+
+    let chunks = split_long_message(&text, 100);
+    assert!(chunks.len() >= 2, "should split: {:?}", chunks);
+
+    // First chunk should end with closing ``` (auto-closed)
+    let first = &chunks[0];
+    assert!(first.ends_with("```"), "first chunk should be closed: {}", first);
+
+    // Second chunk should start with reopened ```rust
+    let second = &chunks[1];
+    assert!(second.starts_with("```rust\n"), "second chunk should reopen code block: {}", second);
+}
+
+#[test]
+fn test_split_code_block_four_backtick() {
+    // ```` fence should be continued with ```` not ```
+    let mut text = String::from("````diff\n");
+    for i in 0..20 {
+        text.push_str(&format!("- old line {}\n+ new line {}\n", i, i));
+    }
+    text.push_str("````\nEnd.");
+
+    let chunks = split_long_message(&text, 120);
+    assert!(chunks.len() >= 2, "should split: {:?}", chunks);
+
+    // First chunk should close with ````
+    let first = &chunks[0];
+    assert!(first.ends_with("````"), "first chunk should close with 4 backticks: {}", first);
+
+    // Second chunk should reopen with ````diff
+    let second = &chunks[1];
+    assert!(second.starts_with("````diff\n"), "second chunk should reopen with ````diff: {}", second);
+}
+
+#[test]
+fn test_split_no_code_block_no_fence_artifacts() {
+    // Plain text split should not have fence artifacts
+    let text = "Hello world\nThis is a test\nAnother line\nMore content here";
+    let chunks = split_long_message(&text, 30);
+    for chunk in &chunks {
+        assert!(!chunk.contains("```"), "plain text should have no fences: {}", chunk);
+    }
+}
+
+#[test]
+fn test_split_multiple_code_blocks() {
+    // Two separate code blocks, each within one chunk
+    let text = "```rust\nfn a() {}\n```\ntext between\n```python\nprint()\n```";
+    let chunks = split_long_message(&text, 200);
+    assert_eq!(chunks.len(), 1, "should fit in one chunk");
+    assert_eq!(chunks[0], text);
+}
+
+#[test]
+fn test_split_all_chunks_within_limit() {
+    // Stress: large input, verify no chunk exceeds limit (with some margin for fence closing)
+    let mut text = String::from("```rust\n");
+    for i in 0..200 {
+        text.push_str(&format!("let var_{} = \"value_{}\";\n", i, i));
+    }
+    text.push_str("```\n");
+
+    let max_len = 150;
+    let chunks = split_long_message(&text, max_len);
+    assert!(chunks.len() > 1);
+    for (i, chunk) in chunks.iter().enumerate() {
+        // Chunk may slightly exceed max_len due to fence closing (``` appended)
+        // but the content before the fence should be within max_len
+        assert!(
+            chunk.len() <= max_len + 20,
+            "chunk {} too long: {} chars (limit {}): {}",
+            i, chunk.len(), max_len, &chunk[..chunk.len().min(80)]
+        );
+    }
 }

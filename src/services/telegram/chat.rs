@@ -247,6 +247,8 @@ pub async fn handle_text_message(
                                             .unwrap_or("")
                                             .to_string();
                                     }
+                                } else if name == "Grep" {
+                                    last_file_path = formatter::extract_grep_file_hint(&input);
                                 } else {
                                     last_file_path.clear();
                                 }

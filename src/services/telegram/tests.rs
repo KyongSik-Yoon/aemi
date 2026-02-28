@@ -500,6 +500,28 @@ fn test_md_to_html_ordered_list() {
     assert!(result.contains("2. Second"));
 }
 
+// --- markdown_to_telegram_html: code fence handling ---
+
+#[test]
+fn test_md_to_html_quad_fence_not_closed_by_triple() {
+    // A ```` fence should NOT be closed by inner ``` lines
+    let md = "````diff\n- format!(\"{}\\n```\\n\", x)\n+ format!(\"{}\\n````\\n\", x)\n````";
+    let result = markdown_to_telegram_html(md);
+    // The inner ``` should be part of the code content, not close the block
+    assert!(result.contains("<pre>"), "should produce a single code block");
+    assert!(result.contains("```"), "inner ``` should be preserved as content");
+    // Should NOT have bullet points from `- ` being treated as list items
+    assert!(!result.contains("•"), "diff lines should stay inside code block");
+}
+
+#[test]
+fn test_md_to_html_triple_fence_still_works() {
+    let md = "```rust\nfn main() {}\n```";
+    let result = markdown_to_telegram_html(md);
+    assert!(result.contains("<pre><code class=\"language-rust\">"));
+    assert!(result.contains("fn main() {}"));
+}
+
 // --- convert_links_and_formatting ---
 
 #[test]
