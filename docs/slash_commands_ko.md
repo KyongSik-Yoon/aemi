@@ -42,7 +42,8 @@ aemi 봇(Discord/Telegram)에서 사용할 수 있는 슬래시 커맨드 목록
 | `/agent` | 현재 사용 중인 AI 에이전트 표시 및 사용 가능한 에이전트 목록 |
 | `/agent <name>` | AI 에이전트 전환 |
 
-사용 가능한 에이전트: `claude`, `gemini`, `codex`, `opencode`
+사용 가능한 에이전트: `claude`, `gemini`, `codex`, `opencode`, `oh-my-pi`
+참고: `oh-my-pi`는 `omp` 바이너리가 설치되어 있고 PATH에서 실행 가능해야 합니다.
 
 ## Tool Management
 
@@ -58,3 +59,8 @@ aemi 봇(Discord/Telegram)에서 사용할 수 있는 슬래시 커맨드 목록
 | 커맨드 | 설명 |
 |--------|------|
 | `/help` | 도움말 표시 |
+
+
+## 디버그 로그
+
+`AEMI_DEBUG=1`을 설정하면 `~/.aemi/debug/` 아래에 디버그 로그를 기록합니다 (예: `oh-my-pi.log`, `discord.log`, `telegram.log`).

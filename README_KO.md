@@ -46,6 +46,12 @@ aemi --agent opencode --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 # OpenCode로 Discord 봇 서버 시작
 aemi --agent opencode --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
+
+# oh-my-pi(omp)로 Telegram 봇 서버 시작
+aemi --agent oh-my-pi --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+
+# oh-my-pi(omp)로 Discord 봇 서버 시작
+aemi --agent oh-my-pi --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 # 여러 Telegram 봇 동시 실행
 aemi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
 ```
@@ -86,6 +92,7 @@ cargo build --release
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | 사용 가능 | - |
 | [Codex CLI](https://github.com/openai/codex) | `--agent codex` | 사용 가능 | - |
 | [OpenCode](https://opencode.ai) | `--agent opencode` | 사용 가능 | - |
+| oh-my-pi (omp) | `--agent oh-my-pi` | 사용 가능 | - |
 
 ### 에이전트별 사전 요구사항
 
@@ -95,10 +102,15 @@ cargo build --release
 - **Gemini**: `npm install -g @google/gemini-cli`
 - **Codex**: `npm install -g @openai/codex`
 - **OpenCode**: `npm install -g opencode` (또는 [opencode.ai](https://opencode.ai/docs/)에서 다른 설치 방법 참조)
+- **oh-my-pi**: oh-my-pi를 설치하고 `omp`가 PATH에 있어야 합니다 (`omp --version`으로 확인)
 
 ## 슬래시 명령어
 
 전체 봇 명령어 목록은 [docs/slash_commands_ko.md](docs/slash_commands_ko.md)를 참조하세요.
+
+## 디버그 로그
+
+`AEMI_DEBUG=1`을 설정하면 `~/.aemi/debug/` 아래에 디버그 로그를 기록합니다 (예: `oh-my-pi.log`, `discord.log`, `telegram.log`).
 
 ## 지원 플랫폼
 

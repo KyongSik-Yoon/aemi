@@ -42,7 +42,8 @@ Any message that does not start with a slash command or `!` is sent to the AI ag
 | `/agent` | Show the current AI agent and list available agents |
 | `/agent <name>` | Switch to a different AI agent |
 
-Available agents: `claude`, `gemini`, `codex`, `opencode`
+Available agents: `claude`, `gemini`, `codex`, `opencode`, `oh-my-pi`
+Note: `oh-my-pi` requires the `omp` binary to be installed and available on PATH.
 
 ## Tool Management
 
@@ -58,3 +59,8 @@ Available agents: `claude`, `gemini`, `codex`, `opencode`
 | Command | Description |
 |---------|-------------|
 | `/help` | Show help |
+
+
+## Debug Logging
+
+Set `AEMI_DEBUG=1` to write debug logs under `~/.aemi/debug/` (for example: `oh-my-pi.log`, `discord.log`, `telegram.log`).

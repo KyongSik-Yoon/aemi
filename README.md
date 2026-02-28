@@ -48,6 +48,12 @@ aemi --agent opencode --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
 # Start Discord bot server with OpenCode
 aemi --agent opencode --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 
+
+# Start Telegram bot server with oh-my-pi (omp)
+aemi --agent oh-my-pi --routing telegram --token <TOKEN> --chat-id <CHAT_ID>
+
+# Start Discord bot server with oh-my-pi (omp)
+aemi --agent oh-my-pi --routing discord --token <TOKEN> --channel-id <CHANNEL_ID>
 # Run multiple Telegram bots simultaneously
 aemi --agent claude --routing telegram --token <TOKEN1> <TOKEN2> <TOKEN3> --chat-id <CHAT_ID>
 ```
@@ -88,6 +94,7 @@ See [build_manual.md](build_manual.md) for detailed build instructions including
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `--agent gemini` | Available | - |
 | [Codex CLI](https://github.com/openai/codex) | `--agent codex` | Available | - |
 | [OpenCode](https://opencode.ai) | `--agent opencode` | Available | - |
+| oh-my-pi (omp) | `--agent oh-my-pi` | Available | - |
 
 ### Prerequisites per Agent
 
@@ -97,10 +104,15 @@ Each agent requires its own CLI tool to be installed:
 - **Gemini**: `npm install -g @google/gemini-cli`
 - **Codex**: `npm install -g @openai/codex`
 - **OpenCode**: `npm install -g opencode` (or see [opencode.ai](https://opencode.ai/docs/) for other methods)
+- **oh-my-pi**: install oh-my-pi and ensure `omp` is in your PATH (`omp --version`)
 
 ## Slash Commands
 
 See [docs/slash_commands.md](docs/slash_commands.md) for the full list of bot commands.
+
+## Debug Logging
+
+Set `AEMI_DEBUG=1` to write debug logs under `~/.aemi/debug/` (for example: `oh-my-pi.log`, `discord.log`, `telegram.log`).
 
 ## Supported Platforms
 
