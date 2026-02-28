@@ -246,14 +246,16 @@ pub async fn handle_text_message(
                                 // Update progress phase with current tool name
                                 progress_phase = format!("Using: {name}");
 
-                                // Format tool use with blockquote for multi-line summaries
+                                // Format tool use: header in blockquote, code blocks outside
                                 let lines: Vec<&str> = summary.lines().collect();
                                 if lines.len() <= 1 {
                                     full_response.push_str(&format!("\n\n> ⚙️ {}\n", summary));
                                 } else {
-                                    full_response.push_str("\n\n");
-                                    for line in &lines {
-                                        full_response.push_str(&format!("> {}\n", line));
+                                    // First line is the header (blockquoted), rest is code block
+                                    full_response.push_str(&format!("\n\n> ⚙️ {}\n", lines[0]));
+                                    for line in &lines[1..] {
+                                        full_response.push_str(line);
+                                        full_response.push('\n');
                                     }
                                 }
 
