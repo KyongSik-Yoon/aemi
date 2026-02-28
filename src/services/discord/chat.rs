@@ -213,6 +213,7 @@ pub async fn handle_text_message(
         let mut done = false;
         let mut cancelled = false;
         let mut new_session_id: Option<String> = None;
+        let mut session_not_found = false;
         let mut spin_idx: usize = 0;
         let mut last_tool_name = String::new();
         let mut last_file_path = String::new();
@@ -311,6 +312,11 @@ pub async fn handle_text_message(
                                 done = true;
                             }
                             StreamMessage::Error { message } => {
+                                // Detect session-not-found errors to clear stale session_id
+                                let lower = message.to_lowercase();
+                                if lower.contains("session") && lower.contains("not found") {
+                                    session_not_found = true;
+                                }
                                 full_response = format!("Error: {}", message);
                                 done = true;
                             }
@@ -416,7 +422,9 @@ pub async fn handle_text_message(
                 if session.cleared {
                     // Session was cleared by /clear; do not re-populate
                 } else {
-                    if let Some(sid) = new_session_id {
+                    if session_not_found {
+                        session.session_id = None;
+                    } else if let Some(sid) = new_session_id {
                         session.session_id = Some(sid);
                     }
                     session.history.push(HistoryItem {
@@ -469,7 +477,11 @@ pub async fn handle_text_message(
                 if session.cleared {
                     // Session was cleared by /clear; do not re-populate
                 } else {
-                    if let Some(sid) = new_session_id {
+                    // Clear stale session_id on session-not-found error so next
+                    // message starts a fresh session instead of repeating the error
+                    if session_not_found {
+                        session.session_id = None;
+                    } else if let Some(sid) = new_session_id {
                         session.session_id = Some(sid);
                     }
                     session.history.push(HistoryItem {
