@@ -11,6 +11,7 @@ use crate::services::gemini;
 use crate::services::codex;
 use crate::services::opencode;
 use crate::services::oh_my_pi;
+use crate::services::provider_common;
 use crate::services::session::{self, HistoryItem, HistoryType};
 use crate::services::formatter;
 use crate::services::utils::{truncate_str, normalize_empty_lines};
@@ -198,11 +199,24 @@ pub async fn handle_text_message(
     let bot_owned = bot.clone();
     let state_owned = state.clone();
     let user_text_owned = user_text.to_string();
-    tokio::spawn(async move {
+    let chat_id_num = chat_id.0;
+    let placeholder_msg_id_num = placeholder_msg_id.0;
+    let watcher_chat_id_num = chat_id_num;
+    let watcher_placeholder_msg_id_num = placeholder_msg_id_num;
+
+    let polling_handle = tokio::spawn(async move {
         const SPINNER_CLOCKS: &[&str] = &[
             "🕐", "🕑", "🕒", "🕓", "🕔", "🕕",
             "🕖", "🕗", "🕘", "🕙", "🕚", "🕛",
         ];
+        provider_common::debug_log_for(
+            "telegram",
+            &format!(
+                "polling loop start chat_id={} placeholder_msg_id={}",
+                chat_id_num, placeholder_msg_id_num
+            ),
+        );
+
         let mut full_response = String::new();
         let mut last_edit_text = String::new();
         let mut done = false;
@@ -554,6 +568,27 @@ pub async fn handle_text_message(
 
         let ts = chrono::Local::now().format("%H:%M:%S");
         println!("  [{ts}] ▶ Response sent");
+        provider_common::debug_log_for(
+            "telegram",
+            &format!(
+                "polling loop end chat_id={} cancelled={} done={}",
+                chat_id_num, cancelled, done
+            ),
+        );
+    });
+
+    tokio::spawn(async move {
+        if let Err(e) = polling_handle.await {
+            provider_common::debug_log_for(
+                "telegram",
+                &format!(
+                    "polling loop join error chat_id={} placeholder_msg_id={}: {}",
+                    watcher_chat_id_num, watcher_placeholder_msg_id_num, e
+                ),
+            );
+            let ts = chrono::Local::now().format("%H:%M:%S");
+            println!("  [{ts}]   ⚠ polling loop crashed: {e}");
+        }
     });
 
     Ok(())

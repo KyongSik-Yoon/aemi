@@ -31,3 +31,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+
+# Local agent orchestration state
+/.omc/

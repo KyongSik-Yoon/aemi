@@ -258,8 +258,10 @@ where
 
         if let Ok(json) = serde_json::from_str::<Value>(&line) {
             if !handle_json(&json, &sender, &mut state) {
-                log("Channel send failed (receiver dropped)");
-                break;
+                log("Channel send failed (receiver dropped) — terminating child process");
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(());
             }
         }
     }
@@ -284,14 +286,9 @@ where
         let _ = sender.send(StreamMessage::Init { session_id: synthetic_id });
     }
 
-    // Send synthetic Done if we didn't get a proper one
-    if state.final_result.is_none() {
-        let _ = sender.send(StreamMessage::Done {
-            result: String::new(),
-            session_id: state.session_id,
-        });
-    }
-
+    // If the process failed, do NOT send a synthetic Done.
+    // Callers may retry (e.g. session-not-found) and a premature Done would
+    // cause the receiver to stop polling and drop the channel.
     if !status.success() {
         let stderr_msg = read_stderr(stderr_handle);
         return Err(match stderr_msg {
@@ -300,8 +297,17 @@ where
         });
     }
 
+    // Send synthetic Done only on success, and only if we didn't get a proper one
+    if state.final_result.is_none() {
+        let _ = sender.send(StreamMessage::Done {
+            result: String::new(),
+            session_id: state.session_id,
+        });
+    }
+
     log(&format!("=== {} execute_command_streaming END (success) ===", config.provider_name));
     Ok(())
+
 }
 
 // ---------------------------------------------------------------------------
