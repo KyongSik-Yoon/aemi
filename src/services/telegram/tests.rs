@@ -1,6 +1,6 @@
 use super::*;
 use super::markdown::*;
-use super::messages::html_escape;
+use super::messages::{html_escape, split_html_message};
 use crate::services::utils::{floor_char_boundary, truncate_str, normalize_empty_lines};
 use crate::services::bot_common::{normalize_tool_name, tool_info, risk_badge};
 
@@ -569,4 +569,116 @@ fn test_floor_char_boundary_beyond_end() {
 fn test_floor_char_boundary_multibyte() {
     let s = "가나다"; // each 3 bytes
     assert_eq!(floor_char_boundary(s, 4), 3);
+}
+
+// --- split_html_message ---
+
+#[test]
+fn test_split_html_short_message() {
+    let text = "<b>Hello</b> world";
+    let chunks = split_html_message(text, 100);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0], text);
+}
+
+#[test]
+fn test_split_html_pre_block_continuation() {
+    // <pre> block that spans a split boundary should be closed and reopened
+    let text = "text\n<pre>line1\nline2\nline3\nline4\nline5</pre>\nend";
+    let chunks = split_html_message(text, 30);
+    assert!(chunks.len() >= 2, "should split: {:?}", chunks);
+
+    // First chunk should close <pre>
+    assert!(chunks[0].ends_with("</pre>"), "first chunk should close pre: {}", chunks[0]);
+
+    // Second chunk should reopen <pre>
+    assert!(chunks[1].starts_with("<pre>"), "second chunk should reopen pre: {}", chunks[1]);
+}
+
+#[test]
+fn test_split_html_code_block_with_language() {
+    // <pre><code class="language-bash"> should be properly tracked across splits
+    let mut text = String::from("<pre><code class=\"language-bash\">");
+    for i in 0..10 {
+        text.push_str(&format!("echo \"line {}\";\n", i));
+    }
+    text.push_str("</code></pre>\nDone.");
+
+    let chunks = split_html_message(&text, 100);
+    assert!(chunks.len() >= 2, "should split: {:?}", chunks);
+
+    // First chunk should close with </code></pre>
+    let first = &chunks[0];
+    assert!(first.ends_with("</code></pre>"),
+        "first chunk should close code+pre: {}", first);
+
+    // Second chunk should reopen with <pre><code class="language-bash">
+    let second = &chunks[1];
+    assert!(second.starts_with("<pre><code class=\"language-bash\">"),
+        "second chunk should reopen with code class: {}", second);
+}
+
+#[test]
+fn test_split_html_plain_pre_no_code_tag() {
+    // Plain <pre> without <code> should use simple </pre> and <pre>
+    let mut text = String::from("<pre>");
+    for i in 0..10 {
+        text.push_str(&format!("plain line {}\n", i));
+    }
+    text.push_str("</pre>");
+
+    let chunks = split_html_message(&text, 80);
+    assert!(chunks.len() >= 2, "should split: {:?}", chunks);
+
+    assert!(chunks[0].ends_with("</pre>"), "should close with </pre>: {}", chunks[0]);
+    assert!(chunks[1].starts_with("<pre>"), "should reopen with <pre>: {}", chunks[1]);
+    // Should NOT have <code> in the reopening
+    assert!(!chunks[1].starts_with("<pre><code"),
+        "plain pre should not have code tag: {}", chunks[1]);
+}
+
+#[test]
+fn test_split_html_multiple_code_blocks() {
+    // Two code blocks: first closes before split, second opens after
+    let text = "<pre><code class=\"language-rust\">fn a() {}</code></pre>\n\
+               text between\n\
+               <pre><code class=\"language-python\">print()</code></pre>";
+    let chunks = split_html_message(text, 200);
+    assert_eq!(chunks.len(), 1, "should fit in one chunk");
+}
+
+#[test]
+fn test_split_html_no_pre_no_artifacts() {
+    // Plain HTML without <pre> should not add pre tags
+    let text = "<b>Hello</b>\n<i>world</i>\nmore text\neven more";
+    let chunks = split_html_message(text, 25);
+    for chunk in &chunks {
+        assert!(!chunk.contains("<pre>"), "should not add pre tags: {}", chunk);
+        assert!(!chunk.contains("</pre>"), "should not add pre closing: {}", chunk);
+    }
+}
+
+#[test]
+fn test_split_html_code_language_preserved_across_three_chunks() {
+    // Code block spanning 3+ chunks should preserve language in all continuations
+    let mut text = String::from("<pre><code class=\"language-javascript\">");
+    for i in 0..30 {
+        text.push_str(&format!("console.log({});\n", i));
+    }
+    text.push_str("</code></pre>");
+
+    let chunks = split_html_message(&text, 100);
+    assert!(chunks.len() >= 3, "should produce 3+ chunks: {:?}", chunks);
+
+    // All middle chunks should have proper open/close
+    for (i, chunk) in chunks.iter().enumerate() {
+        if i > 0 {
+            assert!(chunk.starts_with("<pre><code class=\"language-javascript\">"),
+                "chunk {} should reopen with language: {}", i, chunk);
+        }
+        if i < chunks.len() - 1 {
+            assert!(chunk.ends_with("</code></pre>"),
+                "chunk {} should close with code+pre: {}", i, chunk);
+        }
+    }
 }
